@@ -8,6 +8,10 @@ const config = {
 		adapter: adapter({
 			fallback: 'index.html',
 		}),
+		alias: {
+			'@repo/shared': '../../packages/shared/src/index.ts',
+			'@repo/shared/*': '../../packages/shared/src/*',
+		},
 	},
 };
 
