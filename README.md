@@ -6,6 +6,10 @@ Web groundwork for Phantom Ink. The current goal is room/state infrastructure, n
 
 Rules notes and board references live in [rules.md](./rules.md). The source page is https://resonym.com/how-to-play/phantom-ink.
 
+## Design
+
+Design language notes live in [design.md](./design.md).
+
 ## Architecture
 
 - `apps/server`: Bun API server. It stores users, rooms, and reducer actions in SQLite, rebuilds room state from the action log, and streams room snapshots over SSE.
