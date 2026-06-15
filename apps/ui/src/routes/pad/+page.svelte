@@ -100,7 +100,7 @@
 <style>
 	.mock-screen {
 		display: grid;
-		gap: 0.85rem;
+		gap: 0.7rem;
 	}
 
 	.screen-heading,
@@ -125,7 +125,7 @@
 	}
 
 	h1 {
-		font-size: 1.65rem;
+		font-size: 1.5rem;
 		line-height: 1.05;
 	}
 
@@ -156,7 +156,7 @@
 		border: 1px solid var(--app-border);
 		border-radius: 0.5rem;
 		background: var(--app-highlight);
-		padding: 0.75rem;
+		padding: 0.62rem;
 	}
 
 	.turn-card div {
@@ -171,7 +171,7 @@
 	}
 
 	.turn-card strong {
-		font-size: 1.35rem;
+		font-size: 1.2rem;
 		line-height: 1;
 	}
 
@@ -182,7 +182,7 @@
 	}
 
 	button {
-		min-height: 2.5rem;
+		min-height: 2.3rem;
 		border: 1px solid var(--app-border);
 		border-radius: 0.5rem;
 		background: var(--app-input);
@@ -240,8 +240,8 @@
 		display: grid;
 		align-content: center;
 		gap: 0.18rem;
-		min-height: 3.25rem;
-		padding: 0.35rem 0.5rem;
+		min-height: 2.68rem;
+		padding: 0.28rem 0.45rem;
 		text-align: left;
 	}
 

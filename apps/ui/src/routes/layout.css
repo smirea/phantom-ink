@@ -162,14 +162,11 @@ button {
 
 @media (max-width: 420px) {
 	.app-scene {
-		padding: 0;
+		padding: 0.55rem;
 	}
 
 	.content-card {
 		width: 100%;
-		min-height: 100dvh;
-		max-height: none;
-		border-radius: 0;
-		border-inline: 0;
+		max-height: calc(100dvh - 1.1rem);
 	}
 }
