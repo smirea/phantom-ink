@@ -25,10 +25,11 @@
 		openRoomEvents,
 		sendRoomAction,
 	} from '$lib/api';
+	import InkButton from '$lib/InkButton.svelte';
+	import PhantomLogo from '$lib/PhantomLogo.svelte';
 	import { createRoomCode, parseRoomCode } from '$lib/roomCodes';
 	import { deleteStored, getDebugId, getStored, setStored, storageKeys } from '$lib/storage';
 
-	type Theme = 'dark' | 'light';
 	type DebugPayload = PhantomInkGameState | { state: PhantomInkGameState } | string;
 
 	const roleLabels: Record<PlayerRole, string> = {
@@ -37,7 +38,6 @@
 		spectator: 'Spectator',
 	};
 
-	let theme = $state<Theme>(getStored(storageKeys.darkMode) ? 'dark' : 'light');
 	let playerName = $state(getStored(storageKeys.playerName));
 	let joinCode = $state('');
 	let roomCode = $state<string | null>(null);
@@ -64,12 +64,6 @@
 	const hasLocalSave = $derived(Boolean(localSavedAt));
 	const roomPlayers = $derived(room?.members.filter(member => member.role !== 'spectator') ?? []);
 	const roomSpectators = $derived(room?.members.filter(member => member.role === 'spectator') ?? []);
-
-	$effect(() => {
-		if (typeof document === 'undefined') return;
-		document.documentElement.dataset.theme = theme;
-		setStored(storageKeys.darkMode, theme === 'dark');
-	});
 
 	$effect(() => {
 		setStored(storageKeys.playerName, playerName);
@@ -391,20 +385,15 @@
 	<title>Phantom Ink</title>
 </svelte:head>
 
-<main class="app">
-	<header class="topbar">
+<section class="screen">
+	<header class="screen-heading">
 		<div>
-			<p class="eyebrow">Phantom Ink</p>
-			<h1>{roomCode ? `Room ${roomCode}` : 'Lobby'}</h1>
+			<p class="eyebrow">{roomCode ? `Room ${roomCode}` : 'Seance lobby'}</p>
+			<h1>{roomCode ? 'Spirit pad' : 'Gather mediums'}</h1>
 		</div>
-		<div class="topbar-actions">
-			{#if getDebugId()}
-				<span class="debug-pill">DEBUG_ID {getDebugId()}</span>
-			{/if}
-			<button type="button" class="subtle" onclick={() => (theme = theme === 'dark' ? 'light' : 'dark')}>
-				{theme === 'dark' ? 'Light' : 'Dark'}
-			</button>
-		</div>
+		{#if getDebugId()}
+			<span class="debug-pill">DEBUG_ID {getDebugId()}</span>
+		{/if}
 	</header>
 
 	{#if error}
@@ -413,6 +402,16 @@
 
 	{#if !roomCode}
 		<section class="lobby-grid">
+			<section class="panel logo-panel">
+				<PhantomLogo />
+				<div class="button-showcase" aria-label="Button states">
+					<InkButton size="sm">Small</InkButton>
+					<InkButton primary>Primary</InkButton>
+					<InkButton size="lg">Large</InkButton>
+					<InkButton primary disabled>Disabled</InkButton>
+				</div>
+			</section>
+
 			<section class="panel lobby-panel">
 				<div class="field">
 					<label for="player-name">Name</label>
@@ -427,9 +426,7 @@
 				</div>
 
 				<div class="button-row">
-					<button type="button" class="primary" disabled={isLoading} onclick={() => void createRoom()}>
-						Create Room
-					</button>
+					<InkButton primary disabled={isLoading} onclick={() => void createRoom()}>Create Room</InkButton>
 				</div>
 
 				<form
@@ -447,16 +444,15 @@
 						spellcheck="false"
 						placeholder="ABCD"
 					/>
-					<button type="submit" disabled={!parseRoomCode(joinCode)}>Join</button>
+					<InkButton type="submit" disabled={!parseRoomCode(joinCode)}>Join</InkButton>
 				</form>
 
 				{#if resumeRoomCode}
 					<div class="resume-banner">
 						<span>Room {resumeRoomCode}</span>
 						<div class="button-row compact">
-							<button
-								type="button"
-								class="subtle"
+							<InkButton
+								size="sm"
 								onclick={() => {
 									dismissedResumeRoom = resumeRoomCode;
 									resumeRoomCode = null;
@@ -464,8 +460,10 @@
 								}}
 							>
 								Dismiss
-							</button>
-							<button type="button" onclick={() => resumeRoomCode && void enterRoom(resumeRoomCode)}> Resume </button>
+							</InkButton>
+							<InkButton size="sm" primary onclick={() => resumeRoomCode && void enterRoom(resumeRoomCode)}>
+								Resume
+							</InkButton>
 						</div>
 					</div>
 				{/if}
@@ -474,7 +472,7 @@
 			<section class="panel directory-panel">
 				<div class="section-heading">
 					<h2>Open Rooms</h2>
-					<button type="button" class="subtle" onclick={() => void refreshDirectory()}>Refresh</button>
+					<InkButton size="sm" onclick={() => void refreshDirectory()}>Refresh</InkButton>
 				</div>
 				{#if directory.length === 0}
 					<p class="empty">No open rooms</p>
@@ -494,14 +492,14 @@
 	{:else if !room}
 		<section class="panel loading-panel">
 			<p>{isLoading ? 'Loading room...' : 'Room unavailable'}</p>
-			<button type="button" class="subtle" onclick={() => void leaveRoom()}>Back</button>
+			<InkButton onclick={() => void leaveRoom()}>Back</InkButton>
 		</section>
 	{:else}
 		<section class="room-layout">
 			<aside class="panel room-sidebar">
 				<div class="section-heading">
 					<h2>Players</h2>
-					<button type="button" class="subtle" onclick={() => void leaveRoom()}>Leave</button>
+					<InkButton size="sm" onclick={() => void leaveRoom()}>Leave</InkButton>
 				</div>
 
 				{#if selfMember}
@@ -718,26 +716,21 @@
 			</section>
 		</section>
 	{/if}
-</main>
+</section>
 
 <style>
-	.app {
-		min-height: 100vh;
-		background: var(--app-bg);
-		color: var(--app-text);
-		padding: 1.25rem;
+	.screen {
+		display: grid;
+		gap: 0.85rem;
 	}
 
-	.topbar {
+	.screen-heading {
 		display: flex;
-		align-items: flex-start;
+		align-items: center;
 		justify-content: space-between;
 		gap: 1rem;
-		max-width: 76rem;
-		margin: 0 auto 1rem;
 	}
 
-	.topbar-actions,
 	.button-row,
 	.finish-row {
 		display: flex;
@@ -762,7 +755,7 @@
 	}
 
 	h1 {
-		font-size: 2rem;
+		font-size: 1.8rem;
 		line-height: 1.05;
 	}
 
@@ -834,12 +827,11 @@
 	.lobby-grid,
 	.room-layout {
 		display: grid;
-		grid-template-columns: minmax(18rem, 24rem) minmax(0, 1fr);
-		gap: 1rem;
-		max-width: 76rem;
-		margin: 0 auto;
+		grid-template-columns: 1fr;
+		gap: 0.75rem;
 	}
 
+	.logo-panel,
 	.lobby-panel,
 	.directory-panel,
 	.room-sidebar,
@@ -849,6 +841,19 @@
 		display: grid;
 		gap: 1rem;
 		align-content: start;
+	}
+
+	.logo-panel {
+		justify-items: center;
+		text-align: center;
+	}
+
+	.button-showcase {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-wrap: wrap;
+		gap: 0.45rem;
 	}
 
 	.main-stack {
@@ -884,8 +889,7 @@
 
 	.notice,
 	.resume-banner {
-		max-width: 76rem;
-		margin: 0 auto 1rem;
+		margin: 0;
 	}
 
 	.notice {
@@ -1089,20 +1093,6 @@
 	}
 
 	@media (max-width: 880px) {
-		.app {
-			padding: 0.85rem;
-		}
-
-		.topbar,
-		.lobby-grid,
-		.room-layout {
-			grid-template-columns: 1fr;
-		}
-
-		.topbar {
-			display: grid;
-		}
-
 		.entry-form {
 			grid-template-columns: 1fr;
 		}
