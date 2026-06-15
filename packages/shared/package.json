@@ -5,6 +5,8 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./env": "./src/env.ts",
+		"./game": "./src/game.ts",
+		"./onlineGame": "./src/onlineGame.ts",
 		"./package.json": "./package.json"
 	},
 	"dependencies": {
