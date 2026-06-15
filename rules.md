@@ -61,6 +61,20 @@ The Sun team goes first. On a team's turn, rotate the pad toward that team. The 
 | Ask a question   | Medium gives two question cards to the Spirit. The Spirit chooses one, discards the other, then slowly writes a clue in the team's next pad space. | The Medium can call "Silencio" to stop the clue once they think they know enough. The answered question is kept face down for reference. The Medium draws two new question cards. |
 | Guess the object | Medium writes the guess one letter at a time in the team's next pad space and says each letter aloud.                                              | The Spirit confirms correct letters by knocking. On a wrong letter, the Spirit signals silence, the wrong letter is crossed out, and the turn ends. A full correct object wins.   |
 
+## Standard Example
+
+The source page's example turn has these important game-state pieces:
+
+| Component        | Example value                                                                                         |
+| ---------------- | ----------------------------------------------------------------------------------------------------- |
+| Medium           | Avery                                                                                                 |
+| Spirit           | Jordan                                                                                                |
+| Question chosen  | Material question                                                                                     |
+| Secret object    | Calendar                                                                                              |
+| Intended clue    | Paper                                                                                                 |
+| Visible pad text | PAP                                                                                                   |
+| Stop condition   | The Medium calls Silencio after enough letters are visible, so the Spirit leaves the rest unrevealed. |
+
 ## Clue Rules
 
 | Rule                    | Summary                                                                                         |
@@ -83,6 +97,22 @@ When a team starts a turn on its own space with an Eye marker, its Medium choose
 | Neither team guesses correctly after all eight pad rows are used | Both teams lose.                            |
 | A Medium makes an incorrect guess                                | No direct penalty beyond spending the turn. |
 
+## Strategy and Clarifications
+
+| Topic                        | Rule note                                                                                                             |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Calling Silencio             | Mediums generally benefit from stopping clues early so the other team receives less information.                      |
+| Finished clues               | If a Spirit completes a clue before Silencio, they add a period. If Silencio interrupts before the period, they stop. |
+| More than four players       | Add extra Mediums to teams. Teammate Mediums share question cards and may quietly coordinate.                         |
+| Bad question hand            | Each team may once discard its question cards and draw a fresh hand.                                                  |
+| Looking up spelling          | Spelling help is allowed. Mediums should not search facts or autocomplete clue fragments.                             |
+| Spirit table talk            | Spirits should not add guidance beyond the written clue and required signals.                                         |
+| Spirits disagree on object   | If Spirits cannot agree on the object, choose one randomly.                                                           |
+| Eye spaces                   | Eye spaces are mandatory on the source page.                                                                          |
+| Guessing on the eighth turn  | A team is not forced to guess on its last space, though the source recommends it.                                     |
+| Spirit question-card peeking | Competitive groups should keep each team's questions private; casual groups can allow Spirit peeking if agreed.       |
+| Misspelled correct object    | The source recommends being charitable when the guess clearly identifies the object.                                  |
+
 ## Co-op Variant Diagram
 
 The source page includes this co-op example:
@@ -101,6 +131,18 @@ The co-op diagram shows clue fragments and a rising letter budget across the pad
 | 6   | 4             | CART        | Yes     | SCRA         | Yes      |
 | 7   | 5             | EASTE       | Yes     | DELIC        | No       |
 | 8   | 5             | OSTRI       | No      | EGG, circled | No       |
+
+## Co-op Rules
+
+| Topic            | Summary                                                                                                                                                    |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Players          | Use one Spirit and one or more Mediums for two- or three-player games.                                                                                     |
+| No Silencio      | Mediums do not interrupt clues. The Spirit writes a fixed number of letters based on the current row's budget.                                             |
+| Turn order       | Mediums alternate between the Sun side and Moon side of the pad.                                                                                           |
+| Sun turn         | Ask a question as in the standard game, then receive the budgeted number of clue letters.                                                                  |
+| Moon turn        | Either guess the object, or let the Spirit draw two question cards, discard one, and answer the other without showing the Mediums which question was used. |
+| Co-op eye spaces | On Sun turns, Mediums choose any clue for the next-letter reveal. On Moon turns, the Spirit chooses a clue from the Moon side.                             |
+| Score and end    | The group wins by guessing the object within eight rounds. The score is the number of rounds used; otherwise everyone loses.                               |
 
 ## Notes for Implementation
 

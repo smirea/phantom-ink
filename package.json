@@ -11,6 +11,7 @@
 		"dev": "concurrently --raw -k -s first \"bun --filter @repo/server dev\" \"bun --filter @repo/ui dev --host 127.0.0.1\"",
 		"format": "oxfmt --write .",
 		"lint": "oxlint --fix && oxfmt --write .",
+		"lint:ci": "oxlint . && oxfmt --check .",
 		"prepare": "lefthook install",
 		"server:dev": "bun --filter @repo/server dev",
 		"server:start": "bun --filter @repo/server start",
