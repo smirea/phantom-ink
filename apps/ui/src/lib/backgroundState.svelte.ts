@@ -46,6 +46,7 @@ export type BackgroundConfig = {
 	spacingChangeThreshold: number;
 	spacingOptionMinDelta: number;
 	maxPuffs: number;
+	glyphBaseSize: number;
 	minGlyphScale: number;
 	maxGlyphScale: number;
 	glyphOpacity: [number, number];
@@ -384,6 +385,7 @@ export function createDefaultBackgroundConfig(): BackgroundConfig {
 		spacingChangeThreshold: 1,
 		spacingOptionMinDelta: 1,
 		maxPuffs: 32,
+		glyphBaseSize: 50,
 		minGlyphScale: 0.58,
 		maxGlyphScale: 1.72,
 		glyphOpacity: [0.16, 0.46],

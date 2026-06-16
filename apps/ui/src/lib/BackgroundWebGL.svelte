@@ -14,6 +14,7 @@
 		pixelRatio: WebGLUniformLocation | null;
 		gridShift: WebGLUniformLocation | null;
 		spacing: WebGLUniformLocation | null;
+		glyphSize: WebGLUniformLocation | null;
 		time: WebGLUniformLocation | null;
 		displayAngle: WebGLUniformLocation | null;
 		spinEnabled: WebGLUniformLocation | null;
@@ -25,7 +26,7 @@
 		resolution: WebGLUniformLocation | null;
 		pixelRatio: WebGLUniformLocation | null;
 		gridShift: WebGLUniformLocation | null;
-		spacing: WebGLUniformLocation | null;
+		glyphSize: WebGLUniformLocation | null;
 		time: WebGLUniformLocation | null;
 		color: WebGLUniformLocation | null;
 		count: WebGLUniformLocation | null;
@@ -255,6 +256,7 @@
 		gl.uniform1f(glyphProgram.pixelRatio, ratio);
 		gl.uniform2f(glyphProgram.gridShift, engine.gridShiftX, engine.gridShiftY);
 		gl.uniform1f(glyphProgram.spacing, engine.spacing.current);
+		gl.uniform1f(glyphProgram.glyphSize, backgroundState.config.glyphBaseSize);
 		gl.uniform1f(glyphProgram.time, now);
 		gl.uniform1f(glyphProgram.displayAngle, engine.direction.displayAngle);
 		gl.uniform1f(glyphProgram.spinEnabled, engine.direction.phase === 'cruise' ? 1 : 0);
@@ -302,7 +304,7 @@
 		gl.uniform2f(smokeProgram.resolution, window.innerWidth * ratio, window.innerHeight * ratio);
 		gl.uniform1f(smokeProgram.pixelRatio, ratio);
 		gl.uniform2f(smokeProgram.gridShift, engine.gridShiftX, engine.gridShiftY);
-		gl.uniform1f(smokeProgram.spacing, engine.spacing.current);
+		gl.uniform1f(smokeProgram.glyphSize, backgroundState.config.glyphBaseSize);
 		gl.uniform1f(smokeProgram.time, now);
 		gl.uniform4f(smokeProgram.color, color[0], color[1], color[2], color[3]);
 		gl.uniform1i(smokeProgram.count, active.length);
@@ -359,7 +361,7 @@
 				uniform vec2 u_resolution;
 				uniform float u_pixelRatio;
 				uniform vec2 u_gridShift;
-				uniform float u_spacing;
+				uniform float u_glyphSize;
 				uniform float u_time;
 				uniform float u_displayAngle;
 				uniform float u_spinEnabled;
@@ -388,7 +390,7 @@
 						scale *= 1.0 - progress * 0.76;
 					}
 
-					float size = u_spacing * max(0.8, scale) * 0.78 * u_pixelRatio * step(0.001, alpha);
+					float size = u_glyphSize * max(0.8, scale) * u_pixelRatio * step(0.001, alpha);
 					float rotation = u_displayAngle + u_spinEnabled * u_spinMultiplier * (u_time * a_style.y + a_style.z);
 					float cosRotation = cos(rotation);
 					float sinRotation = sin(rotation);
@@ -424,6 +426,7 @@
 			pixelRatio: gl.getUniformLocation(program, 'u_pixelRatio'),
 			gridShift: gl.getUniformLocation(program, 'u_gridShift'),
 			spacing: gl.getUniformLocation(program, 'u_spacing'),
+			glyphSize: gl.getUniformLocation(program, 'u_glyphSize'),
 			time: gl.getUniformLocation(program, 'u_time'),
 			displayAngle: gl.getUniformLocation(program, 'u_displayAngle'),
 			spinEnabled: gl.getUniformLocation(program, 'u_spinEnabled'),
@@ -451,7 +454,7 @@
 				uniform vec2 u_resolution;
 				uniform float u_pixelRatio;
 				uniform vec2 u_gridShift;
-				uniform float u_spacing;
+				uniform float u_glyphSize;
 				uniform float u_time;
 				uniform vec4 u_color;
 				uniform int u_smokeCount;
@@ -487,7 +490,7 @@
 						float locked = step(smokeC.w, 0.0);
 						vec2 base = mix(u_gridShift + smokeA.xy, smokeA.xy, locked);
 						vec2 center = (base + smokeA.zw * eased) * u_pixelRatio;
-						float radius = max(1.0, u_spacing * mix(smokeB.z, smokeB.w, eased) * 0.52 * u_pixelRatio);
+						float radius = max(1.0, u_glyphSize * mix(smokeB.z, smokeB.w, eased) * 0.67 * u_pixelRatio);
 						float rotation = smokeC.y + smokeC.z * eased;
 						float cosRotation = cos(rotation);
 						float sinRotation = sin(rotation);
@@ -513,7 +516,7 @@
 			resolution: gl.getUniformLocation(program, 'u_resolution'),
 			pixelRatio: gl.getUniformLocation(program, 'u_pixelRatio'),
 			gridShift: gl.getUniformLocation(program, 'u_gridShift'),
-			spacing: gl.getUniformLocation(program, 'u_spacing'),
+			glyphSize: gl.getUniformLocation(program, 'u_glyphSize'),
 			time: gl.getUniformLocation(program, 'u_time'),
 			color: gl.getUniformLocation(program, 'u_color'),
 			count: gl.getUniformLocation(program, 'u_smokeCount'),
