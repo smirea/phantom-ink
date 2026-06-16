@@ -161,7 +161,7 @@
 	}
 
 	function beginViewTransition(fromPath?: string, toPath?: string) {
-		if (fromPath === '/' || toPath === '/') {
+		if (fromPath === '/' || toPath === '/' || fromPath === '/setup' || toPath === '/setup') {
 			document.documentElement.dataset.logoTransition = 'letters';
 		}
 		isViewTransitioning = true;

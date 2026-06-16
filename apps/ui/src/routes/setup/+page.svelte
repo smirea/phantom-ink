@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { ensureUser, loadStoredUser } from '$lib/api';
+	import PhantomLogo from '$lib/PhantomLogo.svelte';
 	import { LS, storageKeys } from '$lib/storage';
 	import {
 		DEFAULT_PLAYER_COLOR,
@@ -51,6 +52,8 @@
 	let isLoading = $state(true);
 	let isSubmitting = $state(false);
 	let error = $state<string | null>(null);
+	let tapTarget = $state<string | null>(null);
+	let tapTimeout: ReturnType<typeof setTimeout> | undefined;
 	const selectedColor = $derived(PLAYER_COLOR_PRESETS.find(preset => preset.id === color) ?? PLAYER_COLOR_PRESETS[0]);
 	const canSubmit = $derived(isValidPlayerName(name) && !isLoading && !isSubmitting);
 
@@ -76,6 +79,7 @@
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
+		tapControl('continue');
 		if (!isValidPlayerName(name)) {
 			error = `Name must be ${MIN_PLAYER_NAME_LENGTH}-${MAX_PLAYER_NAME_LENGTH} characters.`;
 			return;
@@ -94,8 +98,30 @@
 	}
 
 	function randomizeIdentity() {
+		tapControl('dice');
 		color = randomPreset(PLAYER_COLOR_PRESETS).id;
 		icon = randomPreset(PLAYER_ICON_PRESETS).id;
+	}
+
+	function selectIcon(nextIcon: PlayerIconId) {
+		icon = nextIcon;
+		tapControl(`icon:${nextIcon}`);
+	}
+
+	function selectColor(nextColor: PlayerColorId) {
+		color = nextColor;
+		tapControl(`color:${nextColor}`);
+	}
+
+	function tapControl(target: string) {
+		if (tapTimeout) clearTimeout(tapTimeout);
+		tapTarget = null;
+		requestAnimationFrame(() => {
+			tapTarget = target;
+			tapTimeout = setTimeout(() => {
+				if (tapTarget === target) tapTarget = null;
+			}, 420);
+		});
 	}
 
 	function randomPreset<T>(items: readonly T[]): T {
@@ -108,6 +134,10 @@
 </svelte:head>
 
 <section class="setup-screen" style={`--selected-color: ${selectedColor.value}`}>
+	<div class="setup-logo">
+		<PhantomLogo compact textOnly />
+	</div>
+
 	<div class="icon-picker" aria-label="Choose icon">
 		{#each PLAYER_ICON_PRESETS as preset}
 			{@const Icon = iconComponents[preset.id]}
@@ -115,8 +145,9 @@
 				aria-label={preset.label}
 				aria-pressed={icon === preset.id}
 				class:selected={icon === preset.id}
+				class:tapped={tapTarget === `icon:${preset.id}`}
 				disabled={isLoading || isSubmitting}
-				onclick={() => (icon = preset.id)}
+				onclick={() => selectIcon(preset.id)}
 				title={preset.label}
 				type="button"
 			>
@@ -128,6 +159,7 @@
 	<form class="setup-form" onsubmit={submit}>
 		<button
 			aria-label="Random icon and color"
+			class:tapped={tapTarget === 'dice'}
 			class="dice-button"
 			disabled={isLoading || isSubmitting}
 			onclick={randomizeIdentity}
@@ -145,7 +177,7 @@
 				disabled={isLoading || isSubmitting}
 				maxlength={MAX_PLAYER_NAME_LENGTH}
 				minlength={MIN_PLAYER_NAME_LENGTH}
-				placeholder="Name"
+				placeholder="Who are you?"
 				spellcheck="false"
 				type="text"
 				bind:value={name}
@@ -154,6 +186,7 @@
 
 		<button
 			aria-label="Continue to lobby"
+			class:tapped={tapTarget === 'continue'}
 			class="continue-button"
 			disabled={!canSubmit}
 			title="Continue to lobby"
@@ -169,8 +202,9 @@
 				aria-label={preset.label}
 				aria-pressed={color === preset.id}
 				class:selected={color === preset.id}
+				class:tapped={tapTarget === `color:${preset.id}`}
 				disabled={isLoading || isSubmitting}
-				onclick={() => (color = preset.id)}
+				onclick={() => selectColor(preset.id)}
 				style={`--swatch: ${preset.value}`}
 				title={preset.label}
 				type="button"
@@ -185,20 +219,36 @@
 
 <style>
 	.setup-screen {
+		--picker-gap: clamp(0.38rem, 1.5vw, 0.55rem);
+		--picker-size: clamp(2.45rem, 10.8vw, 3.5rem);
 		position: relative;
 		z-index: 1;
 		display: grid;
 		justify-items: center;
-		gap: clamp(1rem, 3vw, 1.45rem);
-		width: min(100%, 35rem);
+		gap: clamp(0.9rem, 2.6vw, 1.35rem);
+		width: min(100%, 36rem);
 		padding: 1rem;
+	}
+
+	.setup-logo {
+		display: flex;
+		justify-content: center;
+		width: 100%;
+		margin-bottom: clamp(0.1rem, 1.2vw, 0.4rem);
+		filter: drop-shadow(0 0.8rem 1.4rem color-mix(in oklab, black 34%, transparent));
+	}
+
+	.setup-logo :global(.phantom-logo) {
+		width: fit-content;
+		max-width: 100%;
 	}
 
 	.icon-picker {
 		display: grid;
-		grid-template-columns: repeat(6, minmax(0, 1fr));
-		gap: 0.55rem;
-		width: min(100%, 25rem);
+		grid-template-columns: repeat(6, var(--picker-size));
+		justify-content: center;
+		gap: var(--picker-gap);
+		width: min(100%, calc(var(--picker-size) * 6 + var(--picker-gap) * 5));
 	}
 
 	.icon-picker button,
@@ -207,10 +257,14 @@
 	.continue-button {
 		display: inline-grid;
 		place-items: center;
+		position: relative;
+		width: var(--picker-size);
+		height: var(--picker-size);
 		border: 1px solid color-mix(in oklab, var(--app-border) 70%, transparent);
 		background: color-mix(in oklab, var(--app-panel) 62%, transparent);
 		color: var(--app-muted);
 		cursor: pointer;
+		overflow: visible;
 		transition:
 			background 180ms ease,
 			border-color 180ms ease,
@@ -219,8 +273,20 @@
 			transform 180ms ease;
 	}
 
+	.icon-picker button::after,
+	.color-picker button::after,
+	.dice-button::after,
+	.continue-button::after {
+		position: absolute;
+		inset: -0.28rem;
+		border: 1px solid currentColor;
+		border-radius: inherit;
+		opacity: 0;
+		pointer-events: none;
+		content: '';
+	}
+
 	.icon-picker button {
-		aspect-ratio: 1;
 		border-radius: 999px;
 	}
 
@@ -228,6 +294,27 @@
 	.dice-button:hover {
 		color: var(--app-text);
 		transform: translateY(-2px);
+	}
+
+	.icon-picker button:not(:disabled):active,
+	.color-picker button:not(:disabled):active,
+	.dice-button:not(:disabled):active,
+	.continue-button:not(:disabled):active {
+		transform: translateY(1px) scale(0.94);
+	}
+
+	.icon-picker button.tapped,
+	.color-picker button.tapped,
+	.dice-button.tapped,
+	.continue-button.tapped {
+		animation: setup-control-tap 420ms cubic-bezier(0.16, 1, 0.3, 1);
+	}
+
+	.icon-picker button.tapped::after,
+	.color-picker button.tapped::after,
+	.dice-button.tapped::after,
+	.continue-button.tapped::after {
+		animation: setup-control-ring 420ms ease-out;
 	}
 
 	.icon-picker button.selected {
@@ -239,15 +326,14 @@
 
 	.setup-form {
 		display: grid;
-		grid-template-columns: 3.4rem minmax(0, 1fr) 3.8rem;
+		grid-template-columns: var(--picker-size) minmax(0, 1fr) var(--picker-size);
 		align-items: center;
-		gap: 0.65rem;
+		gap: var(--picker-gap);
 		width: min(100%, 34rem);
 	}
 
 	.dice-button,
 	.continue-button {
-		aspect-ratio: 1;
 		border-radius: 0.5rem;
 	}
 
@@ -266,7 +352,7 @@
 			inset 0 0 0 1px color-mix(in oklab, white 6%, transparent);
 		color: var(--app-text);
 		font: inherit;
-		font-size: clamp(1.65rem, 8vw, 2.45rem);
+		font-size: clamp(1.35rem, 6.8vw, 2.35rem);
 		font-weight: 900;
 		letter-spacing: 0;
 		line-height: 1;
@@ -277,6 +363,7 @@
 
 	input::placeholder {
 		color: color-mix(in oklab, var(--app-muted) 68%, transparent);
+		font-size: clamp(1.15rem, 5.6vw, 1.95rem);
 		text-transform: none;
 	}
 
@@ -309,13 +396,13 @@
 
 	.color-picker {
 		display: grid;
-		grid-template-columns: repeat(12, minmax(0, 1fr));
-		gap: 0.38rem;
-		width: min(100%, 28rem);
+		grid-template-columns: repeat(6, var(--picker-size));
+		justify-content: center;
+		gap: var(--picker-gap);
+		width: min(100%, calc(var(--picker-size) * 6 + var(--picker-gap) * 5));
 	}
 
 	.color-picker button {
-		aspect-ratio: 1;
 		border-radius: 999px;
 		background:
 			radial-gradient(circle at 32% 26%, color-mix(in oklab, var(--swatch) 84%, white), var(--swatch) 58%),
@@ -353,25 +440,40 @@
 		white-space: nowrap;
 	}
 
-	@media (max-width: 460px) {
-		.icon-picker {
-			grid-template-columns: repeat(4, minmax(0, 1fr));
-			width: min(100%, 18rem);
+	@keyframes setup-control-tap {
+		0% {
+			transform: translateY(1px) scale(0.94) rotate(-1deg);
 		}
 
+		48% {
+			transform: translateY(-3px) scale(1.08) rotate(1.5deg);
+		}
+
+		100% {
+			transform: translateY(0) scale(1) rotate(0);
+		}
+	}
+
+	@keyframes setup-control-ring {
+		0% {
+			opacity: 0.5;
+			transform: scale(0.76);
+		}
+
+		100% {
+			opacity: 0;
+			transform: scale(1.34);
+		}
+	}
+
+	@media (max-width: 460px) {
 		.setup-form {
-			grid-template-columns: 3rem minmax(0, 1fr) 3.25rem;
 			gap: 0.45rem;
 		}
 
 		input {
 			min-height: 3.55rem;
 			padding-inline: 0.65rem;
-		}
-
-		.color-picker {
-			grid-template-columns: repeat(6, minmax(0, 1fr));
-			width: min(100%, 16rem);
 		}
 	}
 </style>
