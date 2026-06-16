@@ -3,6 +3,7 @@
 	import InkButton from '$lib/InkButton.svelte';
 	import PhantomLogo from '$lib/PhantomLogo.svelte';
 	import { goto, onNavigate } from '$app/navigation';
+	import { page } from '$app/state';
 	import { loadStoredUser } from '$lib/api';
 	import { LS, storageKeys } from '$lib/storage';
 	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
@@ -29,13 +30,12 @@
 	});
 
 	let theme = $state<Theme>(LS.get(storageKeys.darkMode) ? 'dark' : 'light');
-	let activePath = $state(typeof location === 'undefined' ? '/' : location.pathname);
 	let supportsViewTransitions = $state(false);
 	let isViewTransitioning = $state(false);
-	let isProfileChecking = $state(browser && !isPublicPath(typeof location === 'undefined' ? '/' : location.pathname));
 	let manualViewTransition = false;
 	let profileCheckId = 0;
-	const isBareScreen = $derived(activePath === '/' || activePath === '/setup' || isProfileChecking);
+	const activePath = $derived(page.url.pathname);
+	const isBareScreen = $derived(activePath === '/' || activePath === '/setup');
 
 	onNavigate(navigation => {
 		if (!browser || !supportsViewTransitions || manualViewTransition) return;
@@ -61,12 +61,6 @@
 
 	onMount(() => {
 		supportsViewTransitions = Boolean(document.startViewTransition) && !prefersReducedMotion();
-		const updatePath = () => {
-			activePath = window.location.pathname;
-			void checkProfileForPath(activePath);
-		};
-		const pushState = history.pushState;
-		const replaceState = history.replaceState;
 		const handleLinkClick = (event: MouseEvent) => {
 			const anchor = getAnchor(event.target);
 			if (!anchor || !shouldHandleLink(event, anchor)) return;
@@ -75,24 +69,15 @@
 			void navigateWithViewTransition(anchor.href);
 		};
 
-		history.pushState = function pushStateAndUpdate(...args) {
-			pushState.apply(this, args);
-			updatePath();
-		};
-		history.replaceState = function replaceStateAndUpdate(...args) {
-			replaceState.apply(this, args);
-			updatePath();
-		};
 		document.addEventListener('click', handleLinkClick, true);
-		window.addEventListener('popstate', updatePath);
-		void checkProfileForPath(window.location.pathname);
 
 		return () => {
-			history.pushState = pushState;
-			history.replaceState = replaceState;
 			document.removeEventListener('click', handleLinkClick, true);
-			window.removeEventListener('popstate', updatePath);
 		};
+	});
+
+	$effect(() => {
+		void checkProfileForPath(activePath);
 	});
 
 	function isActive(href: string): boolean {
@@ -108,13 +93,11 @@
 	}
 
 	async function checkProfileForPath(path: string) {
-		if (!browser || isPublicPath(path)) {
-			isProfileChecking = false;
-			return;
-		}
+		if (!browser) return;
 
 		const checkId = ++profileCheckId;
-		isProfileChecking = true;
+		if (isPublicPath(path)) return;
+
 		try {
 			const user = await loadStoredUser();
 			if (checkId !== profileCheckId) return;
@@ -125,10 +108,6 @@
 		} catch {
 			if (checkId === profileCheckId) {
 				await goto('/setup', { noScroll: true });
-			}
-		} finally {
-			if (checkId === profileCheckId) {
-				isProfileChecking = false;
 			}
 		}
 	}
@@ -153,7 +132,7 @@
 	}
 
 	async function navigateWithViewTransition(href: string) {
-		const url = new URL(href);
+		const url = await resolveNavigationUrl(new URL(href));
 		const next = `${url.pathname}${url.search}${url.hash}`;
 
 		manualViewTransition = true;
@@ -168,6 +147,17 @@
 			manualViewTransition = false;
 			endViewTransition();
 		}
+	}
+
+	async function resolveNavigationUrl(url: URL): Promise<URL> {
+		if (isPublicPath(url.pathname)) return url;
+
+		try {
+			const user = await loadStoredUser();
+			if (isCompleteUserProfile(user)) return url;
+		} catch {}
+
+		return new URL('/setup', window.location.origin);
 	}
 
 	function beginViewTransition(fromPath?: string, toPath?: string) {
