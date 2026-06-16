@@ -52,7 +52,6 @@ export type BackgroundConfig = {
 	glyphOpacity: [number, number];
 	spawnMs: [number, number];
 	naturalDecayMs: [number, number];
-	spinDelay: [number, number];
 	tapPuffCount: number;
 	tapPuffIntensity: number;
 	tapPuffTtlScale: number;
@@ -112,7 +111,6 @@ export type RangeConfigKey =
 	| 'glyphOpacity'
 	| 'spawnMs'
 	| 'naturalDecayMs'
-	| 'spinDelay'
 	| 'smokeDistance'
 	| 'smokeScale'
 	| 'smokeTtlMs'
@@ -207,7 +205,6 @@ export const rangeConfigFields = [
 	{ key: 'glyphOpacity', label: 'glyphOpacity', min: 0.02, max: 1, step: 0.01 },
 	{ key: 'spawnMs', label: 'spawnMs', min: 50, max: 5000, step: 50 },
 	{ key: 'naturalDecayMs', label: 'naturalDecayMs', min: 30, max: 2000, step: 10 },
-	{ key: 'spinDelay', label: 'spinDelay', min: -60000, max: 0, step: 1000 },
 	{ key: 'smokeDistance', label: 'smokeDistance', min: 0, max: 120, step: 1 },
 	{ key: 'smokeScale', label: 'smokeScale', min: 0.05, max: 3, step: 0.01 },
 	{ key: 'smokeTtlMs', label: 'smokeTtlMs', min: 100, max: 4000, step: 50 },
@@ -387,7 +384,6 @@ export function createDefaultBackgroundConfig(): BackgroundConfig {
 		glyphOpacity: [0.16, 0.46],
 		spawnMs: [900, 1900],
 		naturalDecayMs: [120, 220],
-		spinDelay: [-20000, 0],
 		tapPuffCount: 18,
 		tapPuffIntensity: 1.35,
 		tapPuffTtlScale: 0.46,

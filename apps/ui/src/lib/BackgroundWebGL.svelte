@@ -17,6 +17,7 @@
 		glyphSize: WebGLUniformLocation | null;
 		time: WebGLUniformLocation | null;
 		displayAngle: WebGLUniformLocation | null;
+		spinStartedAt: WebGLUniformLocation | null;
 		spinEnabled: WebGLUniformLocation | null;
 		spinMultiplier: WebGLUniformLocation | null;
 		color: WebGLUniformLocation | null;
@@ -333,7 +334,7 @@
 		data[offset + 7] = uv[3];
 		data[offset + 8] = cell.scale;
 		data[offset + 9] = spinSpeed;
-		data[offset + 10] = cell.spinDelay * spinSpeed;
+		data[offset + 10] = 0;
 		data[offset + 11] = 0;
 		data[offset + 12] = cell.spawnStartedAt;
 		data[offset + 13] = cell.spawnMs;
@@ -366,6 +367,7 @@
 		gl.uniform1f(glyphProgram.glyphSize, backgroundState.config.glyphBaseSize);
 		gl.uniform1f(glyphProgram.time, now);
 		gl.uniform1f(glyphProgram.displayAngle, engine.direction.displayAngle);
+		gl.uniform1f(glyphProgram.spinStartedAt, engine.direction.spinStartedAt);
 		gl.uniform1f(glyphProgram.spinEnabled, engine.direction.phase === 'cruise' ? 1 : 0);
 		gl.uniform1f(glyphProgram.spinMultiplier, backgroundState.config.spinSpeedMultiplier);
 		gl.uniform4f(glyphProgram.color, color[0], color[1], color[2], color[3]);
@@ -482,6 +484,7 @@
 				uniform float u_glyphSize;
 				uniform float u_time;
 				uniform float u_displayAngle;
+				uniform float u_spinStartedAt;
 				uniform float u_spinEnabled;
 				uniform float u_spinMultiplier;
 				varying vec2 v_uv;
@@ -509,7 +512,9 @@
 					}
 
 					float size = u_glyphSize * max(0.8, scale) * u_pixelRatio * step(0.001, alpha);
-					float rotation = u_displayAngle + u_spinEnabled * u_spinMultiplier * (u_time * a_style.y + a_style.z);
+					float rotation =
+						u_displayAngle +
+						u_spinEnabled * u_spinMultiplier * (max(0.0, u_time - u_spinStartedAt) * a_style.y + a_style.z);
 					float cosRotation = cos(rotation);
 					float sinRotation = sin(rotation);
 					vec2 corner = vec2(
@@ -547,6 +552,7 @@
 			glyphSize: gl.getUniformLocation(program, 'u_glyphSize'),
 			time: gl.getUniformLocation(program, 'u_time'),
 			displayAngle: gl.getUniformLocation(program, 'u_displayAngle'),
+			spinStartedAt: gl.getUniformLocation(program, 'u_spinStartedAt'),
 			spinEnabled: gl.getUniformLocation(program, 'u_spinEnabled'),
 			spinMultiplier: gl.getUniformLocation(program, 'u_spinMultiplier'),
 			color: gl.getUniformLocation(program, 'u_color'),

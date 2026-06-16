@@ -15,7 +15,6 @@ export type EngineCell = {
 	scale: number;
 	spinDuration: number;
 	spinDirection: 1 | -1;
-	spinDelay: number;
 	status: EngineCellStatus;
 	spawnMs: number;
 	decayMs: number;
@@ -69,6 +68,7 @@ type DirectionState = {
 	targetAngle: number;
 	speed: number;
 	speedFrom: number;
+	spinStartedAt: number;
 	phase: DirectionPhase;
 	phaseStartedAt: number;
 	phaseDuration: number;
@@ -368,7 +368,6 @@ export class LetterGridEngine {
 			scale: this.glyphScale(char),
 			spinDuration: randomBetween(18000, 44000),
 			spinDirection: Math.random() < 0.5 ? -1 : 1,
-			spinDelay: randomRange(this.config.spinDelay),
 			status: seedAlive ? 'alive' : 'dead',
 			spawnMs: randomRange(this.config.spawnMs),
 			decayMs: randomRange(this.config.naturalDecayMs),
@@ -431,7 +430,6 @@ export class LetterGridEngine {
 		cell.scale = this.glyphScale(cell.char);
 		cell.spinDuration = randomBetween(18000, 44000);
 		cell.spinDirection = Math.random() < 0.5 ? -1 : 1;
-		cell.spinDelay = randomRange(this.config.spinDelay);
 		cell.spawnMs = randomRange(this.config.spawnMs);
 		cell.decayMs = randomRange(this.config.naturalDecayMs);
 		cell.spawnStartedAt = now;
@@ -505,6 +503,7 @@ export class LetterGridEngine {
 			if (progress >= 1) {
 				this.direction.speed = this.config.targetSpeed;
 				this.direction.phase = 'cruise';
+				this.direction.spinStartedAt = now;
 				this.direction.nextChangeAt = now + randomRange(this.config.directionChangeDelay);
 			}
 		}
@@ -640,6 +639,7 @@ export class LetterGridEngine {
 			targetAngle: 0,
 			speed: this.config.targetSpeed,
 			speedFrom: this.config.targetSpeed,
+			spinStartedAt: now,
 			phase: 'cruise',
 			phaseStartedAt: now,
 			phaseDuration: 0,
@@ -841,7 +841,9 @@ export class LetterGridEngine {
 
 	private cellSpin(cell: EngineCell, now: number): number {
 		if (this.direction.phase !== 'cruise') return 0;
-		return (((now + cell.spinDelay) / cell.spinDuration) * Math.PI * 2 * cell.spinDirection) % (Math.PI * 2);
+		return (
+			(((now - this.direction.spinStartedAt) / cell.spinDuration) * Math.PI * 2 * cell.spinDirection) % (Math.PI * 2)
+		);
 	}
 }
 
