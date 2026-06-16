@@ -3,6 +3,8 @@ declare global {
 }
 
 declare module '$app/navigation' {
+	export function beforeNavigate(callback: (navigation: import('@sveltejs/kit').BeforeNavigate) => void): void;
+
 	export function goto(
 		url: string | URL,
 		opts?: {

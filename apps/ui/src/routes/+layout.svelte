@@ -2,7 +2,7 @@
 	import BackgroundHost from '$lib/BackgroundHost.svelte';
 	import PhantomLogo from '$lib/PhantomLogo.svelte';
 	import PlayerAvatar from '$lib/PlayerAvatar.svelte';
-	import { goto, onNavigate } from '$app/navigation';
+	import { beforeNavigate, goto, onNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { leaveRoomForStoredUser, loadStoredUser } from '$lib/api';
 	import { parseRoomCode } from '$lib/roomCodes';
@@ -61,6 +61,16 @@
 	const displayedPlayerColor = $derived(
 		PLAYER_COLOR_PRESETS.find(preset => preset.id === playerColor) ?? PLAYER_COLOR_PRESETS[0],
 	);
+
+	beforeNavigate(navigation => {
+		if (!browser || navigation.type === 'popstate' || navigation.willUnload || !navigation.to) return;
+
+		const nextUrl = withPersistentDebugId(navigation.to.url);
+		if (sameUrl(nextUrl, navigation.to.url)) return;
+
+		navigation.cancel();
+		void goto(`${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`, { noScroll: true });
+	});
 
 	onNavigate(navigation => {
 		if (!browser || !supportsViewTransitions || manualViewTransition) return;
@@ -218,12 +228,13 @@
 		if (url.origin !== window.location.origin) return false;
 
 		const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-		const next = `${url.pathname}${url.search}${url.hash}`;
+		const nextUrl = withPersistentDebugId(url);
+		const next = `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`;
 		return current !== next;
 	}
 
 	async function navigateWithViewTransition(href: string) {
-		const url = await resolveNavigationUrl(new URL(href));
+		const url = await resolveNavigationUrl(withPersistentDebugId(new URL(href)));
 		const next = `${url.pathname}${url.search}${url.hash}`;
 
 		manualViewTransition = true;
@@ -258,6 +269,25 @@
 			setupUrl.searchParams.set('returnTo', returnPath);
 		}
 		return setupUrl;
+	}
+
+	function withPersistentDebugId(url: URL): URL {
+		if (!browser || url.origin !== window.location.origin || hasDebugId(url)) return url;
+
+		const debugId = page.url.searchParams.get('DEBUG_ID') ?? page.url.searchParams.get('debug_id');
+		if (!debugId) return url;
+
+		const next = new URL(url);
+		next.searchParams.set('DEBUG_ID', debugId);
+		return next;
+	}
+
+	function hasDebugId(url: URL): boolean {
+		return url.searchParams.has('DEBUG_ID') || url.searchParams.has('debug_id');
+	}
+
+	function sameUrl(a: URL, b: URL): boolean {
+		return a.pathname === b.pathname && a.search === b.search && a.hash === b.hash;
 	}
 
 	function beginViewTransition(fromPath?: string, toPath?: string) {
