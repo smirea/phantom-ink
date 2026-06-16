@@ -81,7 +81,15 @@
 		let atlas: Atlas | undefined;
 		let colors = readThemeColors();
 		let smokeData = new Float32Array(maxSmokeBursts * smokeInstanceFloats);
+		let resizeFrame = 0;
 		const resize = () => resizeCanvas(canvas!, gl);
+		const scheduleResize = () => {
+			if (resizeFrame) return;
+			resizeFrame = window.requestAnimationFrame(() => {
+				resizeFrame = 0;
+				resize();
+			});
+		};
 		const themeObserver = new MutationObserver(() => (colors = readThemeColors()));
 		const stopActions = backgroundState.onAction(action => {
 			engine.handleAction(action, window.innerWidth, window.innerHeight, engineNow || performance.now());
@@ -90,7 +98,7 @@
 				atlas = undefined;
 				instanceUpload.capacity = 0;
 			}
-			if (action.type === 'config' && action.key === 'renderPixelRatio') resize();
+			if (action.type === 'config' && action.key === 'renderPixelRatio') scheduleResize();
 		});
 		const shouldRun = () => document.visibilityState === 'visible' && !pausedByBlur;
 		const startLoop = () => {
@@ -116,7 +124,7 @@
 		};
 
 		resize();
-		window.addEventListener('resize', resize);
+		window.addEventListener('resize', scheduleResize);
 		window.addEventListener('blur', handleBlur);
 		window.addEventListener('focus', handleFocus);
 		document.addEventListener('visibilitychange', handleVisibility);
@@ -178,8 +186,9 @@
 		return () => {
 			stopActions();
 			themeObserver.disconnect();
+			if (resizeFrame) window.cancelAnimationFrame(resizeFrame);
 			stopLoop();
-			window.removeEventListener('resize', resize);
+			window.removeEventListener('resize', scheduleResize);
 			window.removeEventListener('blur', handleBlur);
 			window.removeEventListener('focus', handleFocus);
 			document.removeEventListener('visibilitychange', handleVisibility);
@@ -194,12 +203,13 @@
 
 	function resizeCanvas(target: HTMLCanvasElement, gl: WebGLRenderingContext): void {
 		const ratio = currentPixelRatio();
-		const width = window.innerWidth;
-		const height = window.innerHeight;
-		target.width = Math.ceil(width * ratio);
-		target.height = Math.ceil(height * ratio);
-		target.style.width = `${width}px`;
-		target.style.height = `${height}px`;
+		const rect = target.getBoundingClientRect();
+		const width = Math.max(1, Math.ceil(rect.width || window.innerWidth));
+		const height = Math.max(1, Math.ceil(rect.height || window.innerHeight));
+		const pixelWidth = Math.ceil(width * ratio);
+		const pixelHeight = Math.ceil(height * ratio);
+		if (target.width !== pixelWidth) target.width = pixelWidth;
+		if (target.height !== pixelHeight) target.height = pixelHeight;
 		gl.viewport(0, 0, target.width, target.height);
 	}
 
@@ -349,7 +359,7 @@
 		setupGlyphAttributes(gl, instanced, quadBuffer, instanceBuffer);
 		gl.activeTexture(gl.TEXTURE0);
 		gl.bindTexture(gl.TEXTURE_2D, atlas.texture);
-		gl.uniform2f(glyphProgram.resolution, window.innerWidth * ratio, window.innerHeight * ratio);
+		gl.uniform2f(glyphProgram.resolution, gl.drawingBufferWidth, gl.drawingBufferHeight);
 		gl.uniform1f(glyphProgram.pixelRatio, ratio);
 		gl.uniform2f(glyphProgram.gridShift, engine.gridShiftX, engine.gridShiftY);
 		gl.uniform1f(glyphProgram.spacing, engine.spacing.current);
@@ -399,7 +409,7 @@
 		gl.bufferData(gl.ARRAY_BUFFER, smokeData.subarray(0, count * smokeInstanceFloats), gl.DYNAMIC_DRAW);
 		gl.useProgram(smokeProgram.program);
 		setupSmokeAttributes(gl, instanced, quadBuffer, smokeBuffer);
-		gl.uniform2f(smokeProgram.resolution, window.innerWidth * ratio, window.innerHeight * ratio);
+		gl.uniform2f(smokeProgram.resolution, gl.drawingBufferWidth, gl.drawingBufferHeight);
 		gl.uniform1f(smokeProgram.pixelRatio, ratio);
 		gl.uniform2f(smokeProgram.gridShift, engine.gridShiftX, engine.gridShiftY);
 		gl.uniform1f(smokeProgram.glyphSize, backgroundState.config.glyphBaseSize);
