@@ -2,12 +2,20 @@
 	import BackgroundHost from '$lib/BackgroundHost.svelte';
 	import InkButton from '$lib/InkButton.svelte';
 	import PhantomLogo from '$lib/PhantomLogo.svelte';
+	import PlayerAvatar from '$lib/PlayerAvatar.svelte';
 	import { goto, onNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { loadStoredUser } from '$lib/api';
 	import { LS, storageKeys } from '$lib/storage';
 	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
-	import { isCompleteUserProfile } from '@repo/shared/onlineGame';
+	import {
+		DEFAULT_PLAYER_COLOR,
+		DEFAULT_PLAYER_ICON,
+		PLAYER_COLOR_PRESETS,
+		isCompleteUserProfile,
+		type PlayerColorId,
+		type PlayerIconId,
+	} from '@repo/shared/onlineGame';
 	import { onMount } from 'svelte';
 	import './layout.css';
 
@@ -30,12 +38,21 @@
 	});
 
 	let theme = $state<Theme>(LS.get(storageKeys.darkMode) ? 'dark' : 'light');
+	let playerName = $state(LS.get(storageKeys.playerName) ?? '');
+	let playerColor = $state<PlayerColorId>(LS.get(storageKeys.playerColor, DEFAULT_PLAYER_COLOR));
+	let playerIcon = $state<PlayerIconId>(LS.get(storageKeys.playerIcon, DEFAULT_PLAYER_ICON));
 	let supportsViewTransitions = $state(false);
 	let isViewTransitioning = $state(false);
 	let manualViewTransition = false;
 	let profileCheckId = 0;
 	const activePath = $derived(page.url.pathname);
+	const activeRoute = $derived(`${page.url.pathname}${page.url.search}${page.url.hash}`);
 	const isBareScreen = $derived(activePath === '/' || activePath === '/setup');
+	const setupHref = $derived(`/setup?returnTo=${encodeURIComponent(activeRoute)}`);
+	const displayedPlayerName = $derived(playerName.trim() || 'Unknown');
+	const displayedPlayerColor = $derived(
+		PLAYER_COLOR_PRESETS.find(preset => preset.id === playerColor) ?? PLAYER_COLOR_PRESETS[0],
+	);
 
 	onNavigate(navigation => {
 		if (!browser || !supportsViewTransitions || manualViewTransition) return;
@@ -61,6 +78,8 @@
 
 	onMount(() => {
 		supportsViewTransitions = Boolean(document.startViewTransition) && !prefersReducedMotion();
+		syncPlayerFromStorage();
+		const stopStorage = LS.onChange(syncPlayerFromStorage);
 		const handleLinkClick = (event: MouseEvent) => {
 			const anchor = getAnchor(event.target);
 			if (!anchor || !shouldHandleLink(event, anchor)) return;
@@ -72,12 +91,13 @@
 		document.addEventListener('click', handleLinkClick, true);
 
 		return () => {
+			stopStorage();
 			document.removeEventListener('click', handleLinkClick, true);
 		};
 	});
 
 	$effect(() => {
-		void checkProfileForPath(activePath);
+		void checkProfileForPath(page.url);
 	});
 
 	function isActive(href: string): boolean {
@@ -92,9 +112,10 @@
 		return path === '/' || path === '/setup';
 	}
 
-	async function checkProfileForPath(path: string) {
+	async function checkProfileForPath(url: URL) {
 		if (!browser) return;
 
+		const path = url.pathname;
 		const checkId = ++profileCheckId;
 		if (isPublicPath(path)) return;
 
@@ -102,14 +123,22 @@
 			const user = await loadStoredUser();
 			if (checkId !== profileCheckId) return;
 			if (!isCompleteUserProfile(user)) {
-				await goto('/setup', { noScroll: true });
+				const setupUrl = setupUrlForReturn(url);
+				await goto(`${setupUrl.pathname}${setupUrl.search}${setupUrl.hash}`, { noScroll: true });
 				return;
 			}
 		} catch {
 			if (checkId === profileCheckId) {
-				await goto('/setup', { noScroll: true });
+				const setupUrl = setupUrlForReturn(url);
+				await goto(`${setupUrl.pathname}${setupUrl.search}${setupUrl.hash}`, { noScroll: true });
 			}
 		}
+	}
+
+	function syncPlayerFromStorage() {
+		playerName = LS.get(storageKeys.playerName) ?? '';
+		playerColor = LS.get(storageKeys.playerColor, DEFAULT_PLAYER_COLOR);
+		playerIcon = LS.get(storageKeys.playerIcon, DEFAULT_PLAYER_ICON);
 	}
 
 	function getAnchor(target: EventTarget | null): HTMLAnchorElement | null {
@@ -157,7 +186,16 @@
 			if (isCompleteUserProfile(user)) return url;
 		} catch {}
 
-		return new URL('/setup', window.location.origin);
+		return setupUrlForReturn(url);
+	}
+
+	function setupUrlForReturn(returnUrl: URL): URL {
+		const setupUrl = new URL('/setup', window.location.origin);
+		const returnPath = `${returnUrl.pathname}${returnUrl.search}${returnUrl.hash}`;
+		if (returnPath !== '/' && !returnUrl.pathname.startsWith('/setup')) {
+			setupUrl.searchParams.set('returnTo', returnPath);
+		}
+		return setupUrl;
 	}
 
 	function beginViewTransition(fromPath?: string, toPath?: string) {
@@ -182,12 +220,22 @@
 		{:else}
 			<div class="screen-shell">
 				<header class="screen-top">
-					<a class="top-logo-link" href="/" aria-label="Phantom Ink start">
+					<a class="top-logo-link" href={setupHref} aria-label="Edit profile">
 						<PhantomLogo compact textOnly />
 					</a>
-					<InkButton size="sm" onclick={() => (theme = theme === 'dark' ? 'light' : 'dark')}>
-						{theme === 'dark' ? 'Light' : 'Dark'}
-					</InkButton>
+					<div class="screen-actions">
+						<InkButton size="sm" onclick={() => (theme = theme === 'dark' ? 'light' : 'dark')}>
+							{theme === 'dark' ? 'Light' : 'Dark'}
+						</InkButton>
+						<a class="user-profile-link" href={setupHref} aria-label="Edit profile for {displayedPlayerName}">
+							<span class="user-name">{displayedPlayerName}</span>
+							<PlayerAvatar
+								color={displayedPlayerColor.value}
+								icon={playerIcon}
+								label={`${displayedPlayerName} avatar`}
+							/>
+						</a>
+					</div>
 				</header>
 
 				<section class="content-card">

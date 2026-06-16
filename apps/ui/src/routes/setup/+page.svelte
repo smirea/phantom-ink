@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { ensureUser, loadStoredUser } from '$lib/api';
 	import PhantomLogo from '$lib/PhantomLogo.svelte';
 	import { LS, storageKeys } from '$lib/storage';
@@ -56,6 +57,7 @@
 	let tapTimeout: ReturnType<typeof setTimeout> | undefined;
 	const selectedColor = $derived(PLAYER_COLOR_PRESETS.find(preset => preset.id === color) ?? PLAYER_COLOR_PRESETS[0]);
 	const canSubmit = $derived(isValidPlayerName(name) && !isLoading && !isSubmitting);
+	const returnPath = $derived(getReturnPath(page.url.searchParams.get('returnTo')));
 
 	onMount(() => {
 		void loadProfile();
@@ -67,8 +69,9 @@
 		try {
 			const user = await loadStoredUser();
 			if (isCompleteUserProfile(user)) {
-				await goto('/lobby', { noScroll: true });
-				return;
+				name = user.name;
+				color = user.color;
+				icon = user.icon;
 			}
 		} catch {
 			error = null;
@@ -89,7 +92,7 @@
 		error = null;
 		try {
 			await ensureUser({ name, color, icon });
-			await goto('/lobby', { noScroll: true });
+			await goto(returnPath, { noScroll: true });
 		} catch (caught) {
 			error = caught instanceof Error ? caught.message : 'Unable to save player.';
 		} finally {
@@ -126,6 +129,18 @@
 
 	function randomPreset<T>(items: readonly T[]): T {
 		return items[Math.floor(Math.random() * items.length)] ?? items[0];
+	}
+
+	function getReturnPath(value: string | null): string {
+		if (!value || !value.startsWith('/') || value.startsWith('//')) return '/lobby';
+
+		try {
+			const url = new URL(value, 'http://phantom-ink.localhost');
+			if (url.pathname === '/' || url.pathname.startsWith('/setup')) return '/lobby';
+			return `${url.pathname}${url.search}${url.hash}`;
+		} catch {
+			return '/lobby';
+		}
 	}
 </script>
 
