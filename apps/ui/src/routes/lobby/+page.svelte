@@ -166,7 +166,7 @@
 						{/if}
 					</div>
 
-					<div class:expanded class:truncated={!expanded && room.players.length > 4} class="player-list">
+					<div class:expanded class="player-list">
 						{#each room.players as player (player.id)}
 							<span class="player-pill">
 								<PlayerAvatar color={colorValue(player.color)} icon={player.icon} label={`${player.name} avatar`} />
@@ -206,9 +206,6 @@
 		background:
 			linear-gradient(180deg, color-mix(in oklab, var(--app-accent) 86%, white 14%), var(--app-accent)),
 			var(--app-accent);
-		box-shadow:
-			0 0.9rem 2rem color-mix(in oklab, var(--app-accent) 26%, transparent),
-			inset 0 0 0 1px color-mix(in oklab, white 18%, transparent);
 		color: var(--app-accent-ink);
 		cursor: pointer;
 		font: inherit;
@@ -218,15 +215,11 @@
 		line-height: 1;
 		padding: 0.85rem 1rem;
 		transition:
-			box-shadow 200ms ease,
 			filter 200ms ease,
 			transform 180ms ease;
 	}
 
 	.new-seance-button:hover:not(:disabled) {
-		box-shadow:
-			0 1.15rem 2.4rem color-mix(in oklab, var(--app-accent) 32%, transparent),
-			inset 0 0 0 1px color-mix(in oklab, white 22%, transparent);
 		transform: translateY(-2px);
 	}
 
@@ -255,15 +248,11 @@
 		border: 1px solid color-mix(in oklab, var(--app-border) 78%, transparent);
 		border-radius: 0.5rem;
 		background: color-mix(in oklab, var(--app-input) 68%, transparent);
-		box-shadow:
-			0 0.7rem 1.6rem color-mix(in oklab, black 20%, transparent),
-			inset 0 0 0 1px color-mix(in oklab, white 5%, transparent);
 		cursor: pointer;
 		padding: 0.82rem 3rem 0.82rem 0.82rem;
 		transition:
 			background 180ms ease,
 			border-color 180ms ease,
-			box-shadow 180ms ease,
 			transform 180ms ease;
 	}
 
@@ -271,10 +260,6 @@
 	.lobby-row:focus-visible {
 		border-color: color-mix(in oklab, var(--app-accent) 58%, var(--app-border));
 		background: color-mix(in oklab, var(--app-highlight) 56%, var(--app-input));
-		box-shadow:
-			0 0.9rem 1.9rem color-mix(in oklab, black 24%, transparent),
-			0 0 1.1rem color-mix(in oklab, var(--app-accent) 14%, transparent),
-			inset 0 0 0 1px color-mix(in oklab, white 7%, transparent);
 		transform: translateY(-1px);
 	}
 
@@ -340,21 +325,6 @@
 		max-height: none;
 	}
 
-	.player-list.truncated::after {
-		position: absolute;
-		right: 0;
-		bottom: 0;
-		border-radius: 999px;
-		background:
-			linear-gradient(90deg, transparent, color-mix(in oklab, var(--app-input) 92%, var(--app-panel)) 34%),
-			color-mix(in oklab, var(--app-input) 92%, var(--app-panel));
-		color: var(--app-muted);
-		content: '...';
-		font-weight: 950;
-		letter-spacing: 0.04em;
-		padding: 0 0.18rem 0 1.6rem;
-	}
-
 	.player-pill {
 		display: inline-flex;
 		align-items: center;
@@ -363,7 +333,7 @@
 		max-width: 100%;
 		border: 1px solid color-mix(in oklab, var(--app-border) 58%, transparent);
 		border-radius: 999px;
-		background: color-mix(in oklab, var(--app-panel) 42%, transparent);
+		background: color-mix(in oklab, var(--app-panel) 56%, transparent);
 		color: var(--app-text);
 		font-size: 0.84rem;
 		font-weight: 850;
