@@ -1,5 +1,5 @@
 <script lang="ts">
-	import AnimatedBackground from '$lib/AnimatedBackground.svelte';
+	import BackgroundHost from '$lib/BackgroundHost.svelte';
 	import InkButton from '$lib/InkButton.svelte';
 	import PhantomLogo from '$lib/PhantomLogo.svelte';
 	import { getStored, setStored, storageKeys } from '$lib/storage';
@@ -64,7 +64,7 @@
 
 <QueryClientProvider client={queryClient}>
 	<div class="app-scene">
-		<AnimatedBackground />
+		<BackgroundHost />
 
 		<section class="content-card">
 			<header class="app-header">

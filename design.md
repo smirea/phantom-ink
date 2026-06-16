@@ -6,7 +6,19 @@ The palette is neutral ink, paper, muted brass, and restrained velvet purple. Pu
 
 ## Background Motion
 
-The background lives in `apps/ui/src/lib/AnimatedBackground.svelte` so the layout shell stays focused on app chrome. It renders a simple full-screen letter grid with configurable spacing, with the smallest spacing kept large enough that the field stays airy. The runtime keeps a fixed physical pool of grid cells and moves one `.letter-grid` container with a single transform instead of animating every letter position independently.
+The active background is owned by `apps/ui/src/lib/BackgroundHost.svelte` so the layout shell stays focused on app chrome. The host creates one shared `BackgroundState`, renders a fixed top-left selector, and passes that state into whichever renderer is active. `apps/ui/src/lib/BackgroundConfigPanel.svelte` owns the debug controls, and `apps/ui/src/lib/backgroundState.svelte.ts` owns the tunable config, selected renderer, debug API, action bus, and lightweight frame metrics.
+
+The current renderer options are:
+
+- `AnimatedBackground.svelte`: the existing Svelte/DOM virtualized ring-buffer implementation.
+- `BackgroundCanvas2D.svelte`: a single 2D canvas renderer.
+- `BackgroundWebGL.svelte`: a single WebGL renderer with a glyph/smoke texture atlas and shader-colored quads.
+- `BackgroundSvg.svelte`: an SVG renderer using text and circle nodes.
+- `BackgroundDomImperative.svelte`: direct DOM node reuse with imperative style updates, avoiding Svelte diffing in the animation loop.
+
+The non-Svelte renderers share `apps/ui/src/lib/letterGridEngine.ts`, which keeps the behavior aligned while letting each rendering strategy expose its own cost profile. `BackgroundNew.svelte` is intentionally not wired into the committed selector while it remains user-owned WIP.
+
+Each renderer displays a simple full-screen letter grid with configurable spacing, with the smallest spacing kept large enough that the field stays airy. The runtime keeps a fixed physical pool of grid cells and moves the grid continuously in the selected direction instead of rebuilding visible state.
 
 Each cell can be alive, spawning, dying, or empty. Cell life updates happen on a coarse tick rather than every frame, and the field should stabilize around roughly 70% alive cells: low density increases spawn pressure, high density increases natural decay pressure. Tapped letters disappear immediately in a stronger smoke puff; natural decay hides the letter quickly and renders its fainter smoke above the letter while following the same grid flow. Spawning, decay, smoke expansion, and individual letter spin are CSS animations attached to stable cells. A newly spawned glyph has a rare 2% chance to be one of `☺`, `☻`, or `☹` instead of a letter, and face glyphs always use the maximum letter scale.
 
