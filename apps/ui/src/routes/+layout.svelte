@@ -5,6 +5,7 @@
 	import { beforeNavigate, goto, onNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { leaveRoomForStoredUser, loadStoredUser } from '$lib/api';
+	import { playerColorPreset } from '$lib/playerPresentation';
 	import { parseRoomCode } from '$lib/roomCodes';
 	import { LS, storageKeys } from '$lib/storage';
 	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
@@ -15,7 +16,6 @@
 	import {
 		DEFAULT_PLAYER_COLOR,
 		DEFAULT_PLAYER_ICON,
-		PLAYER_COLOR_PRESETS,
 		isCompleteUserProfile,
 		type PlayerColorId,
 		type PlayerIconId,
@@ -53,9 +53,7 @@
 	const isRoomScreen = $derived(Boolean(activeRoomCode));
 	const setupHref = $derived(`/setup?returnTo=${encodeURIComponent(activeRoute)}`);
 	const displayedPlayerName = $derived(playerName.trim() || 'Unknown');
-	const displayedPlayerColor = $derived(
-		PLAYER_COLOR_PRESETS.find(preset => preset.id === playerColor) ?? PLAYER_COLOR_PRESETS[0],
-	);
+	const displayedPlayerColor = $derived(playerColorPreset(playerColor));
 
 	beforeNavigate(navigation => {
 		if (!browser || navigation.type === 'popstate' || navigation.willUnload || !navigation.to) return;

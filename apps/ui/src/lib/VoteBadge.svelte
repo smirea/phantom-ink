@@ -1,6 +1,7 @@
 <script lang="ts">
 	import PlayerAvatar from '$lib/PlayerAvatar.svelte';
-	import { PLAYER_COLOR_PRESETS, type RoomMemberView, type RoomVoteSummary } from '@repo/shared/onlineGame';
+	import { playerColorValue } from '$lib/playerPresentation';
+	import { type RoomMemberView, type RoomVoteSummary } from '@repo/shared/onlineGame';
 	import Check from '@lucide/svelte/icons/check';
 	import Minus from '@lucide/svelte/icons/minus';
 	import ScrollText from '@lucide/svelte/icons/scroll-text';
@@ -23,6 +24,7 @@
 	let popoverNode = $state<HTMLDivElement | null>(null);
 	let popoverStyle = $state('visibility: hidden;');
 	let flashTimer: ReturnType<typeof setTimeout> | undefined;
+	let flashFrame: number | undefined;
 
 	const currentVotes = $derived(summary?.currentVotes ?? 0);
 	const requiredVotes = $derived(summary?.requiredVotes ?? 0);
@@ -37,8 +39,10 @@
 		if (currentVotes === lastCount) return;
 		lastCount = currentVotes;
 		isFlashing = false;
+		if (flashFrame !== undefined) cancelAnimationFrame(flashFrame);
 		if (flashTimer) clearTimeout(flashTimer);
-		requestAnimationFrame(() => {
+		flashFrame = requestAnimationFrame(() => {
+			flashFrame = undefined;
 			isFlashing = true;
 			flashTimer = setTimeout(() => {
 				isFlashing = false;
@@ -62,6 +66,8 @@
 		window.addEventListener('scroll', handleViewportChange, true);
 
 		return () => {
+			if (flashFrame !== undefined) cancelAnimationFrame(flashFrame);
+			if (flashTimer) clearTimeout(flashTimer);
 			document.removeEventListener('click', handleDocumentClick, true);
 			window.removeEventListener('resize', handleViewportChange);
 			window.removeEventListener('scroll', handleViewportChange, true);
@@ -70,10 +76,6 @@
 
 	function memberForId(playerId: string): RoomMemberView | null {
 		return members.find(member => member.id === playerId) ?? null;
-	}
-
-	function colorValue(member: RoomMemberView): string {
-		return PLAYER_COLOR_PRESETS.find(preset => preset.id === member.color)?.value ?? PLAYER_COLOR_PRESETS[0].value;
 	}
 
 	async function toggle(event: MouseEvent) {
@@ -142,7 +144,7 @@
 					{#each voters as member (member.id)}
 						<div class="vote-person">
 							<Check class="yes" size={15} strokeWidth={2.6} />
-							<PlayerAvatar color={colorValue(member)} icon={member.icon} label={`${member.name} avatar`} />
+							<PlayerAvatar color={playerColorValue(member.color)} icon={member.icon} label={`${member.name} avatar`} />
 							<span>{member.name}</span>
 						</div>
 					{/each}
@@ -155,7 +157,7 @@
 					{#each missing as member (member.id)}
 						<div class="vote-person">
 							<Minus size={15} strokeWidth={2.6} />
-							<PlayerAvatar color={colorValue(member)} icon={member.icon} label={`${member.name} avatar`} />
+							<PlayerAvatar color={playerColorValue(member.color)} icon={member.icon} label={`${member.name} avatar`} />
 							<span>{member.name}</span>
 						</div>
 					{/each}

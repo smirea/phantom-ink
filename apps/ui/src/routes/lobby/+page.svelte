@@ -1,11 +1,12 @@
 <script lang="ts">
 	import PlayerAvatar from '$lib/PlayerAvatar.svelte';
 	import { getRoomDirectory, joinRoom } from '$lib/api';
+	import { playerColorValue } from '$lib/playerPresentation';
 	import { createRoomCode } from '$lib/roomCodes';
 	import { LS, storageKeys } from '$lib/storage';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { PLAYER_COLOR_PRESETS, type PlayerColorId, type RoomDirectoryListing } from '@repo/shared/onlineGame';
+	import { type RoomDirectoryListing } from '@repo/shared/onlineGame';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -104,10 +105,6 @@
 		return `/room/${code}${page.url.search}${page.url.hash}`;
 	}
 
-	function colorValue(color: PlayerColorId): string {
-		return PLAYER_COLOR_PRESETS.find(preset => preset.id === color)?.value ?? PLAYER_COLOR_PRESETS[0].value;
-	}
-
 	function isExpanded(code: string): boolean {
 		return expandedRooms.has(code);
 	}
@@ -164,6 +161,7 @@
 			if (node.scrollHeight > collapsedPlayerListHeight(node) + 1) next.add(code);
 		}
 		collapsibleRooms = next;
+		expandedRooms = new Set([...expandedRooms].filter(code => next.has(code)));
 	}
 
 	function collapsedPlayerListHeight(node: HTMLElement): number {
@@ -236,7 +234,11 @@
 					<div class:expanded class="player-list" use:trackPlayerList={room.code}>
 						{#each room.players as player (player.id)}
 							<span class="player-pill">
-								<PlayerAvatar color={colorValue(player.color)} icon={player.icon} label={`${player.name} avatar`} />
+								<PlayerAvatar
+									color={playerColorValue(player.color)}
+									icon={player.icon}
+									label={`${player.name} avatar`}
+								/>
 								<span>{player.name}</span>
 							</span>
 						{/each}

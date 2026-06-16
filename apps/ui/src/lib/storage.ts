@@ -1,4 +1,3 @@
-import type { PhantomInkGameState } from '@repo/shared/game';
 import {
 	DEFAULT_PLAYER_COLOR,
 	DEFAULT_PLAYER_ICON,
@@ -13,7 +12,6 @@ export const storageKeys = {
 	playerColor: 'player_color',
 	playerIcon: 'player_icon',
 	playerName: 'player_name',
-	savedState: 'saved_state',
 	serverClientKey: 'server_client_key',
 	serverUserId: 'server_user_id',
 } as const;
@@ -26,7 +24,6 @@ export interface StorageShape {
 	[storageKeys.playerColor]: PlayerColorId;
 	[storageKeys.playerIcon]: PlayerIconId;
 	[storageKeys.playerName]: string;
-	[storageKeys.savedState]: PhantomInkGameState | null;
 	[storageKeys.serverClientKey]: string | null;
 	[storageKeys.serverUserId]: number | null;
 }
@@ -37,7 +34,6 @@ const defaults: StorageShape = {
 	[storageKeys.playerColor]: DEFAULT_PLAYER_COLOR,
 	[storageKeys.playerIcon]: DEFAULT_PLAYER_ICON,
 	[storageKeys.playerName]: '',
-	[storageKeys.savedState]: null,
 	[storageKeys.serverClientKey]: null,
 	[storageKeys.serverUserId]: null,
 };

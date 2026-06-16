@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import { ensureUser, loadStoredUser } from '$lib/api';
 	import PhantomLogo from '$lib/PhantomLogo.svelte';
+	import { playerColorPreset, playerIconComponents } from '$lib/playerPresentation';
 	import { LS, storageKeys } from '$lib/storage';
 	import {
 		DEFAULT_PLAYER_COLOR,
@@ -16,36 +17,9 @@
 		type PlayerColorId,
 		type PlayerIconId,
 	} from '@repo/shared/onlineGame';
-	import Angry from '@lucide/svelte/icons/angry';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
-	import Bug from '@lucide/svelte/icons/bug';
-	import Cat from '@lucide/svelte/icons/cat';
 	import Dices from '@lucide/svelte/icons/dices';
-	import Drama from '@lucide/svelte/icons/drama';
-	import Fish from '@lucide/svelte/icons/fish';
-	import Ghost from '@lucide/svelte/icons/ghost';
-	import Rabbit from '@lucide/svelte/icons/rabbit';
-	import Rat from '@lucide/svelte/icons/rat';
-	import Skull from '@lucide/svelte/icons/skull';
-	import Snail from '@lucide/svelte/icons/snail';
-	import VenetianMask from '@lucide/svelte/icons/venetian-mask';
-	import Worm from '@lucide/svelte/icons/worm';
 	import { onMount } from 'svelte';
-
-	const iconComponents = {
-		ghost: Ghost,
-		skull: Skull,
-		'venetian-mask': VenetianMask,
-		drama: Drama,
-		cat: Cat,
-		rabbit: Rabbit,
-		rat: Rat,
-		snail: Snail,
-		bug: Bug,
-		worm: Worm,
-		fish: Fish,
-		angry: Angry,
-	};
 
 	let name = $state(LS.get(storageKeys.playerName) ?? '');
 	let color = $state<PlayerColorId>(LS.get(storageKeys.playerColor, DEFAULT_PLAYER_COLOR));
@@ -55,12 +29,17 @@
 	let error = $state<string | null>(null);
 	let tapTarget = $state<string | null>(null);
 	let tapTimeout: ReturnType<typeof setTimeout> | undefined;
-	const selectedColor = $derived(PLAYER_COLOR_PRESETS.find(preset => preset.id === color) ?? PLAYER_COLOR_PRESETS[0]);
+	let tapFrame: number | undefined;
+	const selectedColor = $derived(playerColorPreset(color));
 	const canSubmit = $derived(isValidPlayerName(name) && !isLoading && !isSubmitting);
 	const returnPath = $derived(getReturnPath(page.url.searchParams.get('returnTo')));
 
 	onMount(() => {
 		void loadProfile();
+		return () => {
+			if (tapFrame !== undefined) cancelAnimationFrame(tapFrame);
+			if (tapTimeout) clearTimeout(tapTimeout);
+		};
 	});
 
 	async function loadProfile() {
@@ -117,9 +96,11 @@
 	}
 
 	function tapControl(target: string) {
+		if (tapFrame !== undefined) cancelAnimationFrame(tapFrame);
 		if (tapTimeout) clearTimeout(tapTimeout);
 		tapTarget = null;
-		requestAnimationFrame(() => {
+		tapFrame = requestAnimationFrame(() => {
+			tapFrame = undefined;
 			tapTarget = target;
 			tapTimeout = setTimeout(() => {
 				if (tapTarget === target) tapTarget = null;
@@ -155,7 +136,7 @@
 
 	<div class="icon-picker" aria-label="Choose icon">
 		{#each PLAYER_ICON_PRESETS as preset}
-			{@const Icon = iconComponents[preset.id]}
+			{@const Icon = playerIconComponents[preset.id]}
 			<button
 				aria-label={preset.label}
 				aria-pressed={icon === preset.id}

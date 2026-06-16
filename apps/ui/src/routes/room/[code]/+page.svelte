@@ -4,10 +4,10 @@
 	import PlayerAvatar from '$lib/PlayerAvatar.svelte';
 	import VoteBadge from '$lib/VoteBadge.svelte';
 	import { joinRoom, openRoomEvents, sendRoomAction } from '$lib/api';
+	import { playerColorValue } from '$lib/playerPresentation';
 	import { parseRoomCode } from '$lib/roomCodes';
 	import { LS, storageKeys } from '$lib/storage';
 	import {
-		PLAYER_COLOR_PRESETS,
 		playerIdForUser,
 		type RoomMemberView,
 		type RoomViewState,
@@ -112,10 +112,6 @@
 
 	function wordVoteForMode(mode: WordMode): RoomVoteSummary | null {
 		return mode === 'custom' ? customVote : standardVote;
-	}
-
-	function colorValue(member: RoomMemberView): string {
-		return PLAYER_COLOR_PRESETS.find(preset => preset.id === member.color)?.value ?? PLAYER_COLOR_PRESETS[0].value;
 	}
 
 	async function switchTeam(team: Team) {
@@ -313,7 +309,7 @@
 
 {#snippet PlayerPill({ member, isSelf = false }: { member: RoomMemberView; isSelf?: boolean })}
 	<div class:self={isSelf} class="player-pill">
-		<PlayerAvatar color={colorValue(member)} icon={member.icon} label={`${member.name} avatar`} />
+		<PlayerAvatar color={playerColorValue(member.color)} icon={member.icon} label={`${member.name} avatar`} />
 		<span>{member.name}</span>
 	</div>
 {/snippet}
