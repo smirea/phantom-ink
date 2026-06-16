@@ -19,6 +19,7 @@ html[data-theme='dark'] {
 	--app-moon: #8b94b8;
 	--app-error: #efaaa1;
 	--app-error-bg: #321d23;
+	--background-glyph: #b6aab7;
 	--logo-ink: #f2e8f5;
 	--logo-smoke: #4e3e5a;
 	--logo-veil: #201725;
@@ -47,6 +48,7 @@ html[data-theme='light'] {
 	--app-moon: #65708f;
 	--app-error: #a13d43;
 	--app-error-bg: #fff0ee;
+	--background-glyph: #251f28;
 	--logo-ink: #251f28;
 	--logo-smoke: #d9ccd8;
 	--logo-veil: #fffaf7;

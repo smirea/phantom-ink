@@ -299,17 +299,15 @@ export class LetterGridEngine {
 		const padding = spacing * this.config.gridPaddingCells;
 		const maxColumns = required.columns + this.config.gridPaddingCells * 4 + 8;
 		const maxRows = required.rows + this.config.gridPaddingCells * 4 + 8;
+		const shiftX = this.capacityGridShiftX(spacing);
+		const shiftY = this.capacityGridShiftY(spacing);
 		let guard = 0;
-		while (
-			this.gridShiftX + (this.minColumn + 0.5) * spacing > -padding &&
-			this.gridColumns < maxColumns &&
-			guard < 200
-		) {
+		while (shiftX + (this.minColumn + 0.5) * spacing > -padding && this.gridColumns < maxColumns && guard < 200) {
 			this.addColumn('left', spawnNew);
 			guard += 1;
 		}
 		while (
-			this.gridShiftX + (this.maxColumn + 0.5) * spacing < width + padding &&
+			shiftX + (this.maxColumn + 0.5) * spacing < width + padding &&
 			this.gridColumns < maxColumns &&
 			guard < 400
 		) {
@@ -317,25 +315,21 @@ export class LetterGridEngine {
 			guard += 1;
 		}
 		while (this.gridColumns < required.columns && this.gridColumns < maxColumns && guard < 600) {
-			this.addColumn(this.nextColumnSide(width, spacing), spawnNew);
+			this.addColumn(this.nextColumnSide(width, spacing, shiftX), spawnNew);
 			guard += 1;
 		}
 
 		guard = 0;
-		while (this.gridShiftY + (this.minRow + 0.5) * spacing > -padding && this.gridRows < maxRows && guard < 200) {
+		while (shiftY + (this.minRow + 0.5) * spacing > -padding && this.gridRows < maxRows && guard < 200) {
 			this.addRow('top', spawnNew);
 			guard += 1;
 		}
-		while (
-			this.gridShiftY + (this.maxRow + 0.5) * spacing < height + padding &&
-			this.gridRows < maxRows &&
-			guard < 400
-		) {
+		while (shiftY + (this.maxRow + 0.5) * spacing < height + padding && this.gridRows < maxRows && guard < 400) {
 			this.addRow('bottom', spawnNew);
 			guard += 1;
 		}
 		while (this.gridRows < required.rows && this.gridRows < maxRows && guard < 600) {
-			this.addRow(this.nextRowSide(height, spacing), spawnNew);
+			this.addRow(this.nextRowSide(height, spacing, shiftY), spawnNew);
 			guard += 1;
 		}
 	}
@@ -814,6 +808,7 @@ export class LetterGridEngine {
 		this.spacing.duration = Math.max(1, randomRange(this.config.spacingTransitionMs));
 		this.spacing.active = true;
 		this.spacing.transitionId += 1;
+		this.ensureCellCapacity(this.viewportWidth(), this.viewportHeight(), false);
 	}
 
 	private startDirectionChange(now: number, targetAngle?: number, force = false): void {
@@ -949,13 +944,19 @@ export class LetterGridEngine {
 	}
 
 	private viewportAnchorColumn(spacing: number): number {
-		const width = typeof window === 'undefined' ? 0 : window.innerWidth;
-		return (width * 0.5 - this.gridShiftX) / Math.max(1, spacing) - 0.5;
+		return (this.viewportWidth() * 0.5 - this.gridShiftX) / Math.max(1, spacing) - 0.5;
 	}
 
 	private viewportAnchorRow(spacing: number): number {
-		const height = typeof window === 'undefined' ? 0 : window.innerHeight;
-		return (height * 0.5 - this.gridShiftY) / Math.max(1, spacing) - 0.5;
+		return (this.viewportHeight() * 0.5 - this.gridShiftY) / Math.max(1, spacing) - 0.5;
+	}
+
+	private viewportWidth(): number {
+		return typeof window === 'undefined' ? 0 : window.innerWidth;
+	}
+
+	private viewportHeight(): number {
+		return typeof window === 'undefined' ? 0 : window.innerHeight;
 	}
 
 	private capacitySpacing(): number {
@@ -974,15 +975,25 @@ export class LetterGridEngine {
 		return Math.max(1, spacing);
 	}
 
-	private nextColumnSide(width: number, spacing: number): 'left' | 'right' {
-		const leftGap = this.gridShiftX + (this.minColumn + 0.5) * spacing;
-		const rightGap = width - (this.gridShiftX + (this.maxColumn + 0.5) * spacing);
+	private capacityGridShiftX(spacing: number): number {
+		if (!this.spacing.active || this.spacing.target >= this.spacing.from) return this.gridShiftX;
+		return this.gridShiftX + (this.spacing.current - spacing) * (this.spacing.anchorColumn + 0.5);
+	}
+
+	private capacityGridShiftY(spacing: number): number {
+		if (!this.spacing.active || this.spacing.target >= this.spacing.from) return this.gridShiftY;
+		return this.gridShiftY + (this.spacing.current - spacing) * (this.spacing.anchorRow + 0.5);
+	}
+
+	private nextColumnSide(width: number, spacing: number, shiftX = this.gridShiftX): 'left' | 'right' {
+		const leftGap = shiftX + (this.minColumn + 0.5) * spacing;
+		const rightGap = width - (shiftX + (this.maxColumn + 0.5) * spacing);
 		return leftGap > rightGap ? 'left' : 'right';
 	}
 
-	private nextRowSide(height: number, spacing: number): 'top' | 'bottom' {
-		const topGap = this.gridShiftY + (this.minRow + 0.5) * spacing;
-		const bottomGap = height - (this.gridShiftY + (this.maxRow + 0.5) * spacing);
+	private nextRowSide(height: number, spacing: number, shiftY = this.gridShiftY): 'top' | 'bottom' {
+		const topGap = shiftY + (this.minRow + 0.5) * spacing;
+		const bottomGap = height - (shiftY + (this.maxRow + 0.5) * spacing);
 		return topGap > bottomGap ? 'top' : 'bottom';
 	}
 

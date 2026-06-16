@@ -759,7 +759,7 @@
 
 	function readThemeColors(): ThemeColors {
 		return {
-			text: cssColor('--app-muted'),
+			text: cssColor('--background-glyph'),
 			smoke: cssColor('--app-accent-strong'),
 		};
 	}
