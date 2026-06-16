@@ -37,6 +37,8 @@
 	const readyVote = $derived(voteSummary('ready'));
 	const standardVote = $derived(voteSummary('word-mode:standard'));
 	const customVote = $derived(voteSummary('word-mode:custom'));
+	const targetWordMode = $derived<WordMode>(room?.wordMode === 'custom' ? 'standard' : 'custom');
+	const targetWordVote = $derived(targetWordMode === 'custom' ? customVote : standardVote);
 	const selfIsReady = $derived(Boolean(self && readyVote?.voterIds.includes(self.id)));
 	const canUseLobbyControls = $derived(
 		Boolean(roomCode && room?.phase === 'lobby' && self && self.role !== 'spectator'),
@@ -131,6 +133,10 @@
 		}
 	}
 
+	function toggleWordMode() {
+		void voteWordMode(targetWordMode);
+	}
+
 	function storedUserPlayerId(): string | null {
 		const userId = LS.get(storageKeys.serverUserId);
 		return typeof userId === 'number' ? playerIdForUser(userId) : null;
@@ -149,34 +155,30 @@
 		</div>
 	{:else}
 		<div class="room-settings">
-			<span class="setting-label">Words</span>
-			<div class="word-options" aria-label="Word mode">
-				<div class:selected={room?.wordMode === 'standard'} class="word-option-wrap">
-					<button
-						disabled={!canUseLobbyControls || pendingAction === 'word:standard'}
-						onclick={() => voteWordMode('standard')}
-						type="button"
-					>
-						{#if pendingAction === 'word:standard'}
+			<div class="word-toggle-wrap">
+				<button
+					aria-checked={room?.wordMode === 'custom'}
+					class:checked={room?.wordMode === 'custom'}
+					class="word-toggle"
+					disabled={!canUseLobbyControls || pendingAction === `word:${targetWordMode}`}
+					onclick={toggleWordMode}
+					role="checkbox"
+					type="button"
+				>
+					<span class="checkbox-mark">
+						{#if pendingAction === `word:${targetWordMode}`}
 							<LoaderCircle class="spin" size={17} strokeWidth={2.4} />
+						{:else if room?.wordMode === 'custom'}
+							<Check size={18} strokeWidth={2.8} />
 						{/if}
-						<span>Standard</span>
-					</button>
-					<VoteBadge summary={standardVote} {members} label="Standard words" />
-				</div>
-				<div class:selected={room?.wordMode === 'custom'} class="word-option-wrap">
-					<button
-						disabled={!canUseLobbyControls || pendingAction === 'word:custom'}
-						onclick={() => voteWordMode('custom')}
-						type="button"
-					>
-						{#if pendingAction === 'word:custom'}
-							<LoaderCircle class="spin" size={17} strokeWidth={2.4} />
-						{/if}
-						<span>Custom</span>
-					</button>
-					<VoteBadge summary={customVote} {members} label="Custom words" />
-				</div>
+					</span>
+					<span>Use your own words</span>
+				</button>
+				<VoteBadge
+					summary={targetWordVote}
+					{members}
+					label={targetWordMode === 'custom' ? 'Custom words' : 'Standard words'}
+				/>
 			</div>
 		</div>
 
@@ -298,66 +300,63 @@
 	}
 
 	.room-settings {
-		display: grid;
-		grid-template-columns: auto minmax(0, 1fr);
-		gap: 0.85rem;
-		align-items: center;
+		display: flex;
+		align-items: flex-start;
 		min-width: 0;
 	}
 
-	.setting-label {
-		color: var(--app-muted);
-		font-size: 0.82rem;
-		font-weight: 850;
-		line-height: 1;
-	}
-
-	.word-options {
-		display: inline-grid;
-		grid-template-columns: repeat(2, minmax(7.9rem, 1fr));
-		justify-self: end;
-		gap: 0.5rem;
-		width: min(100%, 16.8rem);
-	}
-
-	.word-option-wrap {
+	.word-toggle-wrap {
 		position: relative;
+		display: inline-flex;
 		min-width: 0;
 		overflow: visible;
 	}
 
-	.word-option-wrap > button {
+	.word-toggle {
 		display: inline-flex;
 		align-items: center;
-		justify-content: center;
-		gap: 0.3rem;
-		width: 100%;
-		min-height: 3.15rem;
+		gap: 0.62rem;
+		min-height: 3rem;
 		border: 1px solid color-mix(in oklab, var(--app-border) 72%, transparent);
 		border-radius: 0.45rem;
-		background: color-mix(in oklab, var(--app-input) 70%, transparent);
-		color: var(--app-muted);
+		background: color-mix(in oklab, var(--app-input) 54%, transparent);
+		color: var(--app-text);
 		cursor: pointer;
 		font: inherit;
-		font-size: 0.86rem;
+		font-size: clamp(1rem, 2.2vw, 1.28rem);
 		font-weight: 950;
-		padding: 0.7rem 2.75rem 0.7rem 0.7rem;
+		line-height: 1;
+		padding: 0 2.9rem 0 0.85rem;
 		transition:
 			background 180ms ease,
 			border-color 180ms ease,
-			color 180ms ease,
 			transform 180ms ease;
 	}
 
-	.word-option-wrap.selected > button,
-	.word-option-wrap > button:hover:not(:disabled) {
-		border-color: color-mix(in oklab, var(--app-accent) 64%, var(--app-border));
-		background: color-mix(in oklab, var(--app-accent) 16%, var(--app-input));
-		color: var(--app-text);
+	.word-toggle:hover:not(:disabled),
+	.word-toggle.checked {
+		border-color: color-mix(in oklab, var(--app-accent) 58%, var(--app-border));
+		background: color-mix(in oklab, var(--app-accent) 12%, var(--app-input));
 	}
 
-	.word-option-wrap > button:active:not(:disabled) {
+	.word-toggle:active:not(:disabled) {
 		transform: translateY(1px) scale(0.99);
+	}
+
+	.checkbox-mark {
+		display: inline-grid;
+		place-items: center;
+		width: 1.28rem;
+		height: 1.28rem;
+		border: 2px solid color-mix(in oklab, var(--app-accent) 62%, var(--app-border));
+		border-radius: 0.28rem;
+		color: #102014;
+		background: color-mix(in oklab, var(--app-panel) 72%, transparent);
+	}
+
+	.word-toggle.checked .checkbox-mark {
+		border-color: #78d88d;
+		background: #78d88d;
 	}
 
 	.teams-grid {
@@ -366,31 +365,23 @@
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		min-width: 0;
 		min-height: clamp(13rem, 34dvh, 19rem);
-		background: color-mix(in oklab, var(--app-input) 24%, transparent);
+		background: transparent;
 		overflow: hidden;
-	}
-
-	.teams-grid::before {
-		position: absolute;
-		inset: 0;
-		background:
-			radial-gradient(ellipse at 13% 18%, color-mix(in oklab, #e1aa57 16%, transparent), transparent 42%),
-			radial-gradient(ellipse at 87% 18%, color-mix(in oklab, #a997ff 16%, transparent), transparent 42%);
-		content: '';
-		pointer-events: none;
 	}
 
 	.teams-grid::after {
 		position: absolute;
 		top: 0.8rem;
 		bottom: 0.8rem;
-		left: calc(50% - 1.1rem);
-		width: 2.2rem;
-		background:
-			linear-gradient(90deg, transparent, color-mix(in oklab, var(--app-border) 44%, transparent), transparent),
-			radial-gradient(ellipse at center, color-mix(in oklab, var(--app-accent) 14%, transparent), transparent 66%);
+		left: 50%;
+		width: 1px;
+		background: color-mix(in oklab, var(--app-border) 54%, transparent);
+		box-shadow:
+			-0.45rem 0 1.45rem color-mix(in oklab, #e1aa57 34%, transparent),
+			0.45rem 0 1.45rem color-mix(in oklab, #a997ff 38%, transparent);
 		content: '';
 		pointer-events: none;
+		transform: translateX(-50%);
 	}
 
 	.team-column {
@@ -421,9 +412,8 @@
 		--team-color: #a997ff;
 	}
 
-	.team-column:hover:not(:disabled),
-	.team-column[aria-pressed='true'] {
-		background: color-mix(in oklab, var(--team-color) 9%, transparent);
+	.team-column:hover:not(:disabled) {
+		background: color-mix(in oklab, var(--team-color) 5%, transparent);
 	}
 
 	.team-column:active:not(:disabled) {
@@ -434,8 +424,14 @@
 		position: absolute;
 		top: 0.7rem;
 		color: color-mix(in oklab, var(--team-color) 54%, transparent);
-		opacity: 0.55;
+		filter: drop-shadow(0 0 0.5rem color-mix(in oklab, var(--team-color) 22%, transparent));
+		opacity: 0.42;
 		pointer-events: none;
+	}
+
+	.team-column[aria-pressed='true'] .team-icon {
+		animation: team-icon-pulse 4s ease-in-out infinite;
+		opacity: 0.88;
 	}
 
 	.team-column.sun .team-icon {
@@ -530,6 +526,7 @@
 		transition:
 			background 180ms ease,
 			border-color 180ms ease,
+			box-shadow 180ms ease,
 			transform 180ms ease;
 	}
 
@@ -621,17 +618,25 @@
 		}
 	}
 
-	@media (max-width: 560px) {
-		.room-settings {
-			grid-template-columns: 1fr;
+	@keyframes team-icon-pulse {
+		0%,
+		100% {
+			filter: drop-shadow(0 0 0.6rem color-mix(in oklab, var(--team-color) 32%, transparent));
 		}
 
+		50% {
+			filter: drop-shadow(0 0 0.85rem color-mix(in oklab, var(--team-color) 56%, transparent))
+				drop-shadow(0 0 1.65rem color-mix(in oklab, var(--team-color) 28%, transparent));
+		}
+	}
+
+	@media (max-width: 560px) {
 		.teams-grid {
 			min-height: 16rem;
 		}
 
-		.word-options {
-			justify-self: stretch;
+		.word-toggle-wrap,
+		.word-toggle {
 			width: 100%;
 		}
 	}

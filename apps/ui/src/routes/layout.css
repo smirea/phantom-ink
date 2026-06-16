@@ -88,6 +88,7 @@ button {
 .content-card.room-card {
 	grid-template-rows: 1fr;
 	min-height: clamp(14rem, 46dvh, 25rem);
+	overflow: visible;
 }
 
 .screen-shell {

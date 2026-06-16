@@ -12,7 +12,7 @@ export type { Team } from './game';
 export const ROOM_CODE_LENGTH = 4;
 export const MIN_PLAYER_NAME_LENGTH = 2;
 export const MAX_PLAYER_NAME_LENGTH = 12;
-export const MIN_SEATED_PLAYER_COUNT = 2;
+export const MIN_SEATED_PLAYER_COUNT = 4;
 export const MAX_SEATED_PLAYER_COUNT = 12;
 export const PLAYER_COLOR_PRESETS = [
 	{ id: 'ectoplasm', label: 'Ectoplasm', value: '#9ee6cf' },
@@ -412,7 +412,7 @@ function getStartProblem(state: OnlineRoomState): string | null {
 	if (state.phase !== 'lobby') return 'The room has already started';
 
 	const seated = state.members.filter(member => member.role !== 'spectator');
-	if (seated.length < MIN_SEATED_PLAYER_COUNT) return 'Need at least 2 players';
+	if (seated.length < MIN_SEATED_PLAYER_COUNT) return 'At least 4 souls needed';
 	if (seated.length > MAX_SEATED_PLAYER_COUNT) return 'Too many seated players';
 
 	return null;
