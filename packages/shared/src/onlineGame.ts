@@ -230,7 +230,7 @@ export function buildRoomMembers(
 	return [...members]
 		.sort((a, b) => a.userId - b.userId)
 		.map((member, index) => {
-			const baseName = sanitizePlayerName(member.name) ?? `Player ${String(index + 1).padStart(2, '0')}`;
+			const baseName = sanitizePlayerName(member.name) ?? `Soul ${String(index + 1).padStart(2, '0')}`;
 			const name = disambiguatePlayerName(baseName, usedNames);
 			usedNames.add(nameKey(name));
 			return {
@@ -300,7 +300,7 @@ export function applyOnlineRoomAction(state: OnlineRoomState, action: OnlineRoom
 	if (action.type === 'join') {
 		if (action.actorId !== playerIdForUser(action.userId)) return false;
 
-		const name = sanitizePlayerName(action.name) ?? `Player ${action.userId}`;
+		const name = sanitizePlayerName(action.name) ?? `Soul ${action.userId}`;
 		const color = sanitizePlayerColor(action.color);
 		const icon = sanitizePlayerIcon(action.icon);
 		const existing = state.members.find(member => member.userId === action.userId);
@@ -413,7 +413,7 @@ function getStartProblem(state: OnlineRoomState): string | null {
 
 	const seated = state.members.filter(member => member.role !== 'spectator');
 	if (seated.length < MIN_SEATED_PLAYER_COUNT) return 'At least 4 souls needed';
-	if (seated.length > MAX_SEATED_PLAYER_COUNT) return 'Too many seated players';
+	if (seated.length > MAX_SEATED_PLAYER_COUNT) return 'Too many seated souls';
 
 	return null;
 }

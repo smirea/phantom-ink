@@ -28,7 +28,7 @@
 		angry: Angry,
 	};
 
-	let { color, icon, label = 'Player avatar' }: { color: string; icon: PlayerIconId; label?: string } = $props();
+	let { color, icon, label = 'Soul avatar' }: { color: string; icon: PlayerIconId; label?: string } = $props();
 	const Icon = $derived(iconComponents[icon] ?? Ghost);
 </script>
 

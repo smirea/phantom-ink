@@ -94,7 +94,7 @@
 			await ensureUser({ name, color, icon });
 			await goto(returnPath, { noScroll: true });
 		} catch (caught) {
-			error = caught instanceof Error ? caught.message : 'Unable to save player.';
+			error = caught instanceof Error ? caught.message : 'Unable to save soul.';
 		} finally {
 			isSubmitting = false;
 		}

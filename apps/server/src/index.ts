@@ -260,7 +260,7 @@ function sanitizeClientKey(value: string | null | undefined): string | null {
 function userRecord(user: UserRow): UserRecord {
 	return {
 		id: user.id,
-		name: sanitizePlayerName(user.name) ?? 'Player',
+		name: sanitizePlayerName(user.name) ?? 'Soul',
 		color: sanitizePlayerColor(user.color),
 		icon: sanitizePlayerIcon(user.icon),
 	};
@@ -287,7 +287,7 @@ function ensureUser(
 	rawColor?: string | null,
 	rawIcon?: string | null,
 ): UserRecord {
-	const name = sanitizePlayerName(rawName ?? '') ?? 'Player';
+	const name = sanitizePlayerName(rawName ?? '') ?? 'Soul';
 	const color = sanitizePlayerColor(rawColor);
 	const icon = sanitizePlayerIcon(rawIcon);
 	const clientKey = sanitizeClientKey(clientKeyValue);

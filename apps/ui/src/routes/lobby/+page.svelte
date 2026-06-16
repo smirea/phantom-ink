@@ -147,7 +147,7 @@
 				>
 					<button
 						aria-expanded={expanded}
-						aria-label={`${expanded ? 'Collapse' : 'Expand'} ${room.code} players`}
+						aria-label={`${expanded ? 'Collapse' : 'Expand'} ${room.code} souls`}
 						class="expand-button"
 						onclick={event => toggleExpanded(event, room.code)}
 						type="button"
@@ -159,7 +159,7 @@
 						<div class="room-code">{room.code}</div>
 						<div class="player-count">
 							<UsersRound size={16} strokeWidth={2.2} />
-							<span>{room.playerCount} {room.playerCount === 1 ? 'player' : 'players'}</span>
+							<span>{room.playerCount} {room.playerCount === 1 ? 'soul' : 'souls'}</span>
 						</div>
 						{#if room.phase === 'playing'}
 							<div class="phase-pill">Started</div>

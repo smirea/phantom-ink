@@ -12,6 +12,14 @@ After start, the app moves into a compact screen shell with the text-only logo a
 
 Buttons live in `apps/ui/src/lib/InkButton.svelte`. They support small, medium, and large sizing plus a primary accent state, with hover, press, disabled, and focus motion kept consistent for future screens.
 
+## Language
+
+The UI voice should stay lightly occult without getting verbose. Use séance, room, side, ready, vote, and words as the plain operational terms, and reserve the more thematic terms for participant-facing atmosphere.
+
+People in a room are called souls in visible copy: lobby counts say `1 soul` or `4 souls`, readiness problems say `At least 4 souls needed`, and fallback names use `Soul` rather than `Player`. Internally the code can still use `player` for domain objects, ids, and component names, but user-facing labels should avoid `player` unless a future rules explanation specifically needs a conventional game term.
+
+Settings copy is intentionally direct: `Change Yourself`, `Abandon séance`, and `Use your own words` are preferred over longer explanatory labels. The app should sound slightly whimsical and ghostly, but controls should still be short, scannable, and obvious.
+
 ## Logo
 
 The SVG wordmark in `PhantomLogo.svelte` follows the official Phantom Ink logo direction while staying themeable for light and dark mode. The design keeps the gothic serif wordmark, long pen, central eye-in-diamond mark, and faint rays from the reference, but translates them into the current neutral ink, muted brass, paper, and ghost-purple theme tokens.
