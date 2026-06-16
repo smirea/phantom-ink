@@ -11,28 +11,23 @@
 	let { children } = $props();
 	const browser = typeof window !== 'undefined';
 	type Theme = 'dark' | 'light';
-	type DriftLetter = {
-		id: number;
+	type CellStatus = 'alive' | 'spawning' | 'dying' | 'dead';
+	type GridCell = {
+		key: string;
 		char: string;
 		x: number;
 		y: number;
-		vx: number;
-		vy: number;
 		rotation: number;
-		spin: number;
 		opacity: number;
-		targetOpacity: number;
 		scale: number;
-		radius: number;
-		minSpeed: number;
-		velocityDelta: number;
-		repel: number;
-		pointerRepel: number;
-		contentBounce: number;
-		fadeSpeed: number;
-		fadeDelay: number;
-		hiddenFor: number;
-		hitCooldown: number;
+		spinPhase: number;
+		spinSpeed: number;
+		visibility: number;
+		status: CellStatus;
+		spawnMs: number;
+		decayMs: number;
+		wasOnscreen: boolean;
+		edgePuffTransition: number;
 	};
 	type SmokePuff = {
 		id: number;
@@ -48,6 +43,71 @@
 		growth: number;
 		age: number;
 		ttl: number;
+		flowFollow: number;
+	};
+	type DirectionPhase = 'cruise' | 'decelerating' | 'turning' | 'accelerating';
+	type DirectionState = {
+		angle: number;
+		displayAngle: number;
+		fromAngle: number;
+		targetAngle: number;
+		speed: number;
+		speedFrom: number;
+		phase: DirectionPhase;
+		phaseStartedAt: number;
+		phaseDuration: number;
+		nextChangeAt: number;
+	};
+	type SpacingState = {
+		current: number;
+		from: number;
+		target: number;
+		startedAt: number;
+		duration: number;
+		nextChangeAt: number;
+		active: boolean;
+		transitionId: number;
+	};
+	type BackgroundConfig = {
+		targetAliveRatio: number;
+		initialSpacing: number;
+		spacingOptions: number[];
+		spacingChangeDelay: [number, number];
+		spacingTransitionMs: [number, number];
+		directionOptions: number[];
+		directionChangeDelay: [number, number];
+		targetSpeed: number;
+		decelerationMs: number;
+		turnMs: number;
+		accelerationMs: number;
+		maxPuffs: number;
+	};
+	type DebugState = {
+		backgroundConfig: boolean;
+	};
+	type NumberConfigKey =
+		| 'targetAliveRatio'
+		| 'initialSpacing'
+		| 'targetSpeed'
+		| 'decelerationMs'
+		| 'turnMs'
+		| 'accelerationMs'
+		| 'maxPuffs';
+	type RangeConfigKey = 'spacingChangeDelay' | 'spacingTransitionMs' | 'directionChangeDelay';
+	type DebugNumberField = {
+		key: NumberConfigKey;
+		label: string;
+		min: number;
+		max: number;
+		step: number;
+		integer?: boolean;
+	};
+	type DebugRangeField = {
+		key: RangeConfigKey;
+		label: string;
+		min: number;
+		max: number;
+		step: number;
 	};
 
 	const navItems = [
@@ -56,7 +116,46 @@
 		{ href: '/whispers', label: 'Whispers' },
 	];
 	const glyphs = 'PHANTOMINKSILENCIOSEANCEGHOSTWRITERMOONSUNOBJECTCLUE'.split('');
-	const pointerAway = { x: -1000, y: -1000 };
+	const rareGlyphs = ['☺', '☻', '☹'];
+	const rareGlyphChance = 0.02;
+	const minGlyphScale = 0.58;
+	const maxGlyphScale = 1.72;
+	const naturalDecayVisibility = 0.18;
+	const naturalDecayMs: [number, number] = [120, 220];
+	const minimumGridSpacing = 54;
+	const stateChangeCooldownMs = 10000;
+	const defaultDirectionOptions = Array.from({ length: 24 }, (_, index) => degreesToRadians(index * 15));
+	const numberConfigFields = [
+		{ key: 'targetAliveRatio', label: 'targetAliveRatio', min: 0.05, max: 0.95, step: 0.01 },
+		{ key: 'initialSpacing', label: 'initialSpacing', min: minimumGridSpacing, max: 128, step: 1, integer: true },
+		{ key: 'targetSpeed', label: 'targetSpeed', min: 0, max: 0.08, step: 0.001 },
+		{ key: 'decelerationMs', label: 'decelerationMs', min: 200, max: 9000, step: 100, integer: true },
+		{ key: 'turnMs', label: 'turnMs', min: 200, max: 9000, step: 100, integer: true },
+		{ key: 'accelerationMs', label: 'accelerationMs', min: 200, max: 9000, step: 100, integer: true },
+		{ key: 'maxPuffs', label: 'maxPuffs', min: 12, max: 240, step: 1, integer: true },
+	] satisfies readonly DebugNumberField[];
+	const rangeConfigFields = [
+		{ key: 'spacingChangeDelay', label: 'spacingChangeDelay', min: 1000, max: 150000, step: 1000 },
+		{ key: 'spacingTransitionMs', label: 'spacingTransitionMs', min: 500, max: 18000, step: 100 },
+		{ key: 'directionChangeDelay', label: 'directionChangeDelay', min: 1000, max: 180000, step: 1000 },
+	] satisfies readonly DebugRangeField[];
+	const DEBUG = $state<DebugState>({
+		backgroundConfig: true,
+	});
+	const backgroundConfig = $state<BackgroundConfig>({
+		targetAliveRatio: 0.7,
+		initialSpacing: 64,
+		spacingOptions: [54, 64, 76, 88],
+		spacingChangeDelay: [42000, 72000],
+		spacingTransitionMs: [4200, 7200],
+		directionOptions: defaultDirectionOptions,
+		directionChangeDelay: [48000, 90000],
+		targetSpeed: 0.024,
+		decelerationMs: 1800,
+		turnMs: 1500,
+		accelerationMs: 2200,
+		maxPuffs: 96,
+	});
 
 	const queryClient = new QueryClient({
 		defaultOptions: {
@@ -67,14 +166,21 @@
 	});
 
 	let theme = $state<Theme>(getStored(storageKeys.darkMode) ? 'dark' : 'light');
-	let fieldElement = $state<HTMLDivElement | null>(null);
-	let contentElement = $state<HTMLElement | null>(null);
-	let letters = $state<DriftLetter[]>([]);
+	let cells = $state<GridCell[]>([]);
 	let puffs = $state<SmokePuff[]>([]);
 	let activePath = $state(typeof location === 'undefined' ? '/' : location.pathname);
-	let pointer = pointerAway;
 	let smokeId = 0;
-	let flowAngle = Math.random() * Math.PI * 2;
+	let flowPhaseX = 0;
+	let flowPhaseY = 0;
+	let gridColumns = 0;
+	let gridRows = 0;
+	let nextStateChangeAllowedAt = 0;
+	let directionState: DirectionState = createDirectionState(0);
+	let spacingState: SpacingState = createSpacingState(0);
+	let spacingOptionsDraft = $state(formatNumberList(backgroundConfig.spacingOptions));
+	let directionOptionsDraft = $state(formatNumberList(backgroundConfig.directionOptions.map(radiansToDegrees)));
+
+	if (browser) Object.assign(globalThis, { DEBUG });
 
 	$effect(() => {
 		if (typeof document === 'undefined') return;
@@ -83,87 +189,23 @@
 	});
 
 	onMount(() => {
-		if (!fieldElement) return;
+		const now = performance.now();
+		directionState = createDirectionState(now);
+		spacingState = createSpacingState(now);
+		syncGridCells(window.innerWidth, window.innerHeight, true);
 
-		const createLetters = () => {
-			const width = window.innerWidth;
-			const height = window.innerHeight;
-			letters = Array.from({ length: width < 560 ? 38 : 62 }, (_, index) => createLetter(index, width, height));
-		};
-
-		createLetters();
 		let frame = 0;
-		let lastTime = performance.now();
-		let lastResize = window.innerWidth;
-		let lastHeight = window.innerHeight;
+		let lastTime = now;
 
 		const tick = (now: number) => {
-			const dt = Math.min(2.4, Math.max(0.35, (now - lastTime) / 16.67));
+			const elapsedMs = Math.max(0, Math.min(1000, now - lastTime));
 			lastTime = now;
-			const width = window.innerWidth;
-			const height = window.innerHeight;
-			const card = contentElement?.getBoundingClientRect();
 
-			if (Math.abs(width - lastResize) > 80 || Math.abs(height - lastHeight) > 80) {
-				lastResize = width;
-				lastHeight = height;
-				createLetters();
-			}
-
-			flowAngle += 0.00035 * dt;
-			const flowX = Math.cos(flowAngle);
-			const flowY = Math.sin(flowAngle);
-			applyLetterRepulsion(dt, width, height);
-
-			for (const letter of letters) {
-				if (letter.hiddenFor > 0) {
-					letter.hiddenFor -= 16.67 * dt;
-					if (letter.hiddenFor <= 0) resetLetter(letter, width, height);
-					continue;
-				}
-
-				if (letter.hitCooldown > 0) letter.hitCooldown -= 16.67 * dt;
-				letter.fadeDelay -= 16.67 * dt;
-				if (letter.fadeDelay <= 0) {
-					letter.targetOpacity = randomBetween(0.08, 0.48);
-					letter.fadeDelay = randomBetween(800, 3200);
-				}
-
-				const dx = letter.x - pointer.x;
-				const dy = letter.y - pointer.y;
-				const distance = Math.hypot(dx, dy);
-				const pointerRange = 118 + letter.pointerRepel * 56;
-				if (distance < pointerRange) {
-					const push = (pointerRange - distance) / pointerRange;
-					const safeDistance = distance || 1;
-					letter.vx += (dx / safeDistance) * push * 0.048 * letter.pointerRepel * dt;
-					letter.vy += (dy / safeDistance) * push * 0.048 * letter.pointerRepel * dt;
-				}
-
-				letter.vx += flowX * 0.0056 * letter.velocityDelta * dt;
-				letter.vy += flowY * 0.0056 * letter.velocityDelta * dt;
-				letter.vx *= 0.991;
-				letter.vy *= 0.991;
-				keepLetterMoving(letter, flowX, flowY);
-
-				if (
-					card &&
-					letter.x > card.left - letter.radius &&
-					letter.x < card.right + letter.radius &&
-					letter.y > card.top - letter.radius &&
-					letter.y < card.bottom + letter.radius
-				) {
-					bounceFromContent(letter, card);
-				}
-
-				letter.x += letter.vx * dt;
-				letter.y += letter.vy * dt;
-				letter.rotation += letter.spin * dt;
-				letter.opacity += (letter.targetOpacity - letter.opacity) * Math.min(0.12, letter.fadeSpeed * dt);
-				wrapLetter(letter, width, height);
-			}
-
-			updatePuffs(dt);
+			updateSpacing(now);
+			updateDirection(now, elapsedMs, window.innerWidth, window.innerHeight);
+			syncGridCells(window.innerWidth, window.innerHeight, false);
+			updateCells(elapsedMs);
+			updatePuffs(elapsedMs);
 			frame = window.requestAnimationFrame(tick);
 		};
 
@@ -190,187 +232,231 @@
 		};
 	});
 
-	function handlePointerMove(event: PointerEvent): void {
-		pointer = { x: event.clientX, y: event.clientY };
+	function syncGridCells(width: number, height: number, seedAlive: boolean): void {
+		const spacing = spacingState.current;
+		const existing = new Map(cells.map(cell => [cell.key, cell]));
+		const nextCells: GridCell[] = [];
+		const metrics = getGridMetrics(width, height, spacing);
+		const spacingIsExpanding = spacingState.active && spacingState.target > spacingState.from;
+
+		for (let row = 0; row < metrics.rows; row += 1) {
+			for (let column = 0; column < metrics.columns; column += 1) {
+				const key = `${column}:${row}`;
+				const existingCell = existing.get(key);
+				const cell =
+					existingCell ?? createGridCell(key, seedAlive && Math.random() < backgroundConfig.targetAliveRatio);
+				const wasOnscreen = cell.wasOnscreen;
+				cell.x = gridX(column, metrics);
+				cell.y = gridY(row, metrics);
+				const isOnscreen = isNearViewport(cell.x, cell.y, width, height, metrics.spacing);
+				if (
+					spacingIsExpanding &&
+					wasOnscreen &&
+					!isOnscreen &&
+					cell.edgePuffTransition !== spacingState.transitionId &&
+					cell.status !== 'dead' &&
+					cell.visibility > 0
+				) {
+					const edge = outsidePointNear(cell.x, cell.y, width, height, metrics.spacing);
+					spawnSmoke(Math.min(width, Math.max(0, edge.x)), Math.min(height, Math.max(0, edge.y)), 4, 0.3, 0.76, 1);
+					cell.visibility = 0;
+					cell.status = 'dead';
+					cell.edgePuffTransition = spacingState.transitionId;
+				}
+				cell.wasOnscreen = isOnscreen;
+				cell.rotation = directionState.displayAngle + cell.spinPhase * spinWeight();
+				nextCells.push(cell);
+			}
+		}
+
+		cells = nextCells;
 	}
 
-	function handlePointerLeave(): void {
-		pointer = pointerAway;
-	}
-
-	function createLetter(index: number, width: number, height: number): DriftLetter {
-		const angle = flowAngle + randomBetween(-0.72, 0.72);
-		const speed = randomBetween(0.16, 0.48);
-		const opacity = randomBetween(0.08, 0.42);
-
+	function createGridCell(key: string, seedAlive: boolean): GridCell {
+		const char = chooseGlyph();
 		return {
-			id: index,
-			char: glyphs[Math.floor(Math.random() * glyphs.length)],
-			x: Math.random() * width,
-			y: Math.random() * height,
-			vx: Math.cos(angle) * speed + randomBetween(-0.08, 0.08),
-			vy: Math.sin(angle) * speed + randomBetween(-0.08, 0.08),
-			rotation: Math.random() * 360,
-			spin: randomBetween(-0.18, 0.18),
-			opacity,
-			targetOpacity: randomBetween(0.08, 0.48),
-			scale: randomBetween(0.78, 1.5),
-			radius: randomBetween(16, 28),
-			minSpeed: randomBetween(0.12, 0.26),
-			velocityDelta: randomBetween(0.74, 1.38),
-			repel: randomBetween(0.62, 1.44),
-			pointerRepel: randomBetween(0.72, 1.46),
-			contentBounce: randomBetween(0.82, 1.28),
-			fadeSpeed: randomBetween(0.012, 0.034),
-			fadeDelay: randomBetween(400, 2600),
-			hiddenFor: 0,
-			hitCooldown: 0,
+			key,
+			char,
+			x: 0,
+			y: 0,
+			rotation: 0,
+			opacity: randomBetween(0.16, 0.46),
+			scale: glyphScale(char),
+			spinPhase: randomBetween(0, Math.PI * 2),
+			spinSpeed: randomSigned(0.00022, 0.0009),
+			visibility: seedAlive ? 1 : 0,
+			status: seedAlive ? 'alive' : 'dead',
+			spawnMs: randomBetween(900, 1900),
+			decayMs: randomRange(naturalDecayMs),
+			wasOnscreen: false,
+			edgePuffTransition: 0,
 		};
 	}
 
-	function resetLetter(letter: DriftLetter, width: number, height: number): void {
-		const next = createLetter(letter.id, width, height);
-		const side = Math.floor(Math.random() * 4);
-		if (side === 0) {
-			next.x = -next.radius;
-		} else if (side === 1) {
-			next.x = width + next.radius;
-		} else if (side === 2) {
-			next.y = -next.radius;
-		} else {
-			next.y = height + next.radius;
-		}
-		next.opacity = 0;
-		Object.assign(letter, next);
-	}
+	function updateCells(elapsedMs: number): void {
+		const total = Math.max(1, cells.length);
+		const living = cells.filter(cell => cell.status === 'alive' || cell.status === 'spawning').length;
+		const occupancy = living / total;
+		const spawnPressure = Math.max(
+			0,
+			(backgroundConfig.targetAliveRatio - occupancy) / backgroundConfig.targetAliveRatio,
+		);
+		const decayPressure = Math.max(
+			0,
+			(occupancy - backgroundConfig.targetAliveRatio) / (1 - backgroundConfig.targetAliveRatio),
+		);
 
-	function applyLetterRepulsion(dt: number, width: number, height: number): void {
-		for (let aIndex = 0; aIndex < letters.length; aIndex += 1) {
-			const a = letters[aIndex];
-			if (a.hiddenFor > 0) continue;
-
-			for (let bIndex = aIndex + 1; bIndex < letters.length; bIndex += 1) {
-				const b = letters[bIndex];
-				if (b.hiddenFor > 0) continue;
-
-				let dx = b.x - a.x;
-				let dy = b.y - a.y;
-				if (dx > width / 2) dx -= width;
-				if (dx < -width / 2) dx += width;
-				if (dy > height / 2) dy -= height;
-				if (dy < -height / 2) dy += height;
-
-				const distance = Math.hypot(dx, dy) || 1;
-				const range = 34 + (a.radius + b.radius) * 0.52;
-				if (distance >= range) continue;
-
-				const push = ((range - distance) / range) * 0.0075 * (a.repel + b.repel) * dt;
-				const nx = dx / distance;
-				const ny = dy / distance;
-				a.vx -= nx * push * b.repel;
-				a.vy -= ny * push * b.repel;
-				b.vx += nx * push * a.repel;
-				b.vy += ny * push * a.repel;
+		for (const cell of cells) {
+			if (cell.status === 'alive' && directionState.phase === 'cruise') {
+				cell.spinPhase += cell.spinSpeed * elapsedMs;
 			}
+
+			if (cell.status === 'spawning') {
+				cell.visibility = Math.min(1, cell.visibility + elapsedMs / cell.spawnMs);
+				if (cell.visibility >= 1) cell.status = 'alive';
+			} else if (cell.status === 'dying') {
+				cell.visibility = Math.max(0, cell.visibility - elapsedMs / cell.decayMs);
+				if (cell.visibility <= 0) cell.status = 'dead';
+			} else if (cell.status === 'dead') {
+				if (Math.random() < (0.04 + spawnPressure * 1.4) * (elapsedMs / 1000)) spawnCell(cell);
+			} else if (Math.random() < (0.012 + decayPressure * 0.52) * (elapsedMs / 1000)) {
+				fadeCell(cell);
+			}
+
+			cell.rotation = directionState.displayAngle + cell.spinPhase * spinWeight();
 		}
 	}
 
-	function keepLetterMoving(letter: DriftLetter, flowX: number, flowY: number): void {
-		const speed = Math.hypot(letter.vx, letter.vy);
-		if (speed < letter.minSpeed) {
-			const angle = speed > 0.001 ? Math.atan2(letter.vy, letter.vx) : Math.atan2(flowY, flowX);
-			letter.vx = Math.cos(angle) * letter.minSpeed;
-			letter.vy = Math.sin(angle) * letter.minSpeed;
-		}
-
-		const maxSpeed = 1.32 + letter.velocityDelta * 0.34;
-		if (speed > maxSpeed) {
-			letter.vx = (letter.vx / speed) * maxSpeed;
-			letter.vy = (letter.vy / speed) * maxSpeed;
-		}
+	function spawnCell(cell: GridCell): void {
+		cell.char = chooseGlyph();
+		cell.opacity = randomBetween(0.16, 0.46);
+		cell.scale = glyphScale(cell.char);
+		cell.spinPhase = 0;
+		cell.spinSpeed = randomSigned(0.00022, 0.0009);
+		cell.spawnMs = randomBetween(900, 1900);
+		cell.visibility = 0;
+		cell.status = 'spawning';
 	}
 
-	function bounceFromContent(letter: DriftLetter, card: DOMRect): void {
-		const puffX = Math.max(card.left, Math.min(card.right, letter.x));
-		const puffY = Math.max(card.top, Math.min(card.bottom, letter.y));
-		const leftPush = Math.abs(letter.x - card.left);
-		const rightPush = Math.abs(letter.x - card.right);
-		const topPush = Math.abs(letter.y - card.top);
-		const bottomPush = Math.abs(letter.y - card.bottom);
-		const side = Math.min(leftPush, rightPush, topPush, bottomPush);
+	function fadeCell(cell: GridCell): void {
+		if (cell.status !== 'alive') return;
 
-		if (letter.hitCooldown <= 0) {
-			spawnSmoke(puffX, puffY, 7, 0.82);
-			letter.hitCooldown = randomBetween(420, 780);
-		}
-
-		if (side === leftPush) {
-			letter.x = card.left - letter.radius;
-			letter.vx = -Math.max(Math.abs(letter.vx) * letter.contentBounce, letter.minSpeed + 0.08);
-		} else if (side === rightPush) {
-			letter.x = card.right + letter.radius;
-			letter.vx = Math.max(Math.abs(letter.vx) * letter.contentBounce, letter.minSpeed + 0.08);
-		} else if (side === topPush) {
-			letter.y = card.top - letter.radius;
-			letter.vy = -Math.max(Math.abs(letter.vy) * letter.contentBounce, letter.minSpeed + 0.08);
-		} else {
-			letter.y = card.bottom + letter.radius;
-			letter.vy = Math.max(Math.abs(letter.vy) * letter.contentBounce, letter.minSpeed + 0.08);
-		}
-
-		letter.opacity = 0.02;
-		letter.targetOpacity = randomBetween(0.1, 0.32);
+		cell.visibility = Math.min(cell.visibility, naturalDecayVisibility);
+		cell.decayMs = randomRange(naturalDecayMs);
+		cell.status = 'dying';
+		spawnSmoke(cell.x, cell.y, 6, 0.48, 0.7, 1);
 	}
 
-	function wrapLetter(letter: DriftLetter, width: number, height: number): void {
-		const edge = letter.radius + 12;
-		if (letter.x < -edge) letter.x = width + edge;
-		if (letter.x > width + edge) letter.x = -edge;
-		if (letter.y < -edge) letter.y = height + edge;
-		if (letter.y > height + edge) letter.y = -edge;
-	}
-
-	function vanishLetter(id: number, event: PointerEvent): void {
+	function popCell(key: string, event: PointerEvent): void {
 		event.preventDefault();
 		event.stopPropagation();
-		const letter = letters.find(item => item.id === id);
-		if (!letter || letter.hiddenFor > 0) return;
+		const cell = cells.find(item => item.key === key);
+		if (!cell || cell.status === 'dead') return;
 
-		spawnSmoke(letter.x, letter.y, 14, 1.24);
-		letter.opacity = 0;
-		letter.targetOpacity = 0;
-		letter.hiddenFor = randomBetween(640, 1200);
+		spawnSmoke(cell.x, cell.y, 18, 1.35, 0.46, 1);
+		cell.visibility = 0;
+		cell.status = 'dead';
 	}
 
-	function spawnSmoke(x: number, y: number, count: number, intensity: number): void {
+	function updateSpacing(now: number): void {
+		if (!spacingState.active && now >= spacingState.nextChangeAt) {
+			startSpacingChange(now);
+		}
+
+		if (!spacingState.active) return;
+
+		const progress = smoothProgress((now - spacingState.startedAt) / spacingState.duration);
+		spacingState.current = spacingState.from + (spacingState.target - spacingState.from) * progress;
+		if (progress >= 1) {
+			spacingState.current = spacingState.target;
+			spacingState.active = false;
+			spacingState.nextChangeAt = now + randomRange(backgroundConfig.spacingChangeDelay);
+		}
+	}
+
+	function updateDirection(now: number, elapsedMs: number, width: number, height: number): void {
+		if (directionState.phase === 'cruise' && now >= directionState.nextChangeAt) {
+			startDirectionChange(now);
+		}
+
+		if (directionState.phase === 'decelerating') {
+			const progress = smoothProgress((now - directionState.phaseStartedAt) / directionState.phaseDuration);
+			directionState.speed = directionState.speedFrom * (1 - progress);
+			if (progress >= 1) {
+				directionState.speed = 0;
+				directionState.phase = 'turning';
+				directionState.phaseStartedAt = now;
+				directionState.phaseDuration = backgroundConfig.turnMs;
+			}
+		} else if (directionState.phase === 'turning') {
+			const progress = smoothProgress((now - directionState.phaseStartedAt) / directionState.phaseDuration);
+			directionState.displayAngle = lerpAngle(directionState.fromAngle, directionState.targetAngle, progress);
+			if (progress >= 1) {
+				directionState.angle = directionState.targetAngle;
+				directionState.displayAngle = directionState.targetAngle;
+				directionState.phase = 'accelerating';
+				directionState.phaseStartedAt = now;
+				directionState.phaseDuration = backgroundConfig.accelerationMs;
+			}
+		} else if (directionState.phase === 'accelerating') {
+			const progress = smoothProgress((now - directionState.phaseStartedAt) / directionState.phaseDuration);
+			directionState.speed = backgroundConfig.targetSpeed * progress;
+			if (progress >= 1) {
+				directionState.speed = backgroundConfig.targetSpeed;
+				directionState.phase = 'cruise';
+				directionState.nextChangeAt = now + randomRange(backgroundConfig.directionChangeDelay);
+			}
+		}
+
+		if (directionState.phase === 'cruise') {
+			directionState.displayAngle = directionState.angle;
+			directionState.speed = backgroundConfig.targetSpeed;
+		}
+
+		if (directionState.phase !== 'turning') {
+			const metrics = getGridMetrics(width, height, spacingState.current);
+			flowPhaseX = wrapUnit(
+				flowPhaseX + (Math.cos(directionState.angle) * directionState.speed * elapsedMs) / metrics.spanX,
+			);
+			flowPhaseY = wrapUnit(
+				flowPhaseY + (Math.sin(directionState.angle) * directionState.speed * elapsedMs) / metrics.spanY,
+			);
+		}
+	}
+
+	function spawnSmoke(x: number, y: number, count: number, intensity: number, ttlScale: number, flowFollow = 1): void {
 		const nextPuffs = Array.from({ length: count }, () => {
 			const angle = Math.random() * Math.PI * 2;
-			const speed = randomBetween(0.16, 0.76) * intensity;
+			const speed = randomBetween(0.22, 0.78) * intensity;
 			return {
 				id: (smokeId += 1),
 				x,
 				y,
 				vx: Math.cos(angle) * speed,
-				vy: Math.sin(angle) * speed - randomBetween(0.02, 0.18),
+				vy: Math.sin(angle) * speed,
 				rotation: Math.random() * 360,
-				spin: randomBetween(-0.42, 0.42),
+				spin: randomBetween(-0.28, 0.28),
 				opacity: 0,
-				baseOpacity: randomBetween(0.2, 0.48),
+				baseOpacity: randomBetween(0.16, 0.5) * intensity,
 				scale: randomBetween(0.42, 1.1) * intensity,
-				growth: randomBetween(0.012, 0.034) * intensity,
+				growth: randomBetween(0.008, 0.024) * intensity,
 				age: 0,
-				ttl: randomBetween(560, 1180),
+				ttl: randomBetween(760, 1500) * ttlScale,
+				flowFollow: flowFollow * randomBetween(0.72, 1.18),
 			};
 		});
-		puffs = [...puffs.slice(-84), ...nextPuffs];
+		puffs = [...puffs, ...nextPuffs].slice(-backgroundConfig.maxPuffs);
 	}
 
-	function updatePuffs(dt: number): void {
+	function updatePuffs(elapsedMs: number): void {
+		const dt = elapsedMs / 16.67;
+		const flowX = Math.cos(directionState.angle) * directionState.speed * elapsedMs;
+		const flowY = Math.sin(directionState.angle) * directionState.speed * elapsedMs;
 		for (const puff of puffs) {
-			puff.age += 16.67 * dt;
+			puff.age += elapsedMs;
 			const progress = Math.min(1, puff.age / puff.ttl);
-			puff.x += puff.vx * dt;
-			puff.y += puff.vy * dt;
+			puff.x += puff.vx * dt + flowX * puff.flowFollow;
+			puff.y += puff.vy * dt + flowY * puff.flowFollow;
 			puff.rotation += puff.spin * dt;
 			puff.scale += puff.growth * dt;
 			puff.opacity = puff.baseOpacity * Math.sin(progress * Math.PI) * (1 - progress * 0.34);
@@ -378,8 +464,340 @@
 		puffs = puffs.filter(puff => puff.age < puff.ttl);
 	}
 
+	function createDirectionState(now: number): DirectionState {
+		return {
+			angle: 0,
+			displayAngle: 0,
+			fromAngle: 0,
+			targetAngle: 0,
+			speed: backgroundConfig.targetSpeed,
+			speedFrom: backgroundConfig.targetSpeed,
+			phase: 'cruise',
+			phaseStartedAt: now,
+			phaseDuration: 0,
+			nextChangeAt: now + randomRange(backgroundConfig.directionChangeDelay),
+		};
+	}
+
+	function createSpacingState(now: number): SpacingState {
+		const initialSpacing = Math.max(minimumGridSpacing, backgroundConfig.initialSpacing);
+		return {
+			current: initialSpacing,
+			from: initialSpacing,
+			target: initialSpacing,
+			startedAt: now,
+			duration: 0,
+			nextChangeAt: now + randomRange(backgroundConfig.spacingChangeDelay),
+			active: false,
+			transitionId: 0,
+		};
+	}
+
+	function chooseDirection(current: number): number {
+		const minimumTurn = degreesToRadians(30 + randomInt(0, 10) * 15);
+		const options = backgroundConfig.directionOptions.filter(
+			angle => Math.abs(shortestAngle(current, angle)) >= minimumTurn,
+		);
+		if (options.length > 0) return options[Math.floor(Math.random() * options.length)];
+
+		const fallback = backgroundConfig.directionOptions.reduce(
+			(best, angle) => {
+				const distance = Math.abs(shortestAngle(current, angle));
+				return distance > best.distance ? { angle, distance } : best;
+			},
+			{ angle: 0, distance: 0 },
+		);
+		return fallback.angle;
+	}
+
+	function chooseGlyph(): string {
+		if (Math.random() < rareGlyphChance) return rareGlyphs[Math.floor(Math.random() * rareGlyphs.length)];
+		return glyphs[Math.floor(Math.random() * glyphs.length)];
+	}
+
+	function glyphScale(char: string): number {
+		return rareGlyphs.includes(char) ? maxGlyphScale : randomBetween(minGlyphScale, maxGlyphScale);
+	}
+
+	function chooseSpacing(current: number): number {
+		const options = backgroundConfig.spacingOptions.filter(spacing => Math.abs(spacing - current) > 1);
+		return options[Math.floor(Math.random() * options.length)] ?? backgroundConfig.initialSpacing;
+	}
+
+	function spinWeight(): number {
+		if (directionState.phase === 'cruise') return 1;
+		if (directionState.phase === 'decelerating' || directionState.phase === 'accelerating') {
+			return clamp(directionState.speed / Math.max(0.0001, backgroundConfig.targetSpeed), 0, 1);
+		}
+		return 0;
+	}
+
+	function smoothProgress(value: number): number {
+		const progress = Math.min(1, Math.max(0, value));
+		return progress * progress * (3 - 2 * progress);
+	}
+
+	function lerpAngle(from: number, to: number, progress: number): number {
+		return from + shortestAngle(from, to) * progress;
+	}
+
+	function shortestAngle(from: number, to: number): number {
+		return Math.atan2(Math.sin(to - from), Math.cos(to - from));
+	}
+
+	function wrapCoordinate(value: number, max: number): number {
+		return ((value % max) + max) % max;
+	}
+
+	function wrapUnit(value: number): number {
+		return wrapCoordinate(value, 1);
+	}
+
+	function getGridMetrics(
+		width: number,
+		height: number,
+		spacing: number,
+	): { columns: number; rows: number; spacing: number; spanX: number; spanY: number } {
+		const safeSpacing = Math.max(minimumGridSpacing, spacing);
+		gridColumns = Math.max(gridColumns, Math.ceil(width / minimumGridSpacing) + 4);
+		gridRows = Math.max(gridRows, Math.ceil(height / minimumGridSpacing) + 4);
+		return {
+			columns: gridColumns,
+			rows: gridRows,
+			spacing: safeSpacing,
+			spanX: gridColumns * safeSpacing,
+			spanY: gridRows * safeSpacing,
+		};
+	}
+
+	function gridX(column: number, metrics: ReturnType<typeof getGridMetrics>): number {
+		return wrapCoordinate(column * metrics.spacing + flowPhaseX * metrics.spanX, metrics.spanX) - metrics.spacing * 2;
+	}
+
+	function gridY(row: number, metrics: ReturnType<typeof getGridMetrics>): number {
+		return wrapCoordinate(row * metrics.spacing + flowPhaseY * metrics.spanY, metrics.spanY) - metrics.spacing * 2;
+	}
+
+	function isNearViewport(x: number, y: number, width: number, height: number, spacing: number): boolean {
+		const margin = spacing * 0.7;
+		return x > -margin && x < width + margin && y > -margin && y < height + margin;
+	}
+
+	function outsidePointNear(
+		x: number,
+		y: number,
+		width: number,
+		height: number,
+		spacing: number,
+	): { x: number; y: number } {
+		const padded = spacing * 1.25;
+		const clampedX = Math.min(width, Math.max(0, x));
+		const clampedY = Math.min(height, Math.max(0, y));
+		const edges = [
+			{ x: -padded, y: clampedY, distance: Math.abs(x) },
+			{ x: width + padded, y: clampedY, distance: Math.abs(width - x) },
+			{ x: clampedX, y: -padded, distance: Math.abs(y) },
+			{ x: clampedX, y: height + padded, distance: Math.abs(height - y) },
+		];
+		return edges.reduce((closest, edge) => (edge.distance < closest.distance ? edge : closest), edges[0]);
+	}
+
 	function randomBetween(min: number, max: number): number {
 		return min + Math.random() * (max - min);
+	}
+
+	function randomRange(range: readonly [number, number]): number {
+		return randomBetween(range[0], range[1]);
+	}
+
+	function randomSigned(min: number, max: number): number {
+		return randomBetween(min, max) * (Math.random() < 0.5 ? -1 : 1);
+	}
+
+	function randomInt(min: number, max: number): number {
+		return Math.floor(randomBetween(min, max + 1));
+	}
+
+	function getNumberConfig(key: NumberConfigKey): number {
+		return backgroundConfig[key];
+	}
+
+	function getRangeConfig(key: RangeConfigKey, index: 0 | 1): number {
+		return backgroundConfig[key][index];
+	}
+
+	function updateNumberConfig(field: DebugNumberField, event: Event): void {
+		const input = event.currentTarget as HTMLInputElement;
+		const rawValue = Number(input.value);
+		if (!Number.isFinite(rawValue)) return;
+
+		const nextValue = field.integer ? Math.round(rawValue) : rawValue;
+		backgroundConfig[field.key] = clamp(nextValue, field.min, field.max);
+
+		if (field.key === 'initialSpacing') {
+			applyCurrentSpacing(backgroundConfig.initialSpacing);
+		} else if (field.key === 'maxPuffs') {
+			puffs = puffs.slice(-backgroundConfig.maxPuffs);
+		}
+	}
+
+	function updateRangeConfig(field: DebugRangeField, index: 0 | 1, event: Event): void {
+		const input = event.currentTarget as HTMLInputElement;
+		const rawValue = Number(input.value);
+		if (!Number.isFinite(rawValue)) return;
+
+		const nextRange = [...backgroundConfig[field.key]] as [number, number];
+		nextRange[index] = clamp(rawValue, field.min, field.max);
+		if (nextRange[0] > nextRange[1]) nextRange[index === 0 ? 1 : 0] = nextRange[index];
+		backgroundConfig[field.key] = nextRange;
+
+		if (field.key === 'spacingChangeDelay') {
+			rescheduleSpacingChange();
+		} else if (field.key === 'directionChangeDelay') {
+			rescheduleDirectionChange();
+		}
+	}
+
+	function updateSpacingOptions(event: Event): void {
+		const input = event.currentTarget as HTMLInputElement;
+		spacingOptionsDraft = input.value;
+		const options = uniqueNumbers(parseNumberList(spacingOptionsDraft))
+			.map(value => Math.round(value))
+			.filter(value => value >= minimumGridSpacing && value <= 180);
+		if (options.length > 0) backgroundConfig.spacingOptions = options;
+	}
+
+	function updateDirectionOptions(event: Event): void {
+		const input = event.currentTarget as HTMLInputElement;
+		directionOptionsDraft = input.value;
+		const options = parseNumberList(directionOptionsDraft).map(degreesToRadians);
+		if (options.length > 0) backgroundConfig.directionOptions = options;
+	}
+
+	function triggerSpacingChange(): void {
+		if (typeof performance === 'undefined') return;
+		startSpacingChange(performance.now());
+	}
+
+	function triggerDirectionChange(): void {
+		if (typeof performance === 'undefined') return;
+		startDirectionChange(performance.now());
+	}
+
+	function startSpacingChange(now: number): void {
+		requestSpacingChange(chooseSpacing(spacingState.current), now);
+	}
+
+	function requestSpacingChange(spacing: number, now: number): void {
+		const nextSpacing = Math.max(minimumGridSpacing, Math.round(spacing));
+		if (Math.abs(nextSpacing - spacingState.current) < 1) {
+			spacingState.nextChangeAt = now + randomRange(backgroundConfig.spacingChangeDelay);
+			return;
+		}
+		if (!reserveStateChange(now, 'spacing')) return;
+
+		spacingState.from = spacingState.current;
+		spacingState.target = nextSpacing;
+		spacingState.startedAt = now;
+		spacingState.duration = Math.max(1, randomRange(backgroundConfig.spacingTransitionMs));
+		spacingState.active = true;
+		spacingState.transitionId += 1;
+	}
+
+	function startDirectionChange(now: number): void {
+		if (!reserveStateChange(now, 'direction')) return;
+
+		directionState.angle = directionState.displayAngle;
+		directionState.fromAngle = directionState.displayAngle;
+		directionState.targetAngle = chooseDirection(directionState.displayAngle);
+		directionState.speedFrom = directionState.speed;
+		directionState.phaseStartedAt = now;
+
+		if (directionState.speed <= 0.001) {
+			directionState.speed = 0;
+			directionState.phase = 'turning';
+			directionState.phaseDuration = backgroundConfig.turnMs;
+			return;
+		}
+
+		directionState.phase = 'decelerating';
+		directionState.phaseDuration = backgroundConfig.decelerationMs;
+	}
+
+	function applyCurrentSpacing(spacing: number): void {
+		if (typeof window === 'undefined') return;
+		requestSpacingChange(spacing, performance.now());
+	}
+
+	function rescheduleSpacingChange(): void {
+		if (typeof performance === 'undefined') return;
+		spacingState.nextChangeAt = performance.now() + randomRange(backgroundConfig.spacingChangeDelay);
+	}
+
+	function rescheduleDirectionChange(): void {
+		if (typeof performance === 'undefined' || directionState.phase !== 'cruise') return;
+		directionState.nextChangeAt = performance.now() + randomRange(backgroundConfig.directionChangeDelay);
+	}
+
+	function reserveStateChange(now: number, kind: 'direction' | 'spacing'): boolean {
+		const blockedUntil = Math.max(
+			nextStateChangeAllowedAt,
+			spacingState.active ? spacingState.startedAt + spacingState.duration : 0,
+			directionState.phase === 'cruise' ? 0 : directionState.phaseStartedAt + directionState.phaseDuration,
+		);
+		if (now < blockedUntil) {
+			rescheduleStateChange(kind, blockedUntil);
+			return false;
+		}
+
+		nextStateChangeAllowedAt = now + stateChangeCooldownMs;
+		if (kind === 'spacing') {
+			directionState.nextChangeAt = Math.max(directionState.nextChangeAt, nextStateChangeAllowedAt);
+		} else {
+			spacingState.nextChangeAt = Math.max(spacingState.nextChangeAt, nextStateChangeAllowedAt);
+		}
+		return true;
+	}
+
+	function rescheduleStateChange(kind: 'direction' | 'spacing', earliestAt: number): void {
+		const nextAttemptAt = earliestAt + randomBetween(800, 1800);
+		if (kind === 'spacing') {
+			spacingState.nextChangeAt = Math.max(spacingState.nextChangeAt, nextAttemptAt);
+		} else if (directionState.phase === 'cruise') {
+			directionState.nextChangeAt = Math.max(directionState.nextChangeAt, nextAttemptAt);
+		}
+	}
+
+	function parseNumberList(value: string): number[] {
+		return value
+			.split(',')
+			.map(item => Number(item.trim()))
+			.filter(Number.isFinite);
+	}
+
+	function uniqueNumbers(values: number[]): number[] {
+		return [...new Set(values)].sort((a, b) => a - b);
+	}
+
+	function formatNumberList(values: number[]): string {
+		return values.map(formatDebugNumber).join(', ');
+	}
+
+	function formatDebugNumber(value: number): string {
+		const rounded = Math.round(value * 1000) / 1000;
+		return `${rounded}`;
+	}
+
+	function degreesToRadians(value: number): number {
+		return (value * Math.PI) / 180;
+	}
+
+	function radiansToDegrees(value: number): number {
+		return (value * 180) / Math.PI;
+	}
+
+	function clamp(value: number, min: number, max: number): number {
+		return Math.min(max, Math.max(min, value));
 	}
 
 	function isActive(href: string): boolean {
@@ -388,16 +806,19 @@
 </script>
 
 <QueryClientProvider client={queryClient}>
-	<div class="app-scene" onpointermove={handlePointerMove} onpointerleave={handlePointerLeave}>
-		<div class="letter-field" aria-hidden="true" bind:this={fieldElement}>
-			{#each letters as letter (letter.id)}
-				<span
-					class="drift-letter"
-					onpointerdown={event => vanishLetter(letter.id, event)}
-					style={`--x:${letter.x}px; --y:${letter.y}px; --r:${letter.rotation}deg; --o:${letter.opacity}; --s:${letter.scale};`}
-				>
-					{letter.char}
-				</span>
+	<div class="app-scene">
+		<div class="letter-field" aria-hidden="true">
+			{#each cells as cell (cell.key)}
+				{#if cell.visibility > 0}
+					<span
+						class="drift-letter"
+						data-cell={cell.key}
+						onpointerdown={event => popCell(cell.key, event)}
+						style={`--x:${cell.x}px; --y:${cell.y}px; --r:${cell.rotation}rad; --o:${cell.opacity}; --s:${cell.scale}; --b:${cell.visibility};`}
+					>
+						{cell.char}
+					</span>
+				{/if}
 			{/each}
 			{#each puffs as puff (puff.id)}
 				<span
@@ -407,7 +828,7 @@
 			{/each}
 		</div>
 
-		<section class="content-card" bind:this={contentElement}>
+		<section class="content-card">
 			<header class="app-header">
 				<a class="logo-link" href="/" aria-label="Phantom Ink lobby">
 					<PhantomLogo compact />
@@ -435,5 +856,97 @@
 				</div>
 			{/key}
 		</section>
+
+		{#if DEBUG.backgroundConfig}
+			<aside class="debug-config-panel" aria-label="DEBUG backgroundConfig">
+				<header class="debug-config-header">
+					<strong>DEBUG.backgroundConfig</strong>
+				</header>
+
+				<div class="debug-config-actions">
+					<button type="button" onclick={triggerDirectionChange}>Change Direction</button>
+					<button type="button" onclick={triggerSpacingChange}>Change Spacing</button>
+				</div>
+
+				<div class="debug-config-section">
+					{#each numberConfigFields as field}
+						<label class="debug-config-row">
+							<span>{field.label}</span>
+							<input
+								type="range"
+								min={field.min}
+								max={field.max}
+								step={field.step}
+								value={getNumberConfig(field.key)}
+								oninput={event => updateNumberConfig(field, event)}
+							/>
+							<input
+								type="number"
+								min={field.min}
+								max={field.max}
+								step={field.step}
+								value={getNumberConfig(field.key)}
+								oninput={event => updateNumberConfig(field, event)}
+							/>
+						</label>
+					{/each}
+				</div>
+
+				<div class="debug-config-section">
+					{#each rangeConfigFields as field}
+						<div class="debug-config-range">
+							<span>{field.label}</span>
+							<label>
+								<em>min</em>
+								<input
+									type="range"
+									min={field.min}
+									max={field.max}
+									step={field.step}
+									value={getRangeConfig(field.key, 0)}
+									oninput={event => updateRangeConfig(field, 0, event)}
+								/>
+								<input
+									type="number"
+									min={field.min}
+									max={field.max}
+									step={field.step}
+									value={getRangeConfig(field.key, 0)}
+									oninput={event => updateRangeConfig(field, 0, event)}
+								/>
+							</label>
+							<label>
+								<em>max</em>
+								<input
+									type="range"
+									min={field.min}
+									max={field.max}
+									step={field.step}
+									value={getRangeConfig(field.key, 1)}
+									oninput={event => updateRangeConfig(field, 1, event)}
+								/>
+								<input
+									type="number"
+									min={field.min}
+									max={field.max}
+									step={field.step}
+									value={getRangeConfig(field.key, 1)}
+									oninput={event => updateRangeConfig(field, 1, event)}
+								/>
+							</label>
+						</div>
+					{/each}
+				</div>
+
+				<label class="debug-config-list">
+					<span>spacingOptions</span>
+					<input type="text" value={spacingOptionsDraft} oninput={updateSpacingOptions} />
+				</label>
+				<label class="debug-config-list">
+					<span>directionOptionsDeg</span>
+					<input type="text" value={directionOptionsDraft} oninput={updateDirectionOptions} />
+				</label>
+			</aside>
+		{/if}
 	</div>
 </QueryClientProvider>
