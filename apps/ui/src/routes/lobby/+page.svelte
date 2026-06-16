@@ -1,12 +1,12 @@
 <script lang="ts">
 	import PlayerAvatar from '$lib/PlayerAvatar.svelte';
-	import { getRoomDirectory, joinRoom } from '$lib/api';
+	import { getOnlineUsers, getRoomDirectory, joinRoom } from '$lib/api';
 	import { playerColorValue } from '$lib/playerPresentation';
 	import { createRoomCode } from '$lib/roomCodes';
 	import { LS, storageKeys } from '$lib/storage';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { type RoomDirectoryListing } from '@repo/shared/onlineGame';
+	import { type RoomDirectoryListing, type UserRecord } from '@repo/shared/onlineGame';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -14,26 +14,32 @@
 	import { onMount } from 'svelte';
 
 	let rooms = $state<RoomDirectoryListing[]>([]);
+	let nearbySouls = $state<UserRecord[]>([]);
 	let expandedRooms = $state<Set<string>>(new Set());
 	let collapsibleRooms = $state<Set<string>>(new Set());
+	let nearbyExpanded = $state(false);
+	let nearbyCollapsible = $state(false);
 	let isLoading = $state(true);
 	let isCreating = $state(false);
 	let joiningCode = $state<string | null>(null);
 	let error = $state<string | null>(null);
 	const playerListElements = new Map<string, HTMLElement>();
+	let nearbyListElement = $state<HTMLElement | undefined>();
 	let measureFrame: number | undefined;
 	const playerListMeasureKey = $derived(
 		rooms.map(room => `${room.code}:${room.players.map(player => `${player.id}:${player.name}`).join(',')}`).join('|'),
 	);
+	const nearbyMeasureKey = $derived(nearbySouls.map(soul => `${soul.id}:${soul.name}`).join('|'));
 
 	onMount(() => {
 		let cancelled = false;
 
 		async function load() {
 			try {
-				const nextRooms = await getRoomDirectory();
+				const [nextRooms, nextNearbySouls] = await Promise.all([getRoomDirectory(), getOnlineUsers()]);
 				if (!cancelled) {
 					rooms = nextRooms;
+					nearbySouls = nextNearbySouls;
 					error = null;
 				}
 			} catch {
@@ -45,7 +51,7 @@
 
 		void load();
 		const interval = window.setInterval(() => void load(), 2500);
-		const handleResize = () => schedulePlayerListMeasure();
+		const handleResize = () => scheduleListMeasure();
 		window.addEventListener('resize', handleResize);
 		return () => {
 			cancelled = true;
@@ -56,7 +62,11 @@
 	});
 
 	$effect(() => {
-		schedulePlayerListMeasure(playerListMeasureKey);
+		scheduleListMeasure(playerListMeasureKey);
+	});
+
+	$effect(() => {
+		scheduleListMeasure(nearbyMeasureKey);
 	});
 
 	async function startNewSeance() {
@@ -121,6 +131,10 @@
 		expandedRooms = next;
 	}
 
+	function toggleNearbyExpanded() {
+		nearbyExpanded = !nearbyExpanded;
+	}
+
 	function handleRoomKeydown(event: KeyboardEvent, code: string) {
 		if (event.key !== 'Enter' && event.key !== ' ') return;
 		event.preventDefault();
@@ -130,7 +144,7 @@
 	function trackPlayerList(node: HTMLElement, code: string) {
 		let currentCode = code;
 		playerListElements.set(currentCode, node);
-		schedulePlayerListMeasure();
+		scheduleListMeasure();
 
 		return {
 			update(nextCode: string) {
@@ -138,34 +152,47 @@
 				playerListElements.delete(currentCode);
 				currentCode = nextCode;
 				playerListElements.set(currentCode, node);
-				schedulePlayerListMeasure();
+				scheduleListMeasure();
 			},
 			destroy() {
 				playerListElements.delete(currentCode);
-				schedulePlayerListMeasure();
+				scheduleListMeasure();
 			},
 		};
 	}
 
-	function schedulePlayerListMeasure(_key?: string) {
+	function scheduleListMeasure(_key?: string) {
 		if (typeof window === 'undefined' || measureFrame !== undefined) return;
 		measureFrame = window.requestAnimationFrame(() => {
 			measureFrame = undefined;
-			measurePlayerLists();
+			measureLists();
 		});
 	}
 
-	function measurePlayerLists() {
+	function measureLists() {
 		const next = new Set<string>();
 		for (const [code, node] of playerListElements) {
 			if (node.scrollHeight > collapsedPlayerListHeight(node) + 1) next.add(code);
 		}
 		collapsibleRooms = next;
 		expandedRooms = new Set([...expandedRooms].filter(code => next.has(code)));
+
+		nearbyCollapsible = Boolean(
+			nearbyListElement && nearbyListElement.scrollHeight > collapsedNearbyListHeight(nearbyListElement) + 1,
+		);
+		if (!nearbyCollapsible) nearbyExpanded = false;
 	}
 
 	function collapsedPlayerListHeight(node: HTMLElement): number {
-		const maxHeight = window.getComputedStyle(node).getPropertyValue('--collapsed-player-list-height').trim();
+		return cssSize(node, '--collapsed-player-list-height');
+	}
+
+	function collapsedNearbyListHeight(node: HTMLElement): number {
+		return cssSize(node, '--collapsed-nearby-list-height');
+	}
+
+	function cssSize(node: HTMLElement, property: string): number {
+		const maxHeight = window.getComputedStyle(node).getPropertyValue(property).trim();
 		if (maxHeight.endsWith('rem')) {
 			const rootSize = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize);
 			return Number.parseFloat(maxHeight) * rootSize;
@@ -192,6 +219,37 @@
 		{/if}
 		<span>Start a new séance</span>
 	</button>
+
+	<div class:collapsible={nearbyCollapsible} class="nearby-souls">
+		{#if nearbyCollapsible}
+			<button
+				aria-expanded={nearbyExpanded}
+				aria-label={`${nearbyExpanded ? 'Collapse' : 'Expand'} nearby souls`}
+				class="nearby-expand-button"
+				onclick={toggleNearbyExpanded}
+				type="button"
+			>
+				<ChevronDown size={19} strokeWidth={2.5} />
+			</button>
+		{/if}
+
+		<div bind:this={nearbyListElement} class:expanded={nearbyExpanded} class="nearby-list">
+			<span class="nearby-label">
+				{nearbySouls.length}
+				{nearbySouls.length === 1 ? 'soul' : 'souls'} nearby:
+			</span>
+			{#if nearbySouls.length}
+				{#each nearbySouls as soul (soul.id)}
+					<span class="nearby-pill">
+						<PlayerAvatar color={playerColorValue(soul.color)} icon={soul.icon} label={`${soul.name} avatar`} />
+						<span>{soul.name}</span>
+					</span>
+				{/each}
+			{:else}
+				<span class="nearby-empty">none</span>
+			{/if}
+		</div>
+	</div>
 
 	<div class="lobby-list" aria-live="polite">
 		{#if rooms.length}
@@ -305,6 +363,78 @@
 		display: grid;
 		gap: 0.65rem;
 		min-width: 0;
+	}
+
+	.nearby-souls {
+		position: relative;
+		min-width: 0;
+		border: 1px solid color-mix(in oklab, var(--app-border) 62%, transparent);
+		border-radius: 0.5rem;
+		background: color-mix(in oklab, var(--app-input) 52%, transparent);
+		padding: 0.52rem 0.62rem;
+	}
+
+	.nearby-souls.collapsible {
+		padding-right: 2.95rem;
+	}
+
+	.nearby-list {
+		--collapsed-nearby-list-height: 2rem;
+
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.35rem 0.45rem;
+		max-height: var(--collapsed-nearby-list-height);
+		overflow: hidden;
+	}
+
+	.nearby-list.expanded {
+		max-height: none;
+	}
+
+	.nearby-label {
+		color: var(--app-muted);
+		font-size: 0.92rem;
+		font-weight: 900;
+		line-height: 1;
+		white-space: nowrap;
+	}
+
+	.nearby-empty {
+		color: color-mix(in oklab, var(--app-muted) 86%, transparent);
+		font-size: 0.92rem;
+		font-weight: 800;
+		line-height: 1;
+	}
+
+	.nearby-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.28rem;
+		min-width: 0;
+		max-width: 100%;
+		color: var(--app-text);
+		font-size: 0.86rem;
+		font-weight: 850;
+		line-height: 1;
+	}
+
+	.nearby-pill :global(.player-avatar) {
+		width: 1.55rem;
+		height: 1.55rem;
+	}
+
+	.nearby-pill :global(svg) {
+		width: 1.24rem;
+		height: 1.24rem;
+	}
+
+	.nearby-pill span:last-child {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.lobby-row {
@@ -461,6 +591,35 @@
 	}
 
 	.expand-button[aria-expanded='true'] {
+		color: var(--app-accent);
+		transform: rotate(180deg);
+	}
+
+	.nearby-expand-button {
+		position: absolute;
+		top: 0.47rem;
+		right: 0.56rem;
+		display: inline-grid;
+		place-items: center;
+		width: 1.85rem;
+		height: 1.85rem;
+		border: 0;
+		border-radius: 999px;
+		background: transparent;
+		color: var(--app-muted);
+		cursor: pointer;
+		transition:
+			background 160ms ease,
+			color 160ms ease,
+			transform 180ms ease;
+	}
+
+	.nearby-expand-button:hover {
+		background: color-mix(in oklab, var(--app-accent) 16%, transparent);
+		color: var(--app-accent);
+	}
+
+	.nearby-expand-button[aria-expanded='true'] {
 		color: var(--app-accent);
 		transform: rotate(180deg);
 	}

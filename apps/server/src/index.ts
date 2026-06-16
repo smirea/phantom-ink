@@ -16,6 +16,7 @@ import {
 	type DirectoryResponse,
 	type OnlineRoomAction,
 	type OnlineRoomState,
+	type OnlinePresenceResponse,
 	type RoomResponse,
 	type UserRecord,
 	type UserResponse,
@@ -176,6 +177,11 @@ async function handleApi(request: Request, url: URL): Promise<Response> {
 		touchUserPresence(user.id);
 		pruneInactiveLobbyRooms();
 		return json({ ok: true, timeoutMs: presenceTimeoutMs });
+	}
+
+	if (method === 'GET' && pathname === '/presence/online') {
+		pruneInactiveLobbyRooms();
+		return json({ users: getOnlineUsers() } satisfies OnlinePresenceResponse);
 	}
 
 	if (method === 'GET' && pathname === '/rooms') {
@@ -351,6 +357,18 @@ function getRooms(): RoomRow[] {
 
 function touchUserPresence(userId: number, now = Date.now()): void {
 	userPresence.set(userId, now);
+}
+
+function getOnlineUsers(now = Date.now()): UserRecord[] {
+	pruneExpiredPresence(now);
+
+	const users: UserRecord[] = [];
+	for (const userId of userPresence.keys()) {
+		const user = getUserRow(userId);
+		if (user) users.push(userRecord(user));
+	}
+
+	return users.sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
 }
 
 function pruneInactiveLobbyRooms(now = Date.now()): void {

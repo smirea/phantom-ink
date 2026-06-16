@@ -6,6 +6,7 @@ import {
 	type CurrentRoomResponse,
 	type DirectoryResponse,
 	type OnlineRoomAction,
+	type OnlinePresenceResponse,
 	type PlayerColorId,
 	type PlayerIconId,
 	type RoomDirectoryListing,
@@ -92,6 +93,13 @@ export async function getRoomDirectory(): Promise<RoomDirectoryListing[]> {
 		await fetch(`${apiBase}/rooms`, { headers: { Accept: 'application/json' } }),
 	);
 	return payload.rooms;
+}
+
+export async function getOnlineUsers(): Promise<UserRecord[]> {
+	const payload = await readJson<OnlinePresenceResponse>(
+		await fetch(`${apiBase}/presence/online`, { headers: { Accept: 'application/json' } }),
+	);
+	return payload.users;
 }
 
 export async function pingPresence(): Promise<void> {

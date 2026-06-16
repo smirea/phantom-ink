@@ -155,6 +155,10 @@ export interface DirectoryResponse {
 	rooms: RoomDirectoryListing[];
 }
 
+export interface OnlinePresenceResponse {
+	users: UserRecord[];
+}
+
 export interface CurrentRoomResponse {
 	roomCode: string | null;
 }
