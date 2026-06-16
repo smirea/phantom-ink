@@ -41,13 +41,22 @@
 	onNavigate(navigation => {
 		if (!browser || !supportsViewTransitions) return;
 
+		const fromPath = navigation.from?.url.pathname;
+		const toPath = navigation.to?.url.pathname;
+		if (fromPath === '/' || toPath === '/') {
+			document.documentElement.dataset.logoTransition = 'letters';
+		}
+
 		isViewTransitioning = true;
 		return new Promise<void>(resolve => {
 			const transition = document.startViewTransition(async () => {
 				resolve();
 				await navigation.complete;
 			});
-			transition.finished.finally(() => (isViewTransitioning = false));
+			transition.finished.finally(() => {
+				isViewTransitioning = false;
+				delete document.documentElement.dataset.logoTransition;
+			});
 		});
 	});
 

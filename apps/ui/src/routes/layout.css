@@ -161,12 +161,6 @@ button {
 	animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-::view-transition-group(phantom-logo-text) {
-	z-index: 4;
-	animation-duration: 680ms;
-	animation-timing-function: cubic-bezier(0.2, 1, 0.24, 1);
-}
-
 ::view-transition-group(phantom-logo-art) {
 	z-index: 3;
 	animation-duration: 420ms;
@@ -193,6 +187,106 @@ button {
 
 ::view-transition-new(content-card) {
 	animation: card-in 440ms 70ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+html[data-logo-transition='letters']::view-transition-group(phantom-logo-letter-0),
+html[data-logo-transition='letters']::view-transition-group(phantom-logo-letter-1),
+html[data-logo-transition='letters']::view-transition-group(phantom-logo-letter-2),
+html[data-logo-transition='letters']::view-transition-group(phantom-logo-letter-3),
+html[data-logo-transition='letters']::view-transition-group(phantom-logo-letter-4),
+html[data-logo-transition='letters']::view-transition-group(phantom-logo-letter-5),
+html[data-logo-transition='letters']::view-transition-group(phantom-logo-letter-6),
+html[data-logo-transition='letters']::view-transition-group(phantom-logo-letter-8),
+html[data-logo-transition='letters']::view-transition-group(phantom-logo-letter-9),
+html[data-logo-transition='letters']::view-transition-group(phantom-logo-letter-10) {
+	z-index: 5;
+	animation-duration: 860ms;
+	animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html[data-logo-transition='letters']::view-transition-old(phantom-logo-letter-0),
+html[data-logo-transition='letters']::view-transition-old(phantom-logo-letter-2),
+html[data-logo-transition='letters']::view-transition-old(phantom-logo-letter-4),
+html[data-logo-transition='letters']::view-transition-old(phantom-logo-letter-6),
+html[data-logo-transition='letters']::view-transition-old(phantom-logo-letter-9) {
+	animation: letter-old-wobble-a 760ms cubic-bezier(0.2, 1, 0.28, 1) both;
+}
+
+html[data-logo-transition='letters']::view-transition-new(phantom-logo-letter-0),
+html[data-logo-transition='letters']::view-transition-new(phantom-logo-letter-2),
+html[data-logo-transition='letters']::view-transition-new(phantom-logo-letter-4),
+html[data-logo-transition='letters']::view-transition-new(phantom-logo-letter-6),
+html[data-logo-transition='letters']::view-transition-new(phantom-logo-letter-9) {
+	animation: letter-new-wobble-a 820ms cubic-bezier(0.2, 1, 0.28, 1) both;
+}
+
+html[data-logo-transition='letters']::view-transition-old(phantom-logo-letter-1),
+html[data-logo-transition='letters']::view-transition-old(phantom-logo-letter-3),
+html[data-logo-transition='letters']::view-transition-old(phantom-logo-letter-5),
+html[data-logo-transition='letters']::view-transition-old(phantom-logo-letter-8),
+html[data-logo-transition='letters']::view-transition-old(phantom-logo-letter-10) {
+	animation: letter-old-wobble-b 820ms cubic-bezier(0.2, 1, 0.28, 1) both;
+}
+
+html[data-logo-transition='letters']::view-transition-new(phantom-logo-letter-1),
+html[data-logo-transition='letters']::view-transition-new(phantom-logo-letter-3),
+html[data-logo-transition='letters']::view-transition-new(phantom-logo-letter-5),
+html[data-logo-transition='letters']::view-transition-new(phantom-logo-letter-8),
+html[data-logo-transition='letters']::view-transition-new(phantom-logo-letter-10) {
+	animation: letter-new-wobble-b 860ms cubic-bezier(0.2, 1, 0.28, 1) both;
+}
+
+html[data-logo-transition='letters']::view-transition-group(phantom-logo-letter-0) {
+	animation-delay: 0ms;
+}
+
+html[data-logo-transition='letters']::view-transition-group(phantom-logo-letter-1) {
+	animation-delay: 14ms;
+}
+
+html[data-logo-transition='letters']::view-transition-group(phantom-logo-letter-2) {
+	animation-delay: 28ms;
+}
+
+html[data-logo-transition='letters']::view-transition-group(phantom-logo-letter-3) {
+	animation-delay: 42ms;
+}
+
+html[data-logo-transition='letters']::view-transition-group(phantom-logo-letter-4) {
+	animation-delay: 54ms;
+}
+
+html[data-logo-transition='letters']::view-transition-group(phantom-logo-letter-5) {
+	animation-delay: 66ms;
+}
+
+html[data-logo-transition='letters']::view-transition-group(phantom-logo-letter-6) {
+	animation-delay: 78ms;
+}
+
+html[data-logo-transition='letters']::view-transition-group(phantom-logo-letter-8) {
+	animation-delay: 92ms;
+}
+
+html[data-logo-transition='letters']::view-transition-group(phantom-logo-letter-9) {
+	animation-delay: 106ms;
+}
+
+html[data-logo-transition='letters']::view-transition-group(phantom-logo-letter-10) {
+	animation-delay: 120ms;
+}
+
+html[data-logo-transition='letters']::view-transition-image-pair(phantom-logo-letter-0),
+html[data-logo-transition='letters']::view-transition-image-pair(phantom-logo-letter-1),
+html[data-logo-transition='letters']::view-transition-image-pair(phantom-logo-letter-2),
+html[data-logo-transition='letters']::view-transition-image-pair(phantom-logo-letter-3),
+html[data-logo-transition='letters']::view-transition-image-pair(phantom-logo-letter-4),
+html[data-logo-transition='letters']::view-transition-image-pair(phantom-logo-letter-5),
+html[data-logo-transition='letters']::view-transition-image-pair(phantom-logo-letter-6),
+html[data-logo-transition='letters']::view-transition-image-pair(phantom-logo-letter-8),
+html[data-logo-transition='letters']::view-transition-image-pair(phantom-logo-letter-9),
+html[data-logo-transition='letters']::view-transition-image-pair(phantom-logo-letter-10) {
+	perspective: 18rem;
 }
 
 @keyframes logo-art-out {
@@ -224,6 +318,110 @@ button {
 		opacity: 0;
 		filter: blur(0.2rem);
 		transform: translateY(0.8rem) scale(0.985);
+	}
+}
+
+@keyframes letter-old-wobble-a {
+	0% {
+		opacity: 1;
+		filter: blur(0);
+		transform: translateY(0) rotate(0deg);
+	}
+
+	34% {
+		opacity: 0.92;
+		filter: blur(0.02rem);
+		transform: translateY(-0.34rem) rotate(-5deg);
+	}
+
+	68% {
+		opacity: 0.58;
+		filter: blur(0.06rem);
+		transform: translateY(0.18rem) rotate(3deg);
+	}
+
+	100% {
+		opacity: 0;
+		filter: blur(0.12rem);
+		transform: translateY(-0.12rem) rotate(-2deg);
+	}
+}
+
+@keyframes letter-new-wobble-a {
+	0% {
+		opacity: 0;
+		filter: blur(0.12rem);
+		transform: translateY(0.32rem) rotate(5deg);
+	}
+
+	38% {
+		opacity: 0.42;
+		filter: blur(0.05rem);
+		transform: translateY(-0.2rem) rotate(-4deg);
+	}
+
+	72% {
+		opacity: 0.86;
+		filter: blur(0.01rem);
+		transform: translateY(0.09rem) rotate(1.8deg);
+	}
+
+	100% {
+		opacity: 1;
+		filter: blur(0);
+		transform: translateY(0) rotate(0deg);
+	}
+}
+
+@keyframes letter-old-wobble-b {
+	0% {
+		opacity: 1;
+		filter: blur(0);
+		transform: translateY(0) rotate(0deg);
+	}
+
+	32% {
+		opacity: 0.94;
+		filter: blur(0.02rem);
+		transform: translateY(0.28rem) rotate(4deg);
+	}
+
+	66% {
+		opacity: 0.62;
+		filter: blur(0.06rem);
+		transform: translateY(-0.2rem) rotate(-3deg);
+	}
+
+	100% {
+		opacity: 0;
+		filter: blur(0.12rem);
+		transform: translateY(0.1rem) rotate(2deg);
+	}
+}
+
+@keyframes letter-new-wobble-b {
+	0% {
+		opacity: 0;
+		filter: blur(0.12rem);
+		transform: translateY(-0.28rem) rotate(-5deg);
+	}
+
+	40% {
+		opacity: 0.46;
+		filter: blur(0.05rem);
+		transform: translateY(0.2rem) rotate(4deg);
+	}
+
+	74% {
+		opacity: 0.88;
+		filter: blur(0.01rem);
+		transform: translateY(-0.08rem) rotate(-1.6deg);
+	}
+
+	100% {
+		opacity: 1;
+		filter: blur(0);
+		transform: translateY(0) rotate(0deg);
 	}
 }
 

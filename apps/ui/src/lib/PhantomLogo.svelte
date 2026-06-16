@@ -1,9 +1,24 @@
 <script lang="ts">
 	let { compact = false, textOnly = false }: { compact?: boolean; textOnly?: boolean } = $props();
+
+	const letters = Array.from('Phantom Ink').map((char, index) => ({
+		char,
+		index,
+		style:
+			char === ' '
+				? `--letter-index: ${index}`
+				: `--letter-index: ${index}; view-transition-name: phantom-logo-letter-${index}`,
+	}));
 </script>
 
 <div class:compact class:text-only={textOnly} class="phantom-logo" role="img" aria-label="Phantom Ink">
-	<span class="logo-text" aria-hidden="true">Phantom Ink</span>
+	<span class="logo-text" aria-hidden="true">
+		{#each letters as letter}
+			<span class:logo-space={letter.char === ' '} class="logo-letter" style={letter.style}>
+				{letter.char === ' ' ? '\u00a0' : letter.char}
+			</span>
+		{/each}
+	</span>
 
 	{#if !textOnly}
 		<svg class="logo-art" viewBox="0 0 520 220" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
@@ -84,7 +99,8 @@
 		top: 15%;
 		left: 50%;
 		z-index: 1;
-		display: block;
+		display: inline-flex;
+		align-items: baseline;
 		width: max-content;
 		max-width: 100%;
 		color: var(--logo-word);
@@ -94,14 +110,23 @@
 		letter-spacing: 0;
 		line-height: 0.9;
 		text-align: center;
+		transform: translateX(-50%);
+	}
+
+	.logo-letter {
+		display: inline-block;
 		text-shadow:
 			0 0 0.12em var(--logo-word-stroke),
 			0.035em 0.07em 0 var(--logo-word-stroke),
 			0 0.12em 0.18em var(--logo-shadow);
-		transform: translateX(-50%);
 		-webkit-text-stroke: 0.055em var(--logo-word-stroke);
 		paint-order: stroke fill;
-		view-transition-name: phantom-logo-text;
+		transform-origin: 50% 62%;
+	}
+
+	.logo-space {
+		width: 0.34em;
+		-webkit-text-stroke: 0;
 	}
 
 	.text-only .logo-text {
