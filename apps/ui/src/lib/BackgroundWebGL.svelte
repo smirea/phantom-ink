@@ -17,6 +17,7 @@
 		time: WebGLUniformLocation | null;
 		displayAngle: WebGLUniformLocation | null;
 		spinEnabled: WebGLUniformLocation | null;
+		spinMultiplier: WebGLUniformLocation | null;
 		color: WebGLUniformLocation | null;
 	};
 	type SmokeProgram = {
@@ -257,6 +258,7 @@
 		gl.uniform1f(glyphProgram.time, now);
 		gl.uniform1f(glyphProgram.displayAngle, engine.direction.displayAngle);
 		gl.uniform1f(glyphProgram.spinEnabled, engine.direction.phase === 'cruise' ? 1 : 0);
+		gl.uniform1f(glyphProgram.spinMultiplier, backgroundState.config.spinSpeedMultiplier);
 		gl.uniform4f(glyphProgram.color, color[0], color[1], color[2], color[3]);
 		instanced.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 6, instanceCount);
 	}
@@ -291,7 +293,7 @@
 			smokeC[offset] = puff.opacity;
 			smokeC[offset + 1] = (puff.rotation * Math.PI) / 180;
 			smokeC[offset + 2] = (puff.endRotation * Math.PI) / 180;
-			smokeC[offset + 3] = puff.id;
+			smokeC[offset + 3] = puff.screenLocked ? -puff.id : puff.id;
 		}
 
 		const ratio = window.devicePixelRatio || 1;
@@ -361,6 +363,7 @@
 				uniform float u_time;
 				uniform float u_displayAngle;
 				uniform float u_spinEnabled;
+				uniform float u_spinMultiplier;
 				varying vec2 v_uv;
 				varying float v_alpha;
 
@@ -386,7 +389,7 @@
 					}
 
 					float size = u_spacing * max(0.8, scale) * 0.78 * u_pixelRatio * step(0.001, alpha);
-					float rotation = u_displayAngle + u_spinEnabled * (u_time * a_style.y + a_style.z);
+					float rotation = u_displayAngle + u_spinEnabled * u_spinMultiplier * (u_time * a_style.y + a_style.z);
 					float cosRotation = cos(rotation);
 					float sinRotation = sin(rotation);
 					vec2 corner = vec2(
@@ -424,6 +427,7 @@
 			time: gl.getUniformLocation(program, 'u_time'),
 			displayAngle: gl.getUniformLocation(program, 'u_displayAngle'),
 			spinEnabled: gl.getUniformLocation(program, 'u_spinEnabled'),
+			spinMultiplier: gl.getUniformLocation(program, 'u_spinMultiplier'),
 			color: gl.getUniformLocation(program, 'u_color'),
 		};
 	}
@@ -437,7 +441,7 @@
 				varying vec2 v_screen;
 
 				void main() {
-					v_screen = (a_position * 0.5 + 0.5) * u_resolution;
+					v_screen = vec2(a_position.x * 0.5 + 0.5, 0.5 - a_position.y * 0.5) * u_resolution;
 					gl_Position = vec4(a_position, 0.0, 1.0);
 				}
 			`,
@@ -480,7 +484,9 @@
 						float progress = clamp((u_time - smokeB.x) / max(1.0, smokeB.y), 0.0, 1.0);
 						float eased = smooth01(progress);
 						float fade = sin(3.14159265359 * progress);
-						vec2 center = (u_gridShift + smokeA.xy + smokeA.zw * eased) * u_pixelRatio;
+						float locked = step(smokeC.w, 0.0);
+						vec2 base = mix(u_gridShift + smokeA.xy, smokeA.xy, locked);
+						vec2 center = (base + smokeA.zw * eased) * u_pixelRatio;
 						float radius = max(1.0, u_spacing * mix(smokeB.z, smokeB.w, eased) * 0.52 * u_pixelRatio);
 						float rotation = smokeC.y + smokeC.z * eased;
 						float cosRotation = cos(rotation);
@@ -490,7 +496,7 @@
 							delta.x * cosRotation - delta.y * sinRotation,
 							delta.x * sinRotation + delta.y * cosRotation
 						);
-						float grain = 0.86 + 0.14 * hash(floor(v_screen / 3.0) + vec2(float(index), smokeC.w));
+						float grain = 0.86 + 0.14 * hash(floor(v_screen / 3.0) + vec2(float(index), abs(smokeC.w)));
 						float body =
 							smokeLobe(warped, vec2(0.0, 0.0), 2.1) * 0.72 +
 							smokeLobe(warped, vec2(0.34, 0.12), 5.2) * 0.18 +

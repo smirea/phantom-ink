@@ -40,6 +40,7 @@ export type EnginePuff = {
 	ttl: number;
 	createdAt: number;
 	removeAt: number;
+	screenLocked: boolean;
 };
 
 export type CellVisual = {
@@ -139,9 +140,9 @@ export class LetterGridEngine {
 
 	handleAction(action: BackgroundAction, width: number, height: number, now = performance.now()): void {
 		if (action.type === 'direction') {
-			this.startDirectionChange(now);
+			this.startDirectionChange(now, action.angle, action.force);
 		} else if (action.type === 'spacing') {
-			this.startSpacingChange(now);
+			this.startSpacingChange(now, action.spacing, action.force);
 		} else {
 			this.handleConfigChange(action.key, width, height, now);
 		}
@@ -150,9 +151,9 @@ export class LetterGridEngine {
 	handleConfigChange(key: string, width: number, height: number, now = performance.now()): void {
 		if (key === 'minimumGridSpacing') {
 			this.ensureCellCapacity(width, height, false);
-			this.requestSpacingChange(Math.max(this.spacing.current, this.config.minimumGridSpacing), now);
+			this.requestSpacingChange(Math.max(this.spacing.current, this.config.minimumGridSpacing), now, true);
 		} else if (key === 'initialSpacing') {
-			this.requestSpacingChange(this.config.initialSpacing, now);
+			this.requestSpacingChange(this.config.initialSpacing, now, true);
 		} else if (key === 'maxPuffs') {
 			this.puffs = this.puffs.slice(-this.config.maxPuffs);
 		} else if (key === 'cellLifeTickMs') {
@@ -166,6 +167,13 @@ export class LetterGridEngine {
 				if (cell.status === 'dead') continue;
 				cell.char = this.chooseGlyph();
 				cell.scale = this.glyphScale(cell.char);
+			}
+			this.revision += 1;
+		} else if (key === 'minGlyphScale' || key === 'maxGlyphScale' || key === 'glyphOpacity') {
+			for (const cell of this.cells) {
+				if (cell.status === 'dead') continue;
+				cell.scale = this.glyphScale(cell.char);
+				cell.opacity = randomRange(this.config.glyphOpacity);
 			}
 			this.revision += 1;
 		}
@@ -209,13 +217,14 @@ export class LetterGridEngine {
 
 	popCell(cell: EngineCell): void {
 		if (cell.status === 'dead') return;
-		const point = this.cellCenter(cell);
+		const point = this.cellScreenPoint(cell);
 		this.spawnSmoke(
 			point.x,
 			point.y,
 			this.config.tapPuffCount,
 			this.config.tapPuffIntensity,
 			this.config.tapPuffTtlScale,
+			true,
 		);
 		this.killCell(cell);
 	}
@@ -549,7 +558,14 @@ export class LetterGridEngine {
 		if (changed) this.revision += 1;
 	}
 
-	private spawnSmoke(x: number, y: number, count: number, intensity: number, ttlScale: number): void {
+	private spawnSmoke(
+		x: number,
+		y: number,
+		count: number,
+		intensity: number,
+		ttlScale: number,
+		screenLocked = false,
+	): void {
 		if (count <= 0 || intensity <= 0 || ttlScale <= 0) return;
 		const now = performance.now();
 		const angle = Math.random() * Math.PI * 2;
@@ -573,6 +589,7 @@ export class LetterGridEngine {
 				ttl,
 				createdAt: now,
 				removeAt: now + ttl,
+				screenLocked,
 			},
 		].slice(-this.config.maxPuffs);
 		this.smokeRevision += 1;
@@ -607,17 +624,17 @@ export class LetterGridEngine {
 		};
 	}
 
-	private startSpacingChange(now: number): void {
-		this.requestSpacingChange(this.chooseSpacing(this.spacing.current), now);
+	private startSpacingChange(now: number, spacing?: number, force = false): void {
+		this.requestSpacingChange(spacing ?? this.chooseSpacing(this.spacing.current), now, force);
 	}
 
-	private requestSpacingChange(spacing: number, now: number): void {
+	private requestSpacingChange(spacing: number, now: number, force = false): void {
 		const nextSpacing = Math.max(this.config.minimumGridSpacing, Math.round(spacing));
-		if (Math.abs(nextSpacing - this.spacing.current) < this.config.spacingChangeThreshold) {
+		if (!force && Math.abs(nextSpacing - this.spacing.current) < this.config.spacingChangeThreshold) {
 			this.spacing.nextChangeAt = now + randomRange(this.config.spacingChangeDelay);
 			return;
 		}
-		if (!this.reserveStateChange(now, 'spacing')) return;
+		if (!this.reserveStateChange(now, 'spacing', force)) return;
 
 		this.captureOnscreenState();
 		this.spacing.from = this.spacing.current;
@@ -628,12 +645,12 @@ export class LetterGridEngine {
 		this.spacing.transitionId += 1;
 	}
 
-	private startDirectionChange(now: number): void {
-		if (!this.reserveStateChange(now, 'direction')) return;
+	private startDirectionChange(now: number, targetAngle?: number, force = false): void {
+		if (!this.reserveStateChange(now, 'direction', force)) return;
 
 		this.direction.angle = this.direction.displayAngle;
 		this.direction.fromAngle = this.direction.displayAngle;
-		this.direction.targetAngle = this.chooseDirection(this.direction.displayAngle);
+		this.direction.targetAngle = targetAngle ?? this.chooseDirection(this.direction.displayAngle);
 		this.direction.speedFrom = this.direction.speed;
 		this.direction.phaseStartedAt = now;
 
@@ -648,7 +665,11 @@ export class LetterGridEngine {
 		this.direction.phaseDuration = this.config.decelerationMs;
 	}
 
-	private reserveStateChange(now: number, kind: 'direction' | 'spacing'): boolean {
+	private reserveStateChange(now: number, kind: 'direction' | 'spacing', force = false): boolean {
+		if (force) {
+			this.nextStateChangeAllowedAt = now + this.config.stateChangeCooldownMs;
+			return true;
+		}
 		const blockedUntil = Math.max(
 			this.nextStateChangeAllowedAt,
 			this.spacing.active ? this.spacing.startedAt + this.spacing.duration : 0,

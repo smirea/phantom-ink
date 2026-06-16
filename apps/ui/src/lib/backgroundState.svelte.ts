@@ -1,5 +1,8 @@
 export type BackgroundId = 'webgl';
-export type BackgroundAction = { type: 'direction' } | { type: 'spacing' } | { type: 'config'; key: string };
+export type BackgroundAction =
+	| { type: 'direction'; angle?: number; force?: boolean }
+	| { type: 'spacing'; spacing?: number; force?: boolean }
+	| { type: 'config'; key: string };
 export type BackgroundMetrics = {
 	frames: number;
 	avgFrameMs: number;
@@ -64,6 +67,7 @@ export type BackgroundConfig = {
 	smokeOpacity: [number, number];
 	smokeEndScaleAdd: [number, number];
 	smokeEndRotation: [number, number];
+	spinSpeedMultiplier: number;
 };
 
 export type NumberConfigKey =
@@ -156,6 +160,10 @@ type DebugRoot = typeof globalThis & {
 		[key: string]: unknown;
 	};
 };
+type DebugMessage = {
+	type?: string;
+	open?: boolean;
+};
 
 export const defaultDirectionOptions = Array.from({ length: 24 }, (_, index) => degreesToRadians(index * 15));
 
@@ -239,15 +247,17 @@ export class BackgroundState {
 
 	backgroundConfig(open = true): BackgroundConfig {
 		this.configOpen = open;
+		if (typeof document !== 'undefined')
+			document.documentElement.dataset.backgroundConfigOpen = open ? 'true' : 'false';
 		return this.config;
 	}
 
-	triggerDirectionChange(): void {
-		this.emit({ type: 'direction' });
+	triggerDirectionChange(angle?: number): void {
+		this.emit({ type: 'direction', angle, force: true });
 	}
 
-	triggerSpacingChange(): void {
-		this.emit({ type: 'spacing' });
+	triggerSpacingChange(spacing?: number): void {
+		this.emit({ type: 'spacing', spacing, force: true });
 	}
 
 	notifyConfigChanged(key: string): void {
@@ -311,14 +321,28 @@ export class BackgroundState {
 		const previousReady = document.documentElement.dataset.backgroundDebug;
 		root.DEBUG ??= {};
 		const backgroundConfig = (open = true) => this.backgroundConfig(open);
+		const openFromEvent = (event: Event) => {
+			const detail = (event as CustomEvent<{ open?: boolean }>).detail;
+			this.backgroundConfig(detail?.open ?? true);
+		};
+		const openFromMessage = (event: MessageEvent<DebugMessage>) => {
+			if (event.source !== window || event.data?.type !== 'phantom-ink:background-config') return;
+			this.backgroundConfig(event.data.open ?? true);
+		};
 		root.DEBUG.backgroundConfig = backgroundConfig;
 		document.documentElement.dataset.backgroundDebug = 'ready';
+		window.addEventListener('phantom-ink:background-config', openFromEvent);
+		window.addEventListener('message', openFromMessage);
+		if (new URLSearchParams(window.location.search).has('backgroundConfig')) this.backgroundConfig(true);
 		return () => {
 			if (!root.DEBUG || root.DEBUG.backgroundConfig !== backgroundConfig) return;
 			if (previous) root.DEBUG.backgroundConfig = previous;
 			else delete root.DEBUG.backgroundConfig;
 			if (previousReady === undefined) delete document.documentElement.dataset.backgroundDebug;
 			else document.documentElement.dataset.backgroundDebug = previousReady;
+			delete document.documentElement.dataset.backgroundConfigOpen;
+			window.removeEventListener('phantom-ink:background-config', openFromEvent);
+			window.removeEventListener('message', openFromMessage);
 		};
 	}
 
@@ -381,6 +405,7 @@ export function createDefaultBackgroundConfig(): BackgroundConfig {
 		smokeOpacity: [0.16, 0.5],
 		smokeEndScaleAdd: [0.34, 0.78],
 		smokeEndRotation: [-24, 24],
+		spinSpeedMultiplier: 1,
 	};
 }
 

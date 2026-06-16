@@ -1,237 +1,298 @@
 <script lang="ts">
-	import {
-		type BackgroundState,
-		type DebugGlyphListField,
-		type DebugNumberField,
-		type DebugNumberListField,
-		type DebugRangeField,
-		type GlyphListConfigKey,
-		type NumberListConfigKey,
-		clamp,
-		formatGlyphList,
-		formatNumberList,
-		glyphListConfigFields,
-		numberConfigFields,
-		numberListConfigFields,
-		parseGlyphList,
-		parseNumberList,
-		rangeConfigFields,
-		radiansToDegrees,
-		uniqueNumbers,
-	} from '$lib/backgroundState.svelte';
+	import { type BackgroundConfig, type BackgroundState, clamp, degreesToRadians } from '$lib/backgroundState.svelte';
+
+	type NumberKey =
+		| 'targetAliveRatio'
+		| 'initialSpacing'
+		| 'targetSpeed'
+		| 'spinSpeedMultiplier'
+		| 'tapPuffIntensity'
+		| 'specialGlyphChance';
+	type RangeKey = 'glyphOpacity' | 'smokeTtlMs' | 'minGlyphScale' | 'maxGlyphScale';
+	type NumberControl = {
+		key: NumberKey;
+		label: string;
+		min: number;
+		max: number;
+		step: number;
+		format?: (value: number) => string;
+		apply?: (value: number) => void;
+	};
 
 	let { state: backgroundState }: { state: BackgroundState } = $props();
-	// svelte-ignore state_referenced_locally
-	let numberListDrafts = $state<Record<NumberListConfigKey, string>>({
-		spacingOptions: formatNumberList(backgroundState.config.spacingOptions),
-		directionOptions: formatNumberList(backgroundState.config.directionOptions.map(radiansToDegrees)),
-	});
-	// svelte-ignore state_referenced_locally
-	let glyphListDrafts = $state<Record<GlyphListConfigKey, string>>({
-		glyphs: formatGlyphList(backgroundState.config.glyphs),
-		specialGlyphs: formatGlyphList(backgroundState.config.specialGlyphs),
-	});
+	let directionDegrees = $state(0);
 
-	function getNumberConfig(key: DebugNumberField['key']): number {
+	const numberControls: NumberControl[] = [
+		{
+			key: 'targetAliveRatio',
+			label: 'Density',
+			min: 0.35,
+			max: 0.96,
+			step: 0.01,
+			format: value => `${Math.round(value * 100)}%`,
+		},
+		{
+			key: 'initialSpacing',
+			label: 'Spacing',
+			min: 44,
+			max: 120,
+			step: 1,
+			format: value => `${Math.round(value)}px`,
+			apply: value => backgroundState.triggerSpacingChange(value),
+		},
+		{
+			key: 'targetSpeed',
+			label: 'Speed',
+			min: 0.004,
+			max: 0.06,
+			step: 0.001,
+			format: value => value.toFixed(3),
+		},
+		{
+			key: 'spinSpeedMultiplier',
+			label: 'Rotation',
+			min: 0,
+			max: 3,
+			step: 0.05,
+			format: value => `${value.toFixed(2)}x`,
+		},
+		{
+			key: 'tapPuffIntensity',
+			label: 'Tap Smoke',
+			min: 0,
+			max: 2.4,
+			step: 0.05,
+			format: value => value.toFixed(2),
+		},
+		{
+			key: 'specialGlyphChance',
+			label: 'Faces',
+			min: 0,
+			max: 0.12,
+			step: 0.005,
+			format: value => `${Math.round(value * 100)}%`,
+		},
+	];
+
+	function configValue(key: NumberKey): number {
 		return backgroundState.config[key];
 	}
 
-	function getRangeConfig(key: DebugRangeField['key'], index: 0 | 1): number {
-		return backgroundState.config[key][index];
-	}
-
-	function updateNumberConfig(field: DebugNumberField, event: Event): void {
+	function updateNumber(control: NumberControl, event: Event): void {
 		const input = event.currentTarget as HTMLInputElement;
-		const rawValue = Number(input.value);
-		if (!Number.isFinite(rawValue)) return;
-
-		const nextValue = field.integer ? Math.round(rawValue) : rawValue;
-		backgroundState.config[field.key] = clamp(nextValue, field.min, field.max);
-
-		if (field.key === 'minimumGridSpacing') {
-			backgroundState.config.initialSpacing = Math.max(
-				backgroundState.config.initialSpacing,
-				backgroundState.config.minimumGridSpacing,
-			);
-			backgroundState.config.spacingOptions = backgroundState.config.spacingOptions.filter(
-				spacing => spacing >= backgroundState.config.minimumGridSpacing,
-			);
-			numberListDrafts.spacingOptions = formatNumberList(backgroundState.config.spacingOptions);
-		} else if (field.key === 'initialSpacing') {
-			backgroundState.config.initialSpacing = Math.max(
-				backgroundState.config.initialSpacing,
-				backgroundState.config.minimumGridSpacing,
-			);
-		} else if (field.key === 'minGlyphScale') {
-			backgroundState.config.maxGlyphScale = Math.max(
-				backgroundState.config.maxGlyphScale,
-				backgroundState.config.minGlyphScale,
-			);
-		} else if (field.key === 'maxGlyphScale') {
-			backgroundState.config.minGlyphScale = Math.min(
-				backgroundState.config.minGlyphScale,
-				backgroundState.config.maxGlyphScale,
-			);
+		const value = clamp(Number(input.value), control.min, control.max);
+		if (!Number.isFinite(value)) return;
+		backgroundState.config[control.key] = value;
+		if (control.key === 'initialSpacing') {
+			backgroundState.config.minimumGridSpacing = Math.min(value, backgroundState.config.minimumGridSpacing);
+			backgroundState.config.spacingOptions = uniqueSpacingOptions(value, backgroundState.config.spacingOptions);
 		}
-		backgroundState.notifyConfigChanged(field.key);
+		backgroundState.notifyConfigChanged(control.key);
+		control.apply?.(value);
 	}
 
-	function updateRangeConfig(field: DebugRangeField, index: 0 | 1, event: Event): void {
+	function updateDirection(event: Event): void {
 		const input = event.currentTarget as HTMLInputElement;
-		const rawValue = Number(input.value);
-		if (!Number.isFinite(rawValue)) return;
-
-		const nextRange = [...backgroundState.config[field.key]] as [number, number];
-		nextRange[index] = clamp(rawValue, field.min, field.max);
-		if (nextRange[0] > nextRange[1]) nextRange[index === 0 ? 1 : 0] = nextRange[index];
-		backgroundState.config[field.key] = nextRange;
-		backgroundState.notifyConfigChanged(field.key);
+		const value = Math.round(clamp(Number(input.value), 0, 345) / 15) * 15;
+		if (!Number.isFinite(value)) return;
+		directionDegrees = value;
+		backgroundState.triggerDirectionChange(degreesToRadians(value));
 	}
 
-	function getNumberListDraft(key: NumberListConfigKey): string {
-		return numberListDrafts[key];
-	}
-
-	function updateNumberListConfig(field: DebugNumberListField, event: Event): void {
+	function updateLetterSize(key: RangeKey, event: Event): void {
 		const input = event.currentTarget as HTMLInputElement;
-		numberListDrafts[field.key] = input.value;
-		const options = uniqueNumbers(parseNumberList(input.value))
-			.map(value => (field.integer ? Math.round(value) : value))
-			.filter(
-				value =>
-					value >=
-					Math.max(field.min, field.key === 'spacingOptions' ? backgroundState.config.minimumGridSpacing : field.min),
-			)
-			.filter(value => value <= field.max)
-			.map(value => field.convertToConfig?.(value) ?? value);
-		if (options.length === 0) return;
-		backgroundState.config[field.key] = options;
-		backgroundState.notifyConfigChanged(field.key);
+		const value = clamp(Number(input.value), 0.2, 3);
+		if (!Number.isFinite(value)) return;
+		if (key === 'minGlyphScale') {
+			backgroundState.config.minGlyphScale = Math.min(value, backgroundState.config.maxGlyphScale);
+			backgroundState.notifyConfigChanged('minGlyphScale');
+		} else if (key === 'maxGlyphScale') {
+			backgroundState.config.maxGlyphScale = Math.max(value, backgroundState.config.minGlyphScale);
+			backgroundState.notifyConfigChanged('maxGlyphScale');
+		}
 	}
 
-	function getGlyphListDraft(key: GlyphListConfigKey): string {
-		return glyphListDrafts[key];
-	}
-
-	function updateGlyphListConfig(field: DebugGlyphListField, event: Event): void {
+	function updateOpacity(index: 0 | 1, event: Event): void {
 		const input = event.currentTarget as HTMLInputElement;
-		glyphListDrafts[field.key] = input.value;
-		const glyphs = parseGlyphList(input.value);
-		if (glyphs.length === 0) return;
-		backgroundState.config[field.key] = glyphs;
-		backgroundState.notifyConfigChanged(field.key);
+		const next = [...backgroundState.config.glyphOpacity] as [number, number];
+		next[index] = clamp(Number(input.value), 0.02, 0.9);
+		if (next[0] > next[1]) next[index === 0 ? 1 : 0] = next[index];
+		backgroundState.config.glyphOpacity = next;
+		backgroundState.notifyConfigChanged('glyphOpacity');
+	}
+
+	function updateSmokeDuration(index: 0 | 1, event: Event): void {
+		const input = event.currentTarget as HTMLInputElement;
+		const next = [...backgroundState.config.smokeTtlMs] as [number, number];
+		next[index] = clamp(Number(input.value), 150, 2600);
+		if (next[0] > next[1]) next[index === 0 ? 1 : 0] = next[index];
+		backgroundState.config.smokeTtlMs = next;
+		backgroundState.notifyConfigChanged('smokeTtlMs');
+	}
+
+	function randomDirection(): void {
+		const value = Math.floor(Math.random() * 24) * 15;
+		directionDegrees = value;
+		backgroundState.triggerDirectionChange(degreesToRadians(value));
+	}
+
+	function randomSpacing(): void {
+		backgroundState.triggerSpacingChange();
+	}
+
+	function uniqueSpacingOptions(value: number, options: number[]): number[] {
+		return [...new Set([...options, Math.round(value)])].sort((a, b) => a - b);
+	}
+
+	function display(control: NumberControl): string {
+		const value = configValue(control.key);
+		return control.format?.(value) ?? `${value}`;
+	}
+
+	function closePanel(): void {
+		backgroundState.backgroundConfig(false);
 	}
 </script>
 
 {#if backgroundState.configOpen}
 	<aside class="debug-config-panel" aria-label="DEBUG backgroundConfig">
 		<header class="debug-config-header">
-			<strong>DEBUG.backgroundConfig()</strong>
-			<button
-				type="button"
-				aria-label="Close background config"
-				onclick={() => backgroundState.backgroundConfig(false)}
-			>
-				Close
-			</button>
+			<strong>Background</strong>
+			<button type="button" aria-label="Close background config" onclick={closePanel}>Close</button>
 		</header>
 
 		<div class="debug-config-actions">
-			<button type="button" onclick={() => backgroundState.triggerDirectionChange()}>Change Direction</button>
-			<button type="button" onclick={() => backgroundState.triggerSpacingChange()}>Change Spacing</button>
+			<button type="button" onclick={randomDirection}>Random Direction</button>
+			<button type="button" onclick={randomSpacing}>Random Spacing</button>
 		</div>
 
-		<div class="debug-config-section">
-			{#each numberConfigFields as field}
-				<label class="debug-config-row">
-					<span>{field.label}</span>
-					<input
-						type="range"
-						min={field.min}
-						max={field.max}
-						step={field.step}
-						value={getNumberConfig(field.key)}
-						oninput={event => updateNumberConfig(field, event)}
-					/>
-					<input
-						type="number"
-						min={field.min}
-						max={field.max}
-						step={field.step}
-						value={getNumberConfig(field.key)}
-						oninput={event => updateNumberConfig(field, event)}
-					/>
-				</label>
-			{/each}
-		</div>
+		<label class="debug-config-row">
+			<span>Direction</span>
+			<input
+				type="range"
+				aria-label="Direction"
+				min="0"
+				max="345"
+				step="15"
+				value={directionDegrees}
+				oninput={updateDirection}
+			/>
+			<input
+				type="number"
+				aria-label="Direction degrees"
+				min="0"
+				max="345"
+				step="15"
+				value={directionDegrees}
+				oninput={updateDirection}
+			/>
+		</label>
 
-		<div class="debug-config-section">
-			{#each rangeConfigFields as field}
-				<div class="debug-config-range">
-					<span>{field.label}</span>
-					<label>
-						<em>min</em>
-						<input
-							type="range"
-							min={field.min}
-							max={field.max}
-							step={field.step}
-							value={getRangeConfig(field.key, 0)}
-							oninput={event => updateRangeConfig(field, 0, event)}
-						/>
-						<input
-							type="number"
-							min={field.min}
-							max={field.max}
-							step={field.step}
-							value={getRangeConfig(field.key, 0)}
-							oninput={event => updateRangeConfig(field, 0, event)}
-						/>
-					</label>
-					<label>
-						<em>max</em>
-						<input
-							type="range"
-							min={field.min}
-							max={field.max}
-							step={field.step}
-							value={getRangeConfig(field.key, 1)}
-							oninput={event => updateRangeConfig(field, 1, event)}
-						/>
-						<input
-							type="number"
-							min={field.min}
-							max={field.max}
-							step={field.step}
-							value={getRangeConfig(field.key, 1)}
-							oninput={event => updateRangeConfig(field, 1, event)}
-						/>
-					</label>
-				</div>
-			{/each}
-		</div>
-
-		{#each numberListConfigFields as field}
-			<label class="debug-config-list">
-				<span>{field.label}</span>
+		{#each numberControls as control}
+			<label class="debug-config-row">
+				<span>{control.label}</span>
 				<input
-					type="text"
-					value={getNumberListDraft(field.key)}
-					oninput={event => updateNumberListConfig(field, event)}
+					type="range"
+					aria-label={control.label}
+					min={control.min}
+					max={control.max}
+					step={control.step}
+					value={configValue(control.key)}
+					oninput={event => updateNumber(control, event)}
 				/>
+				<output>{display(control)}</output>
 			</label>
 		{/each}
 
-		{#each glyphListConfigFields as field}
-			<label class="debug-config-list">
-				<span>{field.label}</span>
+		<div class="debug-config-range">
+			<span>Letter Size</span>
+			<label>
+				<em>min</em>
 				<input
-					type="text"
-					value={getGlyphListDraft(field.key)}
-					oninput={event => updateGlyphListConfig(field, event)}
+					type="range"
+					aria-label="Minimum letter size"
+					min="0.2"
+					max="3"
+					step="0.02"
+					value={backgroundState.config.minGlyphScale}
+					oninput={event => updateLetterSize('minGlyphScale', event)}
 				/>
+				<output>{backgroundState.config.minGlyphScale.toFixed(2)}x</output>
 			</label>
-		{/each}
+			<label>
+				<em>max</em>
+				<input
+					type="range"
+					aria-label="Maximum letter size"
+					min="0.2"
+					max="3"
+					step="0.02"
+					value={backgroundState.config.maxGlyphScale}
+					oninput={event => updateLetterSize('maxGlyphScale', event)}
+				/>
+				<output>{backgroundState.config.maxGlyphScale.toFixed(2)}x</output>
+			</label>
+		</div>
+
+		<div class="debug-config-range">
+			<span>Opacity</span>
+			<label>
+				<em>min</em>
+				<input
+					type="range"
+					aria-label="Minimum opacity"
+					min="0.02"
+					max="0.9"
+					step="0.01"
+					value={backgroundState.config.glyphOpacity[0]}
+					oninput={event => updateOpacity(0, event)}
+				/>
+				<output>{Math.round(backgroundState.config.glyphOpacity[0] * 100)}%</output>
+			</label>
+			<label>
+				<em>max</em>
+				<input
+					type="range"
+					aria-label="Maximum opacity"
+					min="0.02"
+					max="0.9"
+					step="0.01"
+					value={backgroundState.config.glyphOpacity[1]}
+					oninput={event => updateOpacity(1, event)}
+				/>
+				<output>{Math.round(backgroundState.config.glyphOpacity[1] * 100)}%</output>
+			</label>
+		</div>
+
+		<div class="debug-config-range">
+			<span>Smoke Duration</span>
+			<label>
+				<em>min</em>
+				<input
+					type="range"
+					aria-label="Minimum smoke duration"
+					min="150"
+					max="2600"
+					step="50"
+					value={backgroundState.config.smokeTtlMs[0]}
+					oninput={event => updateSmokeDuration(0, event)}
+				/>
+				<output>{Math.round(backgroundState.config.smokeTtlMs[0])}ms</output>
+			</label>
+			<label>
+				<em>max</em>
+				<input
+					type="range"
+					aria-label="Maximum smoke duration"
+					min="150"
+					max="2600"
+					step="50"
+					value={backgroundState.config.smokeTtlMs[1]}
+					oninput={event => updateSmokeDuration(1, event)}
+				/>
+				<output>{Math.round(backgroundState.config.smokeTtlMs[1])}ms</output>
+			</label>
+		</div>
 	</aside>
 {/if}
 
@@ -242,8 +303,8 @@
 		right: 0.75rem;
 		z-index: 4;
 		display: grid;
-		gap: 0.55rem;
-		width: min(28rem, calc(100vw - 1.5rem));
+		gap: 0.6rem;
+		width: min(23rem, calc(100vw - 1.5rem));
 		max-height: calc(100dvh - 1.5rem);
 		border: 1px solid color-mix(in oklab, var(--app-border) 76%, transparent);
 		border-radius: 0.5rem;
@@ -267,61 +328,29 @@
 		font-size: 0.76rem;
 	}
 
-	.debug-config-header button {
-		border: 1px solid color-mix(in oklab, var(--app-border) 82%, transparent);
-		border-radius: 0.375rem;
-		background: var(--app-input);
-		color: var(--app-text);
-		cursor: pointer;
-		font: inherit;
-		padding: 0.2rem 0.45rem;
-	}
-
-	.debug-config-section {
-		display: grid;
-		gap: 0.45rem;
-	}
-
 	.debug-config-actions {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 0.45rem;
 	}
 
-	.debug-config-actions button {
-		min-height: 2rem;
-		border: 1px solid color-mix(in oklab, var(--app-border) 82%, transparent);
-		border-radius: 0.375rem;
-		background: color-mix(in oklab, var(--app-accent) 18%, var(--app-input));
-		color: var(--app-text);
-		cursor: pointer;
-		font: inherit;
-		font-weight: 800;
-	}
-
-	.debug-config-actions button:hover {
-		background: color-mix(in oklab, var(--app-accent) 30%, var(--app-input));
-	}
-
 	.debug-config-row,
-	.debug-config-range label,
-	.debug-config-list {
+	.debug-config-range label {
 		display: grid;
-		grid-template-columns: 8.6rem minmax(6rem, 1fr) 4.8rem;
+		grid-template-columns: 6.8rem minmax(5rem, 1fr) 4rem;
 		align-items: center;
 		gap: 0.45rem;
 	}
 
 	.debug-config-range {
 		display: grid;
-		gap: 0.25rem;
+		gap: 0.3rem;
 		border-top: 1px solid color-mix(in oklab, var(--app-border) 64%, transparent);
-		padding-top: 0.45rem;
+		padding-top: 0.55rem;
 	}
 
-	.debug-config-range > span,
 	.debug-config-row > span,
-	.debug-config-list > span {
+	.debug-config-range > span {
 		color: var(--app-muted);
 		font-family: var(--font-mono);
 		font-size: 0.68rem;
@@ -334,13 +363,27 @@
 		text-transform: uppercase;
 	}
 
+	.debug-config-panel button {
+		border: 1px solid color-mix(in oklab, var(--app-border) 82%, transparent);
+		border-radius: 0.375rem;
+		background: var(--app-input);
+		color: var(--app-text);
+		cursor: pointer;
+		font: inherit;
+		font-weight: 800;
+		padding: 0.28rem 0.45rem;
+	}
+
+	.debug-config-panel button:hover {
+		background: color-mix(in oklab, var(--app-accent) 24%, var(--app-input));
+	}
+
 	.debug-config-panel input {
 		min-width: 0;
 		accent-color: var(--app-accent);
 	}
 
-	.debug-config-panel input[type='number'],
-	.debug-config-panel input[type='text'] {
+	.debug-config-panel input[type='number'] {
 		width: 100%;
 		border: 1px solid var(--app-border);
 		border-radius: 0.375rem;
@@ -350,8 +393,11 @@
 		padding: 0.25rem 0.35rem;
 	}
 
-	.debug-config-list {
-		grid-template-columns: 8.6rem minmax(0, 1fr);
+	.debug-config-panel output {
+		color: var(--app-text);
+		font-family: var(--font-mono);
+		font-size: 0.68rem;
+		text-align: right;
 	}
 
 	@media (max-width: 420px) {
@@ -359,13 +405,16 @@
 			top: 0.4rem;
 			right: 0.4rem;
 			width: calc(100vw - 0.8rem);
-			max-height: 48dvh;
+			max-height: 56dvh;
 		}
 
 		.debug-config-row,
-		.debug-config-range label,
-		.debug-config-list {
+		.debug-config-range label {
 			grid-template-columns: 1fr;
+		}
+
+		.debug-config-panel output {
+			text-align: left;
 		}
 	}
 </style>
