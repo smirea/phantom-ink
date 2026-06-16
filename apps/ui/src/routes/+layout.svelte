@@ -27,12 +27,6 @@
 	const browser = typeof window !== 'undefined';
 	type Theme = 'dark' | 'light';
 
-	const navItems = [
-		{ href: '/', label: 'Start' },
-		{ href: '/lobby', label: 'Lobby' },
-		{ href: '/pad', label: 'Pad' },
-		{ href: '/whispers', label: 'Whispers' },
-	];
 	const queryClient = new QueryClient({
 		defaultOptions: {
 			queries: {
@@ -55,6 +49,7 @@
 	const activeRoute = $derived(`${page.url.pathname}${page.url.search}${page.url.hash}`);
 	const activeRoomCode = $derived(roomCodeFromPath(activePath));
 	const isBareScreen = $derived(activePath === '/' || activePath === '/setup');
+	const isLobbyScreen = $derived(activePath === '/lobby');
 	const isRoomScreen = $derived(Boolean(activeRoomCode));
 	const setupHref = $derived(`/setup?returnTo=${encodeURIComponent(activeRoute)}`);
 	const displayedPlayerName = $derived(playerName.trim() || 'Unknown');
@@ -130,10 +125,6 @@
 	$effect(() => {
 		void checkProfileForPath(page.url);
 	});
-
-	function isActive(href: string): boolean {
-		return href === '/' ? activePath === '/' : activePath.startsWith(href);
-	}
 
 	function prefersReducedMotion(): boolean {
 		return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -373,17 +364,7 @@
 					</div>
 				</header>
 
-				<section class:room-card={isRoomScreen} class="content-card">
-					{#if !isRoomScreen}
-						<nav class="screen-nav" aria-label="Screens">
-							{#each navItems as item}
-								<a href={item.href} aria-current={isActive(item.href) ? 'page' : undefined}>
-									{item.label}
-								</a>
-							{/each}
-						</nav>
-					{/if}
-
+				<section class:lobby-card={isLobbyScreen} class:room-card={isRoomScreen} class="content-card">
 					{#key activePath}
 						<div class="route-frame">
 							{@render children()}
