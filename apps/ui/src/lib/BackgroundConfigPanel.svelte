@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { type BackgroundConfig, type BackgroundState, clamp, degreesToRadians } from '$lib/backgroundState.svelte';
+	import { type BackgroundState, clamp, degreesToRadians } from '$lib/backgroundState.svelte';
 
 	type NumberKey =
 		| 'targetAliveRatio'
@@ -7,7 +7,10 @@
 		| 'targetSpeed'
 		| 'spinSpeedMultiplier'
 		| 'tapPuffIntensity'
-		| 'specialGlyphChance';
+		| 'specialGlyphChance'
+		| 'targetFps'
+		| 'renderPixelRatio';
+	type BooleanKey = 'antialias';
 	type RangeKey = 'glyphOpacity' | 'smokeTtlMs' | 'minGlyphScale' | 'maxGlyphScale';
 	type NumberControl = {
 		key: NumberKey;
@@ -72,6 +75,22 @@
 			step: 0.005,
 			format: value => `${Math.round(value * 100)}%`,
 		},
+		{
+			key: 'targetFps',
+			label: 'FPS',
+			min: 15,
+			max: 120,
+			step: 1,
+			format: value => `${Math.round(value)}`,
+		},
+		{
+			key: 'renderPixelRatio',
+			label: 'DPR',
+			min: 0.5,
+			max: 2,
+			step: 0.05,
+			format: value => value.toFixed(2),
+		},
 	];
 
 	function configValue(key: NumberKey): number {
@@ -89,6 +108,12 @@
 		}
 		backgroundState.notifyConfigChanged(control.key);
 		control.apply?.(value);
+	}
+
+	function updateBoolean(key: BooleanKey, event: Event): void {
+		const input = event.currentTarget as HTMLInputElement;
+		backgroundState.config[key] = input.checked;
+		backgroundState.notifyConfigChanged(key);
 	}
 
 	function updateDirection(event: Event): void {
@@ -203,6 +228,17 @@
 				<output>{display(control)}</output>
 			</label>
 		{/each}
+
+		<label class="debug-config-row">
+			<span>Antialias</span>
+			<input
+				type="checkbox"
+				aria-label="Antialias"
+				checked={backgroundState.config.antialias}
+				onchange={event => updateBoolean('antialias', event)}
+			/>
+			<output>{backgroundState.config.antialias ? 'on' : 'off'}</output>
+		</label>
 
 		<div class="debug-config-range">
 			<span>Letter Size</span>

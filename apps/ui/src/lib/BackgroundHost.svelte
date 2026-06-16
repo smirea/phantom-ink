@@ -9,5 +9,7 @@
 	onMount(() => state.installDebug());
 </script>
 
-<BackgroundWebGL {state} />
+{#key state.rendererKey}
+	<BackgroundWebGL {state} />
+{/key}
 <BackgroundConfigPanel {state} />

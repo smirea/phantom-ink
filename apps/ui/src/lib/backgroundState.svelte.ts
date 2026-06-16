@@ -53,9 +53,6 @@ export type BackgroundConfig = {
 	spawnMs: [number, number];
 	naturalDecayMs: [number, number];
 	spinDelay: [number, number];
-	naturalPuffCount: number;
-	naturalPuffIntensity: number;
-	naturalPuffTtlScale: number;
 	tapPuffCount: number;
 	tapPuffIntensity: number;
 	tapPuffTtlScale: number;
@@ -69,6 +66,9 @@ export type BackgroundConfig = {
 	smokeEndScaleAdd: [number, number];
 	smokeEndRotation: [number, number];
 	spinSpeedMultiplier: number;
+	targetFps: number;
+	renderPixelRatio: number;
+	antialias: boolean;
 };
 
 export type NumberConfigKey =
@@ -97,9 +97,6 @@ export type NumberConfigKey =
 	| 'maxPuffs'
 	| 'minGlyphScale'
 	| 'maxGlyphScale'
-	| 'naturalPuffCount'
-	| 'naturalPuffIntensity'
-	| 'naturalPuffTtlScale'
 	| 'tapPuffCount'
 	| 'tapPuffIntensity'
 	| 'tapPuffTtlScale'
@@ -194,9 +191,6 @@ export const numberConfigFields = [
 	{ key: 'maxPuffs', label: 'maxPuffs', min: 4, max: 32, step: 1, integer: true },
 	{ key: 'minGlyphScale', label: 'minGlyphScale', min: 0.2, max: 2.6, step: 0.01 },
 	{ key: 'maxGlyphScale', label: 'maxGlyphScale', min: 0.2, max: 3, step: 0.01 },
-	{ key: 'naturalPuffCount', label: 'naturalPuffCount', min: 0, max: 24, step: 1, integer: true },
-	{ key: 'naturalPuffIntensity', label: 'naturalPuffIntensity', min: 0, max: 2, step: 0.01 },
-	{ key: 'naturalPuffTtlScale', label: 'naturalPuffTtlScale', min: 0.1, max: 2, step: 0.01 },
 	{ key: 'tapPuffCount', label: 'tapPuffCount', min: 0, max: 48, step: 1, integer: true },
 	{ key: 'tapPuffIntensity', label: 'tapPuffIntensity', min: 0, max: 3, step: 0.01 },
 	{ key: 'tapPuffTtlScale', label: 'tapPuffTtlScale', min: 0.1, max: 2, step: 0.01 },
@@ -242,6 +236,7 @@ export const glyphListConfigFields = [
 export class BackgroundState {
 	config = $state<BackgroundConfig>(createDefaultBackgroundConfig());
 	configOpen = $state(false);
+	rendererKey = $state(0);
 	metrics: Partial<Record<BackgroundId, BackgroundMetrics>> = {};
 
 	#listeners = new Set<(action: BackgroundAction) => void>();
@@ -262,6 +257,7 @@ export class BackgroundState {
 	}
 
 	notifyConfigChanged(key: string): void {
+		if (key === 'antialias') this.rendererKey += 1;
 		this.emit({ type: 'config', key });
 	}
 
@@ -392,9 +388,6 @@ export function createDefaultBackgroundConfig(): BackgroundConfig {
 		spawnMs: [900, 1900],
 		naturalDecayMs: [120, 220],
 		spinDelay: [-20000, 0],
-		naturalPuffCount: 6,
-		naturalPuffIntensity: 0.48,
-		naturalPuffTtlScale: 0.7,
 		tapPuffCount: 18,
 		tapPuffIntensity: 1.35,
 		tapPuffTtlScale: 0.46,
@@ -408,6 +401,9 @@ export function createDefaultBackgroundConfig(): BackgroundConfig {
 		smokeEndScaleAdd: [0.34, 0.78],
 		smokeEndRotation: [-24, 24],
 		spinSpeedMultiplier: 1,
+		targetFps: 60,
+		renderPixelRatio: 1.25,
+		antialias: false,
 	};
 }
 

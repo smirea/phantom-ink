@@ -5,6 +5,7 @@ export type EngineCellStatus = 'alive' | 'spawning' | 'dying' | 'dead';
 export type DirectionPhase = 'cruise' | 'decelerating' | 'turning' | 'accelerating';
 
 export type EngineCell = {
+	index: number;
 	id: number;
 	key: string;
 	char: string;
@@ -99,10 +100,12 @@ export class LetterGridEngine {
 	nextStateChangeAllowedAt = 0;
 	nextCellLifeTickAt = 0;
 	lastTime = 0;
+	currentTime = 0;
 	cellId = 0;
 	smokeId = 0;
 	revision = 0;
 	smokeRevision = 0;
+	dirtyCellIndexes = new Set<number>();
 	direction: DirectionState;
 	spacing: SpacingState;
 
@@ -119,6 +122,7 @@ export class LetterGridEngine {
 	}
 
 	update(now: number, width: number, height: number): void {
+		this.currentTime = now;
 		if (this.lastTime === 0) {
 			this.direction = this.createDirectionState(now);
 			this.spacing = this.createSpacingState(now);
@@ -139,6 +143,7 @@ export class LetterGridEngine {
 	}
 
 	handleAction(action: BackgroundAction, width: number, height: number, now = performance.now()): void {
+		this.currentTime = now;
 		if (action.type === 'direction') {
 			this.startDirectionChange(now, action.angle, action.force);
 		} else if (action.type === 'spacing') {
@@ -149,6 +154,7 @@ export class LetterGridEngine {
 	}
 
 	handleConfigChange(key: string, width: number, height: number, now = performance.now()): void {
+		this.currentTime = now;
 		if (key === 'minimumGridSpacing') {
 			this.ensureCellCapacity(width, height, false);
 			this.requestSpacingChange(Math.max(this.spacing.current, this.config.minimumGridSpacing), now, true);
@@ -167,6 +173,7 @@ export class LetterGridEngine {
 				if (cell.status === 'dead') continue;
 				cell.char = this.chooseGlyph();
 				cell.scale = this.glyphScale(cell.char);
+				this.markCellDirty(cell);
 			}
 			this.revision += 1;
 		} else if (key === 'minGlyphScale' || key === 'maxGlyphScale' || key === 'glyphOpacity') {
@@ -174,9 +181,20 @@ export class LetterGridEngine {
 				if (cell.status === 'dead') continue;
 				cell.scale = this.glyphScale(cell.char);
 				cell.opacity = randomRange(this.config.glyphOpacity);
+				this.markCellDirty(cell);
 			}
 			this.revision += 1;
 		}
+	}
+
+	consumeDirtyCellIndexes(): number[] {
+		const indexes = [...this.dirtyCellIndexes];
+		this.dirtyCellIndexes.clear();
+		return indexes;
+	}
+
+	clearDirtyCellIndexes(): void {
+		this.dirtyCellIndexes.clear();
 	}
 
 	cellCenter(cell: EngineCell): { x: number; y: number } {
@@ -240,7 +258,7 @@ export class LetterGridEngine {
 		} else if (cell.status === 'dying') {
 			const progress = smoothProgress((now - cell.deathStartedAt) / cell.decayMs);
 			alpha *= 1 - progress;
-			scale *= 1 - progress * 0.76;
+			scale *= 1 - progress;
 		}
 
 		return {
@@ -288,7 +306,9 @@ export class LetterGridEngine {
 		const nextCells: EngineCell[] = [];
 		for (let row = this.minRow; row <= this.maxRow; row += 1) {
 			for (let column = this.minColumn; column <= this.maxColumn; column += 1) {
-				nextCells.push(this.createGridCell(column, row, seedAlive && Math.random() < this.config.targetAliveRatio));
+				nextCells.push(
+					this.createGridCell(column, row, seedAlive && Math.random() < this.config.targetAliveRatio, nextCells.length),
+				);
 			}
 		}
 		this.cells = nextCells;
@@ -299,7 +319,14 @@ export class LetterGridEngine {
 		const column = side === 'left' ? this.minColumn - 1 : this.maxColumn + 1;
 		const nextCells: EngineCell[] = [];
 		for (let row = this.minRow; row <= this.maxRow; row += 1) {
-			nextCells.push(this.createGridCell(column, row, seedAlive && Math.random() < this.config.targetAliveRatio));
+			nextCells.push(
+				this.createGridCell(
+					column,
+					row,
+					seedAlive && Math.random() < this.config.targetAliveRatio,
+					this.cells.length + nextCells.length,
+				),
+			);
 		}
 		this.cells = [...this.cells, ...nextCells];
 		if (side === 'left') this.minColumn = column;
@@ -312,7 +339,14 @@ export class LetterGridEngine {
 		const row = side === 'top' ? this.minRow - 1 : this.maxRow + 1;
 		const nextCells: EngineCell[] = [];
 		for (let column = this.minColumn; column <= this.maxColumn; column += 1) {
-			nextCells.push(this.createGridCell(column, row, seedAlive && Math.random() < this.config.targetAliveRatio));
+			nextCells.push(
+				this.createGridCell(
+					column,
+					row,
+					seedAlive && Math.random() < this.config.targetAliveRatio,
+					this.cells.length + nextCells.length,
+				),
+			);
 		}
 		this.cells = [...this.cells, ...nextCells];
 		if (side === 'top') this.minRow = row;
@@ -321,9 +355,10 @@ export class LetterGridEngine {
 		this.revision += 1;
 	}
 
-	private createGridCell(column: number, row: number, seedAlive: boolean): EngineCell {
+	private createGridCell(column: number, row: number, seedAlive: boolean, index: number): EngineCell {
 		const char = this.chooseGlyph();
-		return {
+		const cell: EngineCell = {
+			index,
 			id: (this.cellId += 1),
 			key: `engine-cell-${this.cellId}`,
 			char,
@@ -344,6 +379,8 @@ export class LetterGridEngine {
 			wasOnscreen: false,
 			edgePuffTransition: 0,
 		};
+		this.markCellDirty(cell);
+		return cell;
 	}
 
 	private updateCellLife(now: number): void {
@@ -366,6 +403,7 @@ export class LetterGridEngine {
 			if (cell.status === 'spawning') {
 				if (now >= cell.spawnDoneAt) {
 					cell.status = 'alive';
+					this.markCellDirty(cell);
 					this.revision += 1;
 				}
 			} else if (cell.status === 'dying') {
@@ -401,6 +439,7 @@ export class LetterGridEngine {
 		cell.deathStartedAt = 0;
 		cell.deathAt = 0;
 		cell.status = 'spawning';
+		this.markCellDirty(cell);
 		this.revision += 1;
 	}
 
@@ -410,15 +449,8 @@ export class LetterGridEngine {
 		cell.deathStartedAt = now;
 		cell.deathAt = now + cell.decayMs;
 		cell.status = 'dying';
+		this.markCellDirty(cell);
 		this.revision += 1;
-		const point = this.cellCenter(cell);
-		this.spawnSmoke(
-			point.x,
-			point.y,
-			this.config.naturalPuffCount,
-			this.config.naturalPuffIntensity,
-			this.config.naturalPuffTtlScale,
-		);
 	}
 
 	private killCell(cell: EngineCell): void {
@@ -428,6 +460,7 @@ export class LetterGridEngine {
 		cell.spawnDoneAt = 0;
 		cell.deathStartedAt = 0;
 		cell.deathAt = 0;
+		this.markCellDirty(cell);
 		this.revision += 1;
 	}
 
@@ -525,6 +558,7 @@ export class LetterGridEngine {
 			cell.column = toColumn;
 			cell.wasOnscreen = false;
 			cell.edgePuffTransition = 0;
+			this.markCellDirty(cell);
 			changed = true;
 		}
 
@@ -538,6 +572,10 @@ export class LetterGridEngine {
 		if (changed) this.revision += 1;
 	}
 
+	private markCellDirty(cell: EngineCell): void {
+		this.dirtyCellIndexes.add(cell.index);
+	}
+
 	private recycleRow(fromRow: number, toRow: number): void {
 		let changed = false;
 		for (const cell of this.cells) {
@@ -545,6 +583,7 @@ export class LetterGridEngine {
 			cell.row = toRow;
 			cell.wasOnscreen = false;
 			cell.edgePuffTransition = 0;
+			this.markCellDirty(cell);
 			changed = true;
 		}
 
@@ -567,31 +606,29 @@ export class LetterGridEngine {
 		screenLocked = false,
 	): void {
 		if (count <= 0 || intensity <= 0 || ttlScale <= 0) return;
-		const now = performance.now();
+		const now = this.currentTime;
 		const angle = Math.random() * Math.PI * 2;
 		const countScale = Math.max(1, Math.sqrt(count));
 		const distance = randomRange(this.config.smokeDistance) * intensity * (0.6 + countScale * 0.06);
 		const scale = randomRange(this.config.smokeScale) * intensity * (0.85 + countScale * 0.12);
 		const ttl = randomRange(this.config.smokeTtlMs) * ttlScale;
-		this.puffs = [
-			...this.puffs,
-			{
-				id: (this.smokeId += 1),
-				x,
-				y,
-				dx: Math.cos(angle) * distance,
-				dy: Math.sin(angle) * distance,
-				rotation: Math.random() * 360,
-				endRotation: randomRange(this.config.smokeEndRotation),
-				opacity: randomRange(this.config.smokeOpacity) * intensity * Math.min(1.45, 0.5 + countScale * 0.08),
-				scale,
-				endScale: scale + randomRange(this.config.smokeEndScaleAdd) * intensity * (0.7 + countScale * 0.08),
-				ttl,
-				createdAt: now,
-				removeAt: now + ttl,
-				screenLocked,
-			},
-		].slice(-this.config.maxPuffs);
+		this.puffs.push({
+			id: (this.smokeId += 1),
+			x,
+			y,
+			dx: Math.cos(angle) * distance,
+			dy: Math.sin(angle) * distance,
+			rotation: Math.random() * 360,
+			endRotation: randomRange(this.config.smokeEndRotation),
+			opacity: randomRange(this.config.smokeOpacity) * intensity * Math.min(1.45, 0.5 + countScale * 0.08),
+			scale,
+			endScale: scale + randomRange(this.config.smokeEndScaleAdd) * intensity * (0.7 + countScale * 0.08),
+			ttl,
+			createdAt: now,
+			removeAt: now + ttl,
+			screenLocked,
+		});
+		if (this.puffs.length > this.config.maxPuffs) this.puffs.splice(0, this.puffs.length - this.config.maxPuffs);
 		this.smokeRevision += 1;
 	}
 

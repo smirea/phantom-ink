@@ -29,23 +29,25 @@
 		glyphSize: WebGLUniformLocation | null;
 		time: WebGLUniformLocation | null;
 		color: WebGLUniformLocation | null;
-		count: WebGLUniformLocation | null;
-		smokeA: WebGLUniformLocation | null;
-		smokeB: WebGLUniformLocation | null;
-		smokeC: WebGLUniformLocation | null;
 	};
 	type ThemeColors = {
 		text: [number, number, number, number];
 		smoke: [number, number, number, number];
 	};
+	type InstanceUploadState = {
+		capacity: number;
+		count: number;
+		data: Float32Array;
+	};
 
 	const instanceFloats = 16;
 	const instanceStride = instanceFloats * Float32Array.BYTES_PER_ELEMENT;
+	const smokeInstanceFloats = 12;
+	const smokeInstanceStride = smokeInstanceFloats * Float32Array.BYTES_PER_ELEMENT;
 	const maxSmokeBursts = 32;
 	const quadData = new Float32Array([
 		-0.5, -0.5, 0, 0, 0.5, -0.5, 1, 0, 0.5, 0.5, 1, 1, -0.5, -0.5, 0, 0, 0.5, 0.5, 1, 1, -0.5, 0.5, 0, 1,
 	]);
-	const fullscreenData = new Float32Array([-1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1]);
 
 	let { state: backgroundState }: { state: BackgroundState } = $props();
 	let canvas: HTMLCanvasElement | undefined = undefined;
@@ -56,7 +58,11 @@
 		if (!canvas) return;
 		backgroundState.resetMetrics('webgl');
 
-		const gl = canvas.getContext('webgl', { alpha: true, antialias: true, premultipliedAlpha: true });
+		const gl = canvas.getContext('webgl', {
+			alpha: true,
+			antialias: backgroundState.config.antialias,
+			premultipliedAlpha: true,
+		});
 		const instanced = gl?.getExtension('ANGLE_instanced_arrays');
 		if (!gl || !instanced) return;
 
@@ -64,51 +70,96 @@
 		const smokeProgram = createSmokeProgram(gl);
 		const quadBuffer = createStaticBuffer(gl, quadData);
 		const instanceBuffer = gl.createBuffer();
-		const fullscreenBuffer = createStaticBuffer(gl, fullscreenData);
-		if (!instanceBuffer) return;
+		const smokeBuffer = gl.createBuffer();
+		if (!instanceBuffer || !smokeBuffer) return;
 
 		let frame = 0;
-		let lastFrame = 0;
-		let uploadedRevision = -1;
-		let instanceCount = 0;
+		let engineNow = 0;
+		let lastDrawAt = 0;
+		let pausedByBlur = false;
+		let instanceUpload: InstanceUploadState = { capacity: 0, count: 0, data: new Float32Array(0) };
 		let atlas: Atlas | undefined;
 		let colors = readThemeColors();
-		let smokeA = new Float32Array(maxSmokeBursts * 4);
-		let smokeB = new Float32Array(maxSmokeBursts * 4);
-		let smokeC = new Float32Array(maxSmokeBursts * 4);
+		let smokeData = new Float32Array(maxSmokeBursts * smokeInstanceFloats);
 		const resize = () => resizeCanvas(canvas!, gl);
 		const themeObserver = new MutationObserver(() => (colors = readThemeColors()));
 		const stopActions = backgroundState.onAction(action => {
-			engine.handleAction(action, window.innerWidth, window.innerHeight);
+			engine.handleAction(action, window.innerWidth, window.innerHeight, engineNow || performance.now());
 			if (action.type === 'config' && (action.key === 'glyphs' || action.key === 'specialGlyphs')) {
 				if (atlas) gl.deleteTexture(atlas.texture);
 				atlas = undefined;
-				uploadedRevision = -1;
+				instanceUpload.capacity = 0;
 			}
+			if (action.type === 'config' && action.key === 'renderPixelRatio') resize();
 		});
+		const shouldRun = () => document.visibilityState === 'visible' && !pausedByBlur;
+		const startLoop = () => {
+			if (frame || !shouldRun()) return;
+			frame = window.requestAnimationFrame(tick);
+		};
+		const stopLoop = () => {
+			if (frame) window.cancelAnimationFrame(frame);
+			frame = 0;
+			lastDrawAt = 0;
+		};
+		const handleVisibility = () => {
+			if (shouldRun()) startLoop();
+			else stopLoop();
+		};
+		const handleBlur = () => {
+			pausedByBlur = true;
+			stopLoop();
+		};
+		const handleFocus = () => {
+			pausedByBlur = false;
+			startLoop();
+		};
 
 		resize();
 		window.addEventListener('resize', resize);
+		window.addEventListener('blur', handleBlur);
+		window.addEventListener('focus', handleFocus);
+		document.addEventListener('visibilitychange', handleVisibility);
 		themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
 		gl.enable(gl.BLEND);
 		gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
 		const tick = (now: number) => {
-			const frameMs = lastFrame === 0 ? 0 : now - lastFrame;
-			lastFrame = now;
-
-			const updateStartedAt = performance.now();
-			engine.update(now, window.innerWidth, window.innerHeight);
-			atlas = ensureAtlas(gl, atlas);
-			if (uploadedRevision !== engine.revision) {
-				instanceCount = uploadInstances(gl, instanceBuffer, atlas);
-				uploadedRevision = engine.revision;
+			frame = 0;
+			if (!shouldRun()) {
+				lastDrawAt = 0;
+				return;
 			}
 
+			const minFrameMs = 1000 / Math.max(1, backgroundState.config.targetFps);
+			if (lastDrawAt !== 0 && now - lastDrawAt < minFrameMs * 0.95) {
+				startLoop();
+				return;
+			}
+
+			const frameMs = lastDrawAt === 0 ? 0 : now - lastDrawAt;
+			lastDrawAt = now;
+			engineNow = engineNow === 0 ? now : engineNow + frameMs;
+
+			const updateStartedAt = performance.now();
+			engine.update(engineNow, window.innerWidth, window.innerHeight);
+			atlas = ensureAtlas(gl, atlas);
+			instanceUpload = syncInstances(gl, instanceBuffer, atlas, instanceUpload);
+
 			const drawStartedAt = performance.now();
-			drawGlyphs(gl, instanced, glyphProgram, quadBuffer, instanceBuffer, atlas, instanceCount, colors.text, now);
-			drawSmoke(gl, smokeProgram, fullscreenBuffer, smokeA, smokeB, smokeC, colors.smoke, now);
+			drawGlyphs(
+				gl,
+				instanced,
+				glyphProgram,
+				quadBuffer,
+				instanceBuffer,
+				atlas,
+				instanceUpload.count,
+				colors.text,
+				engineNow,
+			);
+			drawSmoke(gl, instanced, smokeProgram, quadBuffer, smokeBuffer, smokeData, colors.smoke, engineNow);
 			const finishedAt = performance.now();
 
 			backgroundState.recordFrame(
@@ -118,28 +169,31 @@
 				finishedAt - drawStartedAt,
 				engine.cells.length,
 				engine.puffs.length,
-				now,
+				engineNow,
 			);
-			frame = window.requestAnimationFrame(tick);
+			startLoop();
 		};
-		frame = window.requestAnimationFrame(tick);
+		startLoop();
 
 		return () => {
 			stopActions();
 			themeObserver.disconnect();
-			window.cancelAnimationFrame(frame);
+			stopLoop();
 			window.removeEventListener('resize', resize);
+			window.removeEventListener('blur', handleBlur);
+			window.removeEventListener('focus', handleFocus);
+			document.removeEventListener('visibilitychange', handleVisibility);
 			if (atlas) gl.deleteTexture(atlas.texture);
 			gl.deleteBuffer(quadBuffer);
 			gl.deleteBuffer(instanceBuffer);
-			gl.deleteBuffer(fullscreenBuffer);
+			gl.deleteBuffer(smokeBuffer);
 			gl.deleteProgram(glyphProgram.program);
 			gl.deleteProgram(smokeProgram.program);
 		};
 	});
 
 	function resizeCanvas(target: HTMLCanvasElement, gl: WebGLRenderingContext): void {
-		const ratio = window.devicePixelRatio || 1;
+		const ratio = currentPixelRatio();
 		const width = window.innerWidth;
 		const height = window.innerHeight;
 		target.width = Math.ceil(width * ratio);
@@ -147,6 +201,10 @@
 		target.style.width = `${width}px`;
 		target.style.height = `${height}px`;
 		gl.viewport(0, 0, target.width, target.height);
+	}
+
+	function currentPixelRatio(): number {
+		return Math.max(0.5, Math.min(window.devicePixelRatio || 1, backgroundState.config.renderPixelRatio));
 	}
 
 	function createStaticBuffer(gl: WebGLRenderingContext, data: Float32Array): WebGLBuffer {
@@ -204,34 +262,73 @@
 		return { texture, entries, key };
 	}
 
-	function uploadInstances(gl: WebGLRenderingContext, buffer: WebGLBuffer, atlas: Atlas): number {
-		const data = new Float32Array(engine.cells.length * instanceFloats);
-		const fallbackUv: [number, number, number, number] = atlas.entries.values().next().value ?? [0, 0, 1, 1];
-		for (let index = 0; index < engine.cells.length; index += 1) {
-			const cell = engine.cells[index];
-			const uv = atlas.entries.get(cell.char) ?? fallbackUv;
-			const offset = index * instanceFloats;
-			const spinSpeed = ((Math.PI * 2) / cell.spinDuration) * cell.spinDirection;
-			data[offset] = cell.column;
-			data[offset + 1] = cell.row;
-			data[offset + 2] = cellStatus(cell);
-			data[offset + 3] = cell.opacity;
-			data[offset + 4] = uv[0];
-			data[offset + 5] = uv[1];
-			data[offset + 6] = uv[2];
-			data[offset + 7] = uv[3];
-			data[offset + 8] = cell.scale;
-			data[offset + 9] = spinSpeed;
-			data[offset + 10] = cell.spinDelay * spinSpeed;
-			data[offset + 11] = 0;
-			data[offset + 12] = cell.spawnStartedAt;
-			data[offset + 13] = cell.spawnMs;
-			data[offset + 14] = cell.deathStartedAt;
-			data[offset + 15] = cell.decayMs;
+	function syncInstances(
+		gl: WebGLRenderingContext,
+		buffer: WebGLBuffer,
+		atlas: Atlas,
+		upload: InstanceUploadState,
+	): InstanceUploadState {
+		if (upload.capacity < engine.cells.length) {
+			const data = new Float32Array(engine.cells.length * instanceFloats);
+			for (let index = 0; index < engine.cells.length; index += 1) {
+				writeCellInstance(data, index, atlas);
+			}
+			gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+			gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+			engine.clearDirtyCellIndexes();
+			return { capacity: engine.cells.length, count: engine.cells.length, data };
 		}
+
+		const dirtyIndexes = engine.consumeDirtyCellIndexes().filter(index => index >= 0 && index < engine.cells.length);
+		upload.count = engine.cells.length;
+		if (dirtyIndexes.length === 0) return upload;
+
+		dirtyIndexes.sort((a, b) => a - b);
+		for (const index of dirtyIndexes) writeCellInstance(upload.data, index, atlas);
+
 		gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-		gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
-		return engine.cells.length;
+		let rangeStart = dirtyIndexes[0];
+		let previous = rangeStart;
+		for (let index = 1; index <= dirtyIndexes.length; index += 1) {
+			const next = dirtyIndexes[index];
+			if (next === previous + 1) {
+				previous = next;
+				continue;
+			}
+			gl.bufferSubData(
+				gl.ARRAY_BUFFER,
+				rangeStart * instanceStride,
+				upload.data.subarray(rangeStart * instanceFloats, (previous + 1) * instanceFloats),
+			);
+			rangeStart = next;
+			previous = next;
+		}
+
+		return upload;
+	}
+
+	function writeCellInstance(data: Float32Array, index: number, atlas: Atlas): void {
+		const fallbackUv: [number, number, number, number] = atlas.entries.values().next().value ?? [0, 0, 1, 1];
+		const cell = engine.cells[index];
+		const uv = atlas.entries.get(cell.char) ?? fallbackUv;
+		const offset = index * instanceFloats;
+		const spinSpeed = ((Math.PI * 2) / cell.spinDuration) * cell.spinDirection;
+		data[offset] = cell.column;
+		data[offset + 1] = cell.row;
+		data[offset + 2] = cellStatus(cell);
+		data[offset + 3] = cell.opacity;
+		data[offset + 4] = uv[0];
+		data[offset + 5] = uv[1];
+		data[offset + 6] = uv[2];
+		data[offset + 7] = uv[3];
+		data[offset + 8] = cell.scale;
+		data[offset + 9] = spinSpeed;
+		data[offset + 10] = cell.spinDelay * spinSpeed;
+		data[offset + 11] = 0;
+		data[offset + 12] = cell.spawnStartedAt;
+		data[offset + 13] = cell.spawnMs;
+		data[offset + 14] = cell.deathStartedAt;
+		data[offset + 15] = cell.decayMs;
 	}
 
 	function drawGlyphs(
@@ -245,7 +342,7 @@
 		color: [number, number, number, number],
 		now: number,
 	): void {
-		const ratio = window.devicePixelRatio || 1;
+		const ratio = currentPixelRatio();
 		gl.clearColor(0, 0, 0, 0);
 		gl.clear(gl.COLOR_BUFFER_BIT);
 		gl.useProgram(glyphProgram.program);
@@ -267,51 +364,48 @@
 
 	function drawSmoke(
 		gl: WebGLRenderingContext,
+		instanced: ANGLE_instanced_arrays,
 		smokeProgram: SmokeProgram,
-		fullscreenBuffer: WebGLBuffer,
-		smokeA: Float32Array,
-		smokeB: Float32Array,
-		smokeC: Float32Array,
+		quadBuffer: WebGLBuffer,
+		smokeBuffer: WebGLBuffer,
+		smokeData: Float32Array,
 		color: [number, number, number, number],
 		now: number,
 	): void {
-		const active = engine.puffs.slice(-maxSmokeBursts);
-		if (active.length === 0) return;
+		const start = Math.max(0, engine.puffs.length - maxSmokeBursts);
+		const count = engine.puffs.length - start;
+		if (count === 0) return;
 
-		smokeA.fill(0);
-		smokeB.fill(0);
-		smokeC.fill(0);
-		for (let index = 0; index < active.length; index += 1) {
-			const puff = active[index];
-			const offset = index * 4;
-			smokeA[offset] = puff.x;
-			smokeA[offset + 1] = puff.y;
-			smokeA[offset + 2] = puff.dx;
-			smokeA[offset + 3] = puff.dy;
-			smokeB[offset] = puff.createdAt;
-			smokeB[offset + 1] = puff.ttl;
-			smokeB[offset + 2] = puff.scale;
-			smokeB[offset + 3] = puff.endScale;
-			smokeC[offset] = puff.opacity;
-			smokeC[offset + 1] = (puff.rotation * Math.PI) / 180;
-			smokeC[offset + 2] = (puff.endRotation * Math.PI) / 180;
-			smokeC[offset + 3] = puff.screenLocked ? -puff.id : puff.id;
+		smokeData.fill(0);
+		for (let index = 0; index < count; index += 1) {
+			const puff = engine.puffs[start + index];
+			const offset = index * smokeInstanceFloats;
+			smokeData[offset] = puff.x;
+			smokeData[offset + 1] = puff.y;
+			smokeData[offset + 2] = puff.dx;
+			smokeData[offset + 3] = puff.dy;
+			smokeData[offset + 4] = puff.createdAt;
+			smokeData[offset + 5] = puff.ttl;
+			smokeData[offset + 6] = puff.scale;
+			smokeData[offset + 7] = puff.endScale;
+			smokeData[offset + 8] = puff.opacity;
+			smokeData[offset + 9] = (puff.rotation * Math.PI) / 180;
+			smokeData[offset + 10] = (puff.endRotation * Math.PI) / 180;
+			smokeData[offset + 11] = puff.screenLocked ? -puff.id : puff.id;
 		}
 
-		const ratio = window.devicePixelRatio || 1;
+		const ratio = currentPixelRatio();
+		gl.bindBuffer(gl.ARRAY_BUFFER, smokeBuffer);
+		gl.bufferData(gl.ARRAY_BUFFER, smokeData.subarray(0, count * smokeInstanceFloats), gl.DYNAMIC_DRAW);
 		gl.useProgram(smokeProgram.program);
-		setupSmokeAttributes(gl, fullscreenBuffer);
+		setupSmokeAttributes(gl, instanced, quadBuffer, smokeBuffer);
 		gl.uniform2f(smokeProgram.resolution, window.innerWidth * ratio, window.innerHeight * ratio);
 		gl.uniform1f(smokeProgram.pixelRatio, ratio);
 		gl.uniform2f(smokeProgram.gridShift, engine.gridShiftX, engine.gridShiftY);
 		gl.uniform1f(smokeProgram.glyphSize, backgroundState.config.glyphBaseSize);
 		gl.uniform1f(smokeProgram.time, now);
 		gl.uniform4f(smokeProgram.color, color[0], color[1], color[2], color[3]);
-		gl.uniform1i(smokeProgram.count, active.length);
-		gl.uniform4fv(smokeProgram.smokeA, smokeA);
-		gl.uniform4fv(smokeProgram.smokeB, smokeB);
-		gl.uniform4fv(smokeProgram.smokeC, smokeC);
-		gl.drawArrays(gl.TRIANGLES, 0, 6);
+		instanced.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 6, count);
 	}
 
 	function setupGlyphAttributes(
@@ -339,11 +433,24 @@
 		for (let location = 2; location <= 7; location += 1) instanced.vertexAttribDivisorANGLE(location, 1);
 	}
 
-	function setupSmokeAttributes(gl: WebGLRenderingContext, fullscreenBuffer: WebGLBuffer): void {
+	function setupSmokeAttributes(
+		gl: WebGLRenderingContext,
+		instanced: ANGLE_instanced_arrays,
+		quadBuffer: WebGLBuffer,
+		smokeBuffer: WebGLBuffer,
+	): void {
 		for (let location = 1; location <= 7; location += 1) gl.disableVertexAttribArray(location);
-		gl.bindBuffer(gl.ARRAY_BUFFER, fullscreenBuffer);
+		gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
 		gl.enableVertexAttribArray(0);
-		gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+		gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 16, 0);
+		instanced.vertexAttribDivisorANGLE(0, 0);
+
+		gl.bindBuffer(gl.ARRAY_BUFFER, smokeBuffer);
+		for (let location = 1; location <= 3; location += 1) gl.enableVertexAttribArray(location);
+		gl.vertexAttribPointer(1, 4, gl.FLOAT, false, smokeInstanceStride, 0);
+		gl.vertexAttribPointer(2, 4, gl.FLOAT, false, smokeInstanceStride, 16);
+		gl.vertexAttribPointer(3, 4, gl.FLOAT, false, smokeInstanceStride, 32);
+		for (let location = 1; location <= 3; location += 1) instanced.vertexAttribDivisorANGLE(location, 1);
 	}
 
 	function createGlyphProgram(gl: WebGLRenderingContext): GlyphProgram {
@@ -361,6 +468,7 @@
 				uniform vec2 u_resolution;
 				uniform float u_pixelRatio;
 				uniform vec2 u_gridShift;
+				uniform float u_spacing;
 				uniform float u_glyphSize;
 				uniform float u_time;
 				uniform float u_displayAngle;
@@ -387,7 +495,7 @@
 					} else if (a_status > 2.5) {
 						float progress = smooth01((u_time - a_life.z) / max(1.0, a_life.w));
 						alpha *= 1.0 - progress;
-						scale *= 1.0 - progress * 0.76;
+						scale *= 1.0 - progress;
 					}
 
 					float size = u_glyphSize * max(0.8, scale) * u_pixelRatio * step(0.001, alpha);
@@ -439,34 +547,54 @@
 		const program = createProgram(
 			gl,
 			`
-				attribute vec2 a_position;
-				uniform vec2 u_resolution;
-				varying vec2 v_screen;
-
-				void main() {
-					v_screen = vec2(a_position.x * 0.5 + 0.5, 0.5 - a_position.y * 0.5) * u_resolution;
-					gl_Position = vec4(a_position, 0.0, 1.0);
-				}
-			`,
-			`
-				precision highp float;
-				#define MAX_SMOKE 32
+				attribute vec2 a_corner;
+				attribute vec4 a_smokeA;
+				attribute vec4 a_smokeB;
+				attribute vec4 a_smokeC;
 				uniform vec2 u_resolution;
 				uniform float u_pixelRatio;
 				uniform vec2 u_gridShift;
 				uniform float u_glyphSize;
 				uniform float u_time;
-				uniform vec4 u_color;
-				uniform int u_smokeCount;
-				uniform vec4 u_smokeA[MAX_SMOKE];
-				uniform vec4 u_smokeB[MAX_SMOKE];
-				uniform vec4 u_smokeC[MAX_SMOKE];
+				varying vec2 v_delta;
 				varying vec2 v_screen;
+				varying float v_alpha;
+				varying float v_rotation;
+				varying float v_seed;
 
 				float smooth01(float value) {
 					float progress = clamp(value, 0.0, 1.0);
 					return progress * progress * (3.0 - 2.0 * progress);
 				}
+
+				void main() {
+					float progress = clamp((u_time - a_smokeB.x) / max(1.0, a_smokeB.y), 0.0, 1.0);
+					float eased = smooth01(progress);
+					float fade = sin(3.14159265359 * progress);
+					float locked = step(a_smokeC.w, 0.0);
+					vec2 base = mix(u_gridShift + a_smokeA.xy, a_smokeA.xy, locked);
+					vec2 center = (base + a_smokeA.zw * eased) * u_pixelRatio;
+					float radius = max(1.0, u_glyphSize * mix(a_smokeB.z, a_smokeB.w, eased) * 0.67 * u_pixelRatio);
+					float extent = radius * 2.8;
+					vec2 screen = center + a_corner * extent;
+					vec2 zeroToOne = screen / u_resolution;
+					vec2 clip = zeroToOne * 2.0 - 1.0;
+					gl_Position = vec4(clip * vec2(1.0, -1.0), 0.0, 1.0);
+					v_delta = (a_corner * extent) / radius;
+					v_screen = screen;
+					v_alpha = a_smokeC.x * fade;
+					v_rotation = a_smokeC.y + a_smokeC.z * eased;
+					v_seed = abs(a_smokeC.w);
+				}
+			`,
+			`
+				precision highp float;
+				uniform vec4 u_color;
+				varying vec2 v_delta;
+				varying vec2 v_screen;
+				varying float v_alpha;
+				varying float v_rotation;
+				varying float v_seed;
 
 				float hash(vec2 value) {
 					return fract(sin(dot(value, vec2(127.1, 311.7))) * 43758.5453123);
@@ -478,38 +606,23 @@
 				}
 
 				void main() {
-					float alpha = 0.0;
-					for (int index = 0; index < MAX_SMOKE; index++) {
-						if (index >= u_smokeCount) break;
-						vec4 smokeA = u_smokeA[index];
-						vec4 smokeB = u_smokeB[index];
-						vec4 smokeC = u_smokeC[index];
-						float progress = clamp((u_time - smokeB.x) / max(1.0, smokeB.y), 0.0, 1.0);
-						float eased = smooth01(progress);
-						float fade = sin(3.14159265359 * progress);
-						float locked = step(smokeC.w, 0.0);
-						vec2 base = mix(u_gridShift + smokeA.xy, smokeA.xy, locked);
-						vec2 center = (base + smokeA.zw * eased) * u_pixelRatio;
-						float radius = max(1.0, u_glyphSize * mix(smokeB.z, smokeB.w, eased) * 0.67 * u_pixelRatio);
-						float rotation = smokeC.y + smokeC.z * eased;
-						float cosRotation = cos(rotation);
-						float sinRotation = sin(rotation);
-						vec2 delta = (v_screen - center) / radius;
-						vec2 warped = vec2(
-							delta.x * cosRotation - delta.y * sinRotation,
-							delta.x * sinRotation + delta.y * cosRotation
-						);
-						float grain = 0.86 + 0.14 * hash(floor(v_screen / 3.0) + vec2(float(index), abs(smokeC.w)));
-						float body =
-							smokeLobe(warped, vec2(0.0, 0.0), 2.1) * 0.72 +
-							smokeLobe(warped, vec2(0.34, 0.12), 5.2) * 0.18 +
-							smokeLobe(warped, vec2(-0.28, -0.16), 4.4) * 0.14;
-						alpha += smokeC.x * fade * body * grain;
-					}
+					float cosRotation = cos(v_rotation);
+					float sinRotation = sin(v_rotation);
+					vec2 warped = vec2(
+						v_delta.x * cosRotation - v_delta.y * sinRotation,
+						v_delta.x * sinRotation + v_delta.y * cosRotation
+					);
+					float grain = 0.86 + 0.14 * hash(floor(v_screen / 3.0) + vec2(v_seed, v_seed * 0.37));
+					float body =
+						smokeLobe(warped, vec2(0.0, 0.0), 2.1) * 0.72 +
+						smokeLobe(warped, vec2(0.34, 0.12), 5.2) * 0.18 +
+						smokeLobe(warped, vec2(-0.28, -0.16), 4.4) * 0.14;
+					float alpha = v_alpha * body * grain;
+					if (alpha <= 0.002) discard;
 					gl_FragColor = vec4(u_color.rgb, u_color.a * clamp(alpha, 0.0, 0.68));
 				}
 			`,
-			['a_position'],
+			['a_corner', 'a_smokeA', 'a_smokeB', 'a_smokeC'],
 		);
 		return {
 			program,
@@ -519,10 +632,6 @@
 			glyphSize: gl.getUniformLocation(program, 'u_glyphSize'),
 			time: gl.getUniformLocation(program, 'u_time'),
 			color: gl.getUniformLocation(program, 'u_color'),
-			count: gl.getUniformLocation(program, 'u_smokeCount'),
-			smokeA: gl.getUniformLocation(program, 'u_smokeA[0]'),
-			smokeB: gl.getUniformLocation(program, 'u_smokeB[0]'),
-			smokeC: gl.getUniformLocation(program, 'u_smokeC[0]'),
 		};
 	}
 
