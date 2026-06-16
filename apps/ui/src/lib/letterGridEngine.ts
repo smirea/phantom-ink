@@ -138,6 +138,7 @@ export class LetterGridEngine {
 		this.updateGridMotion(elapsedMs);
 		this.ensureCellCapacity(width, height, this.cells.length === 0);
 		this.checkSpacingExpansionEdges(width, height);
+		this.pruneExcessGridEdges(width, height);
 		this.recycleGridEdges(width, height);
 		this.updateCellLife(now);
 	}
@@ -285,14 +286,42 @@ export class LetterGridEngine {
 	}
 
 	private ensureCellCapacity(width: number, height: number, seedAlive: boolean): void {
-		const required = this.getRequiredGridSize(width, height);
+		const spacing = this.capacitySpacing();
+		const required = this.getRequiredGridSize(width, height, spacing);
 		if (this.cells.length === 0) {
 			this.initializeCells(required.columns, required.rows, seedAlive);
 			return;
 		}
 
-		while (this.gridColumns < required.columns) this.addColumn(this.gridColumns % 2 === 0 ? 'left' : 'right', false);
-		while (this.gridRows < required.rows) this.addRow(this.gridRows % 2 === 0 ? 'top' : 'bottom', false);
+		const spawnNew = this.spacing.active && this.spacing.target < this.spacing.from;
+		const padding = spacing * this.config.gridPaddingCells;
+		let guard = 0;
+		while (this.gridShiftX + (this.minColumn + 0.5) * spacing > -padding && guard < 200) {
+			this.addColumn('left', spawnNew);
+			guard += 1;
+		}
+		while (this.gridShiftX + (this.maxColumn + 0.5) * spacing < width + padding && guard < 400) {
+			this.addColumn('right', spawnNew);
+			guard += 1;
+		}
+		while (this.gridColumns < required.columns && guard < 600) {
+			this.addColumn(this.nextColumnSide(width, spacing), spawnNew);
+			guard += 1;
+		}
+
+		guard = 0;
+		while (this.gridShiftY + (this.minRow + 0.5) * spacing > -padding && guard < 200) {
+			this.addRow('top', spawnNew);
+			guard += 1;
+		}
+		while (this.gridShiftY + (this.maxRow + 0.5) * spacing < height + padding && guard < 400) {
+			this.addRow('bottom', spawnNew);
+			guard += 1;
+		}
+		while (this.gridRows < required.rows && guard < 600) {
+			this.addRow(this.nextRowSide(height, spacing), spawnNew);
+			guard += 1;
+		}
 	}
 
 	private initializeCells(columns: number, rows: number, seedAlive: boolean): void {
@@ -306,27 +335,18 @@ export class LetterGridEngine {
 		const nextCells: EngineCell[] = [];
 		for (let row = this.minRow; row <= this.maxRow; row += 1) {
 			for (let column = this.minColumn; column <= this.maxColumn; column += 1) {
-				nextCells.push(
-					this.createGridCell(column, row, seedAlive && Math.random() < this.config.targetAliveRatio, nextCells.length),
-				);
+				nextCells.push(this.createGridCell(column, row, seedAlive, nextCells.length));
 			}
 		}
 		this.cells = nextCells;
 		this.revision += 1;
 	}
 
-	private addColumn(side: 'left' | 'right', seedAlive: boolean): void {
+	private addColumn(side: 'left' | 'right', spawnNew: boolean): void {
 		const column = side === 'left' ? this.minColumn - 1 : this.maxColumn + 1;
 		const nextCells: EngineCell[] = [];
 		for (let row = this.minRow; row <= this.maxRow; row += 1) {
-			nextCells.push(
-				this.createGridCell(
-					column,
-					row,
-					seedAlive && Math.random() < this.config.targetAliveRatio,
-					this.cells.length + nextCells.length,
-				),
-			);
+			nextCells.push(this.createGridCell(column, row, true, this.cells.length + nextCells.length, spawnNew));
 		}
 		this.cells = [...this.cells, ...nextCells];
 		if (side === 'left') this.minColumn = column;
@@ -335,18 +355,11 @@ export class LetterGridEngine {
 		this.revision += 1;
 	}
 
-	private addRow(side: 'top' | 'bottom', seedAlive: boolean): void {
+	private addRow(side: 'top' | 'bottom', spawnNew: boolean): void {
 		const row = side === 'top' ? this.minRow - 1 : this.maxRow + 1;
 		const nextCells: EngineCell[] = [];
 		for (let column = this.minColumn; column <= this.maxColumn; column += 1) {
-			nextCells.push(
-				this.createGridCell(
-					column,
-					row,
-					seedAlive && Math.random() < this.config.targetAliveRatio,
-					this.cells.length + nextCells.length,
-				),
-			);
+			nextCells.push(this.createGridCell(column, row, true, this.cells.length + nextCells.length, spawnNew));
 		}
 		this.cells = [...this.cells, ...nextCells];
 		if (side === 'top') this.minRow = row;
@@ -355,8 +368,11 @@ export class LetterGridEngine {
 		this.revision += 1;
 	}
 
-	private createGridCell(column: number, row: number, seedAlive: boolean, index: number): EngineCell {
+	private createGridCell(column: number, row: number, seedAlive: boolean, index: number, spawnNew = false): EngineCell {
 		const char = this.chooseGlyph();
+		const status: EngineCellStatus =
+			seedAlive && Math.random() < this.config.targetAliveRatio ? (spawnNew ? 'spawning' : 'alive') : 'dead';
+		const spawnMs = randomRange(this.config.spawnMs);
 		const cell: EngineCell = {
 			index,
 			id: (this.cellId += 1),
@@ -368,11 +384,11 @@ export class LetterGridEngine {
 			scale: this.glyphScale(char),
 			spinDuration: randomBetween(18000, 44000),
 			spinDirection: Math.random() < 0.5 ? -1 : 1,
-			status: seedAlive ? 'alive' : 'dead',
-			spawnMs: randomRange(this.config.spawnMs),
+			status,
+			spawnMs,
 			decayMs: randomRange(this.config.naturalDecayMs),
-			spawnStartedAt: 0,
-			spawnDoneAt: 0,
+			spawnStartedAt: status === 'spawning' ? this.currentTime : 0,
+			spawnDoneAt: status === 'spawning' ? this.currentTime + spawnMs : 0,
 			deathStartedAt: 0,
 			deathAt: 0,
 			wasOnscreen: false,
@@ -571,6 +587,91 @@ export class LetterGridEngine {
 		if (changed) this.revision += 1;
 	}
 
+	private pruneExcessGridEdges(width: number, height: number): void {
+		if (this.gridColumns <= 0 || this.gridRows <= 0) return;
+		if (this.spacing.active && this.spacing.target < this.spacing.from) return;
+
+		const required = this.getRequiredGridSize(width, height, this.pruneSpacing());
+		const spacing = Math.max(1, this.spacing.current || this.config.initialSpacing);
+		const margin = spacing * this.config.recycleMarginCells;
+		let removeLeftColumns = 0;
+		let removeRightColumns = 0;
+		let removeTopRows = 0;
+		let removeBottomRows = 0;
+		let guard = 0;
+
+		while (this.gridColumns - removeLeftColumns - removeRightColumns > required.columns && guard < 200) {
+			const leftColumn = this.minColumn + removeLeftColumns;
+			const rightColumn = this.maxColumn - removeRightColumns;
+			if (this.canRemoveColumn(leftColumn, 'left', width, spacing, margin)) {
+				removeLeftColumns += 1;
+			} else if (this.canRemoveColumn(rightColumn, 'right', width, spacing, margin)) {
+				removeRightColumns += 1;
+			} else {
+				break;
+			}
+			guard += 1;
+		}
+
+		guard = 0;
+		while (this.gridRows - removeTopRows - removeBottomRows > required.rows && guard < 200) {
+			const topRow = this.minRow + removeTopRows;
+			const bottomRow = this.maxRow - removeBottomRows;
+			if (this.canRemoveRow(topRow, 'top', height, spacing, margin)) {
+				removeTopRows += 1;
+			} else if (this.canRemoveRow(bottomRow, 'bottom', height, spacing, margin)) {
+				removeBottomRows += 1;
+			} else {
+				break;
+			}
+			guard += 1;
+		}
+
+		const removedColumns = removeLeftColumns + removeRightColumns;
+		const removedRows = removeTopRows + removeBottomRows;
+		if (removedColumns + removedRows === 0) return;
+
+		this.minColumn += removeLeftColumns;
+		this.maxColumn -= removeRightColumns;
+		this.minRow += removeTopRows;
+		this.maxRow -= removeBottomRows;
+		this.gridColumns -= removedColumns;
+		this.gridRows -= removedRows;
+		this.cells = this.cells.filter(
+			cell =>
+				cell.column >= this.minColumn &&
+				cell.column <= this.maxColumn &&
+				cell.row >= this.minRow &&
+				cell.row <= this.maxRow,
+		);
+		this.reindexCells();
+		this.revision += 1;
+	}
+
+	private canRemoveColumn(
+		column: number,
+		side: 'left' | 'right',
+		width: number,
+		spacing: number,
+		margin: number,
+	): boolean {
+		const x = this.gridShiftX + (column + 0.5) * spacing;
+		return side === 'left' ? x < -margin : x > width + margin;
+	}
+
+	private canRemoveRow(row: number, side: 'top' | 'bottom', height: number, spacing: number, margin: number): boolean {
+		const y = this.gridShiftY + (row + 0.5) * spacing;
+		return side === 'top' ? y < -margin : y > height + margin;
+	}
+
+	private reindexCells(): void {
+		this.dirtyCellIndexes.clear();
+		for (let index = 0; index < this.cells.length; index += 1) {
+			this.cells[index].index = index;
+			this.markCellDirty(this.cells[index]);
+		}
+	}
+
 	private markCellDirty(cell: EngineCell): void {
 		this.dirtyCellIndexes.add(cell.index);
 	}
@@ -674,6 +775,7 @@ export class LetterGridEngine {
 		}
 		if (!this.reserveStateChange(now, 'spacing', force)) return;
 
+		this.normalizeGridOrigin(this.spacing.current);
 		this.captureOnscreenState();
 		this.spacing.from = this.spacing.current;
 		this.spacing.target = nextSpacing;
@@ -770,10 +872,67 @@ export class LetterGridEngine {
 		return options[Math.floor(Math.random() * options.length)] ?? this.config.initialSpacing;
 	}
 
-	private getRequiredGridSize(width: number, height: number): { columns: number; rows: number } {
+	private normalizeGridOrigin(spacing: number): void {
+		const safeSpacing = Math.max(1, spacing);
+		const columnOffset = Math.floor(this.gridShiftX / safeSpacing);
+		const rowOffset = Math.floor(this.gridShiftY / safeSpacing);
+		if (columnOffset === 0 && rowOffset === 0) return;
+
+		this.gridShiftX -= columnOffset * safeSpacing;
+		this.gridShiftY -= rowOffset * safeSpacing;
+		this.minColumn += columnOffset;
+		this.maxColumn += columnOffset;
+		this.minRow += rowOffset;
+		this.maxRow += rowOffset;
+		const xOffset = columnOffset * safeSpacing;
+		const yOffset = rowOffset * safeSpacing;
+		for (const cell of this.cells) {
+			cell.column += columnOffset;
+			cell.row += rowOffset;
+			this.markCellDirty(cell);
+		}
+		for (const puff of this.puffs) {
+			if (puff.screenLocked) continue;
+			puff.x += xOffset;
+			puff.y += yOffset;
+		}
+		this.revision += 1;
+		this.smokeRevision += 1;
+	}
+
+	private capacitySpacing(): number {
+		const fallback = this.config.initialSpacing || this.config.minimumGridSpacing;
+		const spacing = this.spacing.active
+			? Math.min(this.spacing.current || fallback, this.spacing.target || fallback)
+			: this.spacing.current || fallback;
+		return Math.max(1, spacing);
+	}
+
+	private pruneSpacing(): number {
+		const fallback = this.config.initialSpacing || this.config.minimumGridSpacing;
+		const spacing = this.spacing.active
+			? Math.max(this.spacing.current || fallback, this.spacing.target || fallback)
+			: this.spacing.current || fallback;
+		return Math.max(1, spacing);
+	}
+
+	private nextColumnSide(width: number, spacing: number): 'left' | 'right' {
+		const leftGap = this.gridShiftX + (this.minColumn + 0.5) * spacing;
+		const rightGap = width - (this.gridShiftX + (this.maxColumn + 0.5) * spacing);
+		return leftGap > rightGap ? 'left' : 'right';
+	}
+
+	private nextRowSide(height: number, spacing: number): 'top' | 'bottom' {
+		const topGap = this.gridShiftY + (this.minRow + 0.5) * spacing;
+		const bottomGap = height - (this.gridShiftY + (this.maxRow + 0.5) * spacing);
+		return topGap > bottomGap ? 'top' : 'bottom';
+	}
+
+	private getRequiredGridSize(width: number, height: number, spacing: number): { columns: number; rows: number } {
+		const safeSpacing = Math.max(1, spacing);
 		return {
-			columns: Math.ceil(width / this.config.minimumGridSpacing) + this.config.gridPaddingCells * 2,
-			rows: Math.ceil(height / this.config.minimumGridSpacing) + this.config.gridPaddingCells * 2,
+			columns: Math.ceil(width / safeSpacing) + this.config.gridPaddingCells * 2,
+			rows: Math.ceil(height / safeSpacing) + this.config.gridPaddingCells * 2,
 		};
 	}
 

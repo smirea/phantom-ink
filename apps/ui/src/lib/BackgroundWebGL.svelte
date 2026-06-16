@@ -279,19 +279,22 @@
 		atlas: Atlas,
 		upload: InstanceUploadState,
 	): InstanceUploadState {
-		if (upload.capacity < engine.cells.length) {
-			const data = new Float32Array(engine.cells.length * instanceFloats);
-			for (let index = 0; index < engine.cells.length; index += 1) {
+		const cellCount = engine.cells.length;
+		const shouldResize =
+			upload.capacity < cellCount || (upload.capacity > cellCount * 1.35 && upload.capacity - cellCount > 128);
+		if (shouldResize) {
+			const data = new Float32Array(cellCount * instanceFloats);
+			for (let index = 0; index < cellCount; index += 1) {
 				writeCellInstance(data, index, atlas);
 			}
 			gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
 			gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
 			engine.clearDirtyCellIndexes();
-			return { capacity: engine.cells.length, count: engine.cells.length, data };
+			return { capacity: cellCount, count: cellCount, data };
 		}
 
-		const dirtyIndexes = engine.consumeDirtyCellIndexes().filter(index => index >= 0 && index < engine.cells.length);
-		upload.count = engine.cells.length;
+		const dirtyIndexes = engine.consumeDirtyCellIndexes().filter(index => index >= 0 && index < cellCount);
+		upload.count = cellCount;
 		if (dirtyIndexes.length === 0) return upload;
 
 		dirtyIndexes.sort((a, b) => a - b);
