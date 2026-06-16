@@ -151,13 +151,15 @@ button {
 }
 
 .user-name {
+	display: block;
 	min-width: 0;
 	max-width: 8.5rem;
 	overflow: hidden;
 	color: currentColor;
 	font-size: clamp(1.12rem, 3vw, 1.45rem);
 	font-weight: 900;
-	line-height: 1;
+	line-height: 1.16;
+	padding-block: 0.02em 0.1em;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
