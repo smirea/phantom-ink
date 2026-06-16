@@ -6,7 +6,6 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { PLAYER_COLOR_PRESETS, type PlayerColorId, type RoomDirectoryListing } from '@repo/shared/onlineGame';
-	import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -175,14 +174,6 @@
 							</span>
 						{/each}
 					</div>
-
-					<div class="join-arrow" aria-hidden="true">
-						{#if joiningCode === room.code}
-							<LoaderCircle class="spin" size={22} strokeWidth={2.4} />
-						{:else}
-							<ArrowUpRight size={24} strokeWidth={2.5} />
-						{/if}
-					</div>
 				</div>
 			{/each}
 		{:else if isLoading}
@@ -257,7 +248,7 @@
 	.lobby-row {
 		position: relative;
 		display: grid;
-		grid-template-columns: minmax(5.6rem, auto) minmax(0, 1fr) auto;
+		grid-template-columns: minmax(5.6rem, auto) minmax(0, 1fr);
 		gap: 0.6rem;
 		align-items: start;
 		min-width: 0;
@@ -397,8 +388,7 @@
 		white-space: nowrap;
 	}
 
-	.expand-button,
-	.join-arrow {
+	.expand-button {
 		position: absolute;
 		right: 0.65rem;
 		display: inline-grid;
@@ -428,14 +418,6 @@
 	.expand-button[aria-expanded='true'] {
 		color: var(--app-accent);
 		transform: rotate(180deg);
-	}
-
-	.join-arrow {
-		right: 0.65rem;
-		bottom: 0.56rem;
-		color: var(--app-accent);
-		opacity: 0.92;
-		pointer-events: none;
 	}
 
 	.empty-lobby {
