@@ -26,12 +26,12 @@ export type BackgroundConfig = {
 	targetAliveRatio: number;
 	initialSpacing: number;
 	minimumGridSpacing: number;
+	maximumGridSpacing: number;
 	gridPaddingCells: number;
 	spacingOptions: number[];
-	spacingChangeDelay: [number, number];
+	stateChangeDelay: [number, number];
 	spacingTransitionMs: [number, number];
 	directionOptions: number[];
-	directionChangeDelay: [number, number];
 	targetSpeed: number;
 	cellLifeTickMs: number;
 	maxFrameMs: number;
@@ -39,8 +39,6 @@ export type BackgroundConfig = {
 	spawnPressureChancePerSecond: number;
 	decayBaseChancePerSecond: number;
 	decayPressureChancePerSecond: number;
-	stateChangeCooldownMs: number;
-	stateRetryDelayMs: [number, number];
 	decelerationMs: number;
 	turnMs: number;
 	accelerationMs: number;
@@ -49,7 +47,7 @@ export type BackgroundConfig = {
 	edgePuffViewportMarginCells: number;
 	edgePuffOutsidePaddingCells: number;
 	spacingChangeThreshold: number;
-	spacingOptionMinDelta: number;
+	spacingOptionMinRatio: number;
 	maxPuffs: number;
 	glyphBaseSize: number;
 	minGlyphScale: number;
@@ -80,6 +78,7 @@ export type NumberConfigKey =
 	| 'targetAliveRatio'
 	| 'initialSpacing'
 	| 'minimumGridSpacing'
+	| 'maximumGridSpacing'
 	| 'gridPaddingCells'
 	| 'targetSpeed'
 	| 'cellLifeTickMs'
@@ -88,7 +87,6 @@ export type NumberConfigKey =
 	| 'spawnPressureChancePerSecond'
 	| 'decayBaseChancePerSecond'
 	| 'decayPressureChancePerSecond'
-	| 'stateChangeCooldownMs'
 	| 'decelerationMs'
 	| 'turnMs'
 	| 'accelerationMs'
@@ -97,7 +95,7 @@ export type NumberConfigKey =
 	| 'edgePuffViewportMarginCells'
 	| 'edgePuffOutsidePaddingCells'
 	| 'spacingChangeThreshold'
-	| 'spacingOptionMinDelta'
+	| 'spacingOptionMinRatio'
 	| 'maxPuffs'
 	| 'minGlyphScale'
 	| 'maxGlyphScale'
@@ -109,10 +107,8 @@ export type NumberConfigKey =
 	| 'edgePuffTtlScale';
 
 export type RangeConfigKey =
-	| 'spacingChangeDelay'
+	| 'stateChangeDelay'
 	| 'spacingTransitionMs'
-	| 'directionChangeDelay'
-	| 'stateRetryDelayMs'
 	| 'glyphOpacity'
 	| 'spawnMs'
 	| 'naturalDecayMs'
@@ -173,6 +169,7 @@ export const numberConfigFields = [
 	{ key: 'targetAliveRatio', label: 'targetAliveRatio', min: 0.05, max: 0.95, step: 0.01 },
 	{ key: 'initialSpacing', label: 'initialSpacing', min: 36, max: 160, step: 1, integer: true },
 	{ key: 'minimumGridSpacing', label: 'minimumGridSpacing', min: 36, max: 120, step: 1, integer: true },
+	{ key: 'maximumGridSpacing', label: 'maximumGridSpacing', min: 54, max: 180, step: 1, integer: true },
 	{ key: 'gridPaddingCells', label: 'gridPaddingCells', min: 2, max: 10, step: 1, integer: true },
 	{ key: 'targetSpeed', label: 'targetSpeed', min: 0, max: 0.08, step: 0.001 },
 	{ key: 'cellLifeTickMs', label: 'cellLifeTickMs', min: 30, max: 600, step: 10, integer: true },
@@ -181,7 +178,6 @@ export const numberConfigFields = [
 	{ key: 'spawnPressureChancePerSecond', label: 'spawnPressureChancePerSecond', min: 0, max: 4, step: 0.01 },
 	{ key: 'decayBaseChancePerSecond', label: 'decayBaseChancePerSecond', min: 0, max: 1, step: 0.001 },
 	{ key: 'decayPressureChancePerSecond', label: 'decayPressureChancePerSecond', min: 0, max: 4, step: 0.01 },
-	{ key: 'stateChangeCooldownMs', label: 'stateChangeCooldownMs', min: 0, max: 60000, step: 1000, integer: true },
 	{ key: 'decelerationMs', label: 'decelerationMs', min: 200, max: 9000, step: 100, integer: true },
 	{ key: 'turnMs', label: 'turnMs', min: 200, max: 9000, step: 100, integer: true },
 	{ key: 'accelerationMs', label: 'accelerationMs', min: 200, max: 9000, step: 100, integer: true },
@@ -190,7 +186,7 @@ export const numberConfigFields = [
 	{ key: 'edgePuffViewportMarginCells', label: 'edgePuffViewportMarginCells', min: 0, max: 3, step: 0.05 },
 	{ key: 'edgePuffOutsidePaddingCells', label: 'edgePuffOutsidePaddingCells', min: 0, max: 4, step: 0.05 },
 	{ key: 'spacingChangeThreshold', label: 'spacingChangeThreshold', min: 0, max: 12, step: 0.1 },
-	{ key: 'spacingOptionMinDelta', label: 'spacingOptionMinDelta', min: 0, max: 24, step: 0.1 },
+	{ key: 'spacingOptionMinRatio', label: 'spacingOptionMinRatio', min: 0, max: 0.9, step: 0.01 },
 	{ key: 'maxPuffs', label: 'maxPuffs', min: 4, max: 32, step: 1, integer: true },
 	{ key: 'minGlyphScale', label: 'minGlyphScale', min: 0.2, max: 2.6, step: 0.01 },
 	{ key: 'maxGlyphScale', label: 'maxGlyphScale', min: 0.2, max: 3, step: 0.01 },
@@ -203,10 +199,8 @@ export const numberConfigFields = [
 ] satisfies readonly DebugNumberField[];
 
 export const rangeConfigFields = [
-	{ key: 'spacingChangeDelay', label: 'spacingChangeDelay', min: 1000, max: 150000, step: 1000 },
+	{ key: 'stateChangeDelay', label: 'stateChangeDelay', min: 1000, max: 150000, step: 1000 },
 	{ key: 'spacingTransitionMs', label: 'spacingTransitionMs', min: 500, max: 18000, step: 100 },
-	{ key: 'directionChangeDelay', label: 'directionChangeDelay', min: 1000, max: 180000, step: 1000 },
-	{ key: 'stateRetryDelayMs', label: 'stateRetryDelayMs', min: 0, max: 10000, step: 100 },
 	{ key: 'glyphOpacity', label: 'glyphOpacity', min: 0.02, max: 1, step: 0.01 },
 	{ key: 'spawnMs', label: 'spawnMs', min: 50, max: 5000, step: 50 },
 	{ key: 'naturalDecayMs', label: 'naturalDecayMs', min: 30, max: 2000, step: 10 },
@@ -373,12 +367,12 @@ export function createDefaultBackgroundConfig(): BackgroundConfig {
 		targetAliveRatio: 0.85,
 		initialSpacing: 64,
 		minimumGridSpacing: 54,
+		maximumGridSpacing: 120,
 		gridPaddingCells: 4,
-		spacingOptions: [54, 64, 76, 88],
-		spacingChangeDelay: [42000, 72000],
+		spacingOptions: [54, 64, 76, 88, 104, 120],
+		stateChangeDelay: [10000, 30000],
 		spacingTransitionMs: [4200, 7200],
 		directionOptions: defaultDirectionOptions,
-		directionChangeDelay: [48000, 90000],
 		targetSpeed: 0.024,
 		cellLifeTickMs: 90,
 		maxFrameMs: 1000,
@@ -386,8 +380,6 @@ export function createDefaultBackgroundConfig(): BackgroundConfig {
 		spawnPressureChancePerSecond: 1.4,
 		decayBaseChancePerSecond: 0.006,
 		decayPressureChancePerSecond: 0.28,
-		stateChangeCooldownMs: 10000,
-		stateRetryDelayMs: [800, 1800],
 		decelerationMs: 1800,
 		turnMs: 1500,
 		accelerationMs: 2200,
@@ -396,7 +388,7 @@ export function createDefaultBackgroundConfig(): BackgroundConfig {
 		edgePuffViewportMarginCells: 0.7,
 		edgePuffOutsidePaddingCells: 1.25,
 		spacingChangeThreshold: 1,
-		spacingOptionMinDelta: 1,
+		spacingOptionMinRatio: 0.3,
 		maxPuffs: 32,
 		glyphBaseSize: 50,
 		minGlyphScale: 0.58,

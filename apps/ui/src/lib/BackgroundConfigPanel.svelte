@@ -156,9 +156,7 @@
 	}
 
 	function randomDirection(): void {
-		const value = Math.floor(Math.random() * 24) * 15;
-		directionDegrees = value;
-		backgroundState.triggerDirectionChange(degreesToRadians(value));
+		backgroundState.triggerDirectionChange();
 	}
 
 	function randomSpacing(): void {

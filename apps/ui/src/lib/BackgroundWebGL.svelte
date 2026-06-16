@@ -161,7 +161,7 @@
 			engineNow = engineNow === 0 ? now : engineNow + frameMs;
 
 			const updateStartedAt = performance.now();
-			engine.update(engineNow, window.innerWidth, window.innerHeight);
+			engine.update(engineNow, window.innerWidth, window.innerHeight, windowFocused);
 			atlas ??= createAtlas(gl);
 			instanceUpload = syncInstances(gl, instanceBuffer, atlas, instanceUpload);
 

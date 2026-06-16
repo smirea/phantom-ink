@@ -72,7 +72,6 @@ type DirectionState = {
 	phase: DirectionPhase;
 	phaseStartedAt: number;
 	phaseDuration: number;
-	nextChangeAt: number;
 };
 
 type SpacingState = {
@@ -83,7 +82,6 @@ type SpacingState = {
 	anchorRow: number;
 	startedAt: number;
 	duration: number;
-	nextChangeAt: number;
 	active: boolean;
 	transitionId: number;
 };
@@ -99,7 +97,7 @@ export class LetterGridEngine {
 	maxColumn = -1;
 	minRow = 0;
 	maxRow = -1;
-	nextStateChangeAllowedAt = 0;
+	nextAutoEventAt = 0;
 	nextCellLifeTickAt = 0;
 	lastTime = 0;
 	currentTime = 0;
@@ -123,11 +121,12 @@ export class LetterGridEngine {
 		return this.state.config;
 	}
 
-	update(now: number, width: number, height: number): void {
+	update(now: number, width: number, height: number, allowAutoEvents = true): void {
 		this.currentTime = now;
 		if (this.lastTime === 0) {
 			this.direction = this.createDirectionState(now);
 			this.spacing = this.createSpacingState(now);
+			this.scheduleNextAutoEvent(now);
 			this.nextCellLifeTickAt = now + this.config.cellLifeTickMs;
 			this.lastTime = now;
 		}
@@ -137,6 +136,7 @@ export class LetterGridEngine {
 
 		this.updateSpacing(now);
 		this.updateDirection(now);
+		this.updateAutoEvent(now, allowAutoEvents);
 		this.updateGridMotion(elapsedMs);
 		this.ensureCellCapacity(width, height, this.cells.length === 0);
 		this.checkSpacingExpansionEdges(width, height);
@@ -158,19 +158,17 @@ export class LetterGridEngine {
 
 	handleConfigChange(key: string, width: number, height: number, now = performance.now()): void {
 		this.currentTime = now;
-		if (key === 'minimumGridSpacing') {
+		if (key === 'minimumGridSpacing' || key === 'maximumGridSpacing') {
 			this.ensureCellCapacity(width, height, false);
-			this.requestSpacingChange(Math.max(this.spacing.current, this.config.minimumGridSpacing), now, true);
+			this.requestSpacingChange(this.spacing.current, now, true);
 		} else if (key === 'initialSpacing') {
 			this.requestSpacingChange(this.config.initialSpacing, now, true);
 		} else if (key === 'maxPuffs') {
 			this.puffs = this.puffs.slice(-this.config.maxPuffs);
 		} else if (key === 'cellLifeTickMs') {
 			this.nextCellLifeTickAt = now + this.config.cellLifeTickMs;
-		} else if (key === 'spacingChangeDelay') {
-			this.spacing.nextChangeAt = now + randomRange(this.config.spacingChangeDelay);
-		} else if (key === 'directionChangeDelay' && this.direction.phase === 'cruise') {
-			this.direction.nextChangeAt = now + randomRange(this.config.directionChangeDelay);
+		} else if (key === 'stateChangeDelay' && !this.hasActiveStateEvent()) {
+			this.scheduleNextAutoEvent(now);
 		} else if (key === 'glyphs' || key === 'specialGlyphs' || key === 'specialGlyphChance') {
 			for (const cell of this.cells) {
 				if (cell.status === 'dead') continue;
@@ -498,7 +496,6 @@ export class LetterGridEngine {
 	}
 
 	private updateSpacing(now: number): void {
-		if (!this.spacing.active && now >= this.spacing.nextChangeAt) this.startSpacingChange(now);
 		if (!this.spacing.active) return;
 
 		const previousSpacing = this.spacing.current;
@@ -508,13 +505,11 @@ export class LetterGridEngine {
 		if (progress >= 1) {
 			this.spacing.current = this.spacing.target;
 			this.spacing.active = false;
-			this.spacing.nextChangeAt = now + randomRange(this.config.spacingChangeDelay);
+			this.scheduleNextAutoEvent(now);
 		}
 	}
 
 	private updateDirection(now: number): void {
-		if (this.direction.phase === 'cruise' && now >= this.direction.nextChangeAt) this.startDirectionChange(now);
-
 		if (this.direction.phase === 'decelerating') {
 			const progress = smoothProgress((now - this.direction.phaseStartedAt) / this.direction.phaseDuration);
 			this.direction.speed = this.direction.speedFrom * (1 - progress);
@@ -541,7 +536,7 @@ export class LetterGridEngine {
 				this.direction.speed = this.config.targetSpeed;
 				this.direction.phase = 'cruise';
 				this.direction.spinStartedAt = now;
-				this.direction.nextChangeAt = now + randomRange(this.config.directionChangeDelay);
+				this.scheduleNextAutoEvent(now);
 			}
 		}
 
@@ -549,6 +544,27 @@ export class LetterGridEngine {
 			this.direction.displayAngle = this.direction.angle;
 			this.direction.speed = this.config.targetSpeed;
 		}
+	}
+
+	private updateAutoEvent(now: number, allowAutoEvents: boolean): void {
+		if (this.hasActiveStateEvent()) return;
+		if (this.nextAutoEventAt === 0) this.scheduleNextAutoEvent(now);
+		if (now < this.nextAutoEventAt) return;
+		if (!allowAutoEvents) {
+			this.scheduleNextAutoEvent(now);
+			return;
+		}
+
+		this.nextAutoEventAt = Number.POSITIVE_INFINITY;
+		const firstKind = Math.random() < 0.5 ? 'spacing' : 'direction';
+		const secondKind = firstKind === 'spacing' ? 'direction' : 'spacing';
+		if (!this.startAutoEvent(firstKind, now) && !this.startAutoEvent(secondKind, now)) {
+			this.scheduleNextAutoEvent(now);
+		}
+	}
+
+	private startAutoEvent(kind: 'direction' | 'spacing', now: number): boolean {
+		return kind === 'spacing' ? this.startSpacingChange(now) : this.startDirectionChange(now);
 	}
 
 	private updateGridMotion(elapsedMs: number): void {
@@ -766,7 +782,6 @@ export class LetterGridEngine {
 			phase: 'cruise',
 			phaseStartedAt: now,
 			phaseDuration: 0,
-			nextChangeAt: now + randomRange(this.config.directionChangeDelay),
 		};
 	}
 
@@ -780,23 +795,22 @@ export class LetterGridEngine {
 			anchorRow: 0,
 			startedAt: now,
 			duration: 0,
-			nextChangeAt: now + randomRange(this.config.spacingChangeDelay),
 			active: false,
 			transitionId: 0,
 		};
 	}
 
-	private startSpacingChange(now: number, spacing?: number, force = false): void {
-		this.requestSpacingChange(spacing ?? this.chooseSpacing(this.spacing.current), now, force);
+	private startSpacingChange(now: number, spacing?: number, force = false): boolean {
+		return this.requestSpacingChange(spacing ?? this.chooseSpacing(this.spacing.current), now, force);
 	}
 
-	private requestSpacingChange(spacing: number, now: number, force = false): void {
-		const nextSpacing = Math.max(this.config.minimumGridSpacing, Math.round(spacing));
+	private requestSpacingChange(spacing: number, now: number, force = false): boolean {
+		const nextSpacing = this.constrainSpacing(spacing);
 		if (!force && Math.abs(nextSpacing - this.spacing.current) < this.config.spacingChangeThreshold) {
-			this.spacing.nextChangeAt = now + randomRange(this.config.spacingChangeDelay);
-			return;
+			return false;
 		}
-		if (!this.reserveStateChange(now, 'spacing', force)) return;
+		if (!force && this.hasActiveStateEvent()) return false;
+		if (Math.abs(nextSpacing - this.spacing.current) < 0.001) return false;
 
 		this.normalizeGridOrigin(this.spacing.current);
 		this.captureOnscreenState();
@@ -808,69 +822,57 @@ export class LetterGridEngine {
 		this.spacing.duration = Math.max(1, randomRange(this.config.spacingTransitionMs));
 		this.spacing.active = true;
 		this.spacing.transitionId += 1;
+		this.nextAutoEventAt = Number.POSITIVE_INFINITY;
 		this.ensureCellCapacity(this.viewportWidth(), this.viewportHeight(), false);
+		return true;
 	}
 
-	private startDirectionChange(now: number, targetAngle?: number, force = false): void {
-		if (!this.reserveStateChange(now, 'direction', force)) return;
+	private startDirectionChange(now: number, targetAngle?: number, force = false): boolean {
+		if (!force && this.hasActiveStateEvent()) return false;
 
 		this.direction.angle = this.direction.displayAngle;
 		this.direction.fromAngle = this.direction.displayAngle;
 		this.direction.targetAngle = targetAngle ?? this.chooseDirection(this.direction.displayAngle);
+		if (Math.abs(shortestAngle(this.direction.displayAngle, this.direction.targetAngle)) < 0.0001) return false;
 		this.direction.speedFrom = this.direction.speed;
 		this.direction.phaseStartedAt = now;
+		this.nextAutoEventAt = Number.POSITIVE_INFINITY;
 
 		if (this.direction.speed <= 0.001) {
 			this.direction.speed = 0;
 			this.direction.phase = 'turning';
 			this.direction.phaseDuration = this.config.turnMs;
-			return;
+			return true;
 		}
 
 		this.direction.phase = 'decelerating';
 		this.direction.phaseDuration = this.config.decelerationMs;
-	}
-
-	private reserveStateChange(now: number, kind: 'direction' | 'spacing', force = false): boolean {
-		if (force) {
-			this.nextStateChangeAllowedAt = now + this.config.stateChangeCooldownMs;
-			return true;
-		}
-		const blockedUntil = Math.max(
-			this.nextStateChangeAllowedAt,
-			this.spacing.active ? this.spacing.startedAt + this.spacing.duration : 0,
-			this.direction.phase === 'cruise' ? 0 : this.direction.phaseStartedAt + this.direction.phaseDuration,
-		);
-		if (now < blockedUntil) {
-			this.rescheduleStateChange(kind, blockedUntil);
-			return false;
-		}
-
-		this.nextStateChangeAllowedAt = now + this.config.stateChangeCooldownMs;
-		if (kind === 'spacing')
-			this.direction.nextChangeAt = Math.max(this.direction.nextChangeAt, this.nextStateChangeAllowedAt);
-		else this.spacing.nextChangeAt = Math.max(this.spacing.nextChangeAt, this.nextStateChangeAllowedAt);
 		return true;
 	}
 
-	private rescheduleStateChange(kind: 'direction' | 'spacing', earliestAt: number): void {
-		const nextAttemptAt = earliestAt + randomRange(this.config.stateRetryDelayMs);
-		if (kind === 'spacing') this.spacing.nextChangeAt = Math.max(this.spacing.nextChangeAt, nextAttemptAt);
-		else if (this.direction.phase === 'cruise')
-			this.direction.nextChangeAt = Math.max(this.direction.nextChangeAt, nextAttemptAt);
+	private hasActiveStateEvent(): boolean {
+		return this.spacing.active || this.direction.phase !== 'cruise';
+	}
+
+	private scheduleNextAutoEvent(now: number): void {
+		if (this.hasActiveStateEvent()) return;
+		this.nextAutoEventAt = now + randomRange(this.config.stateChangeDelay);
 	}
 
 	private chooseDirection(current: number): number {
-		const minimumTurn = degreesToRadians(30 + randomInt(0, 10) * 15);
-		const options = this.config.directionOptions.filter(
-			angle => Math.abs(shortestAngle(current, angle)) >= minimumTurn,
-		);
+		const minimumTurn = degreesToRadians(30);
+		const oppositeTurn = Math.PI;
+		const epsilon = degreesToRadians(0.1);
+		const options = this.config.directionOptions.filter(angle => {
+			const distance = Math.abs(shortestAngle(current, angle));
+			return distance >= minimumTurn - epsilon && Math.abs(distance - oppositeTurn) > epsilon;
+		});
 		if (options.length > 0) return options[Math.floor(Math.random() * options.length)];
 
 		const fallback = this.config.directionOptions.reduce(
 			(best, angle) => {
 				const distance = Math.abs(shortestAngle(current, angle));
-				return distance > best.distance ? { angle, distance } : best;
+				return distance > best.distance && Math.abs(distance - oppositeTurn) > epsilon ? { angle, distance } : best;
 			},
 			{ angle: 0, distance: 0 },
 		);
@@ -892,10 +894,31 @@ export class LetterGridEngine {
 	}
 
 	private chooseSpacing(current: number): number {
-		const options = this.config.spacingOptions.filter(
-			spacing => Math.abs(spacing - current) > this.config.spacingOptionMinDelta,
-		);
-		return options[Math.floor(Math.random() * options.length)] ?? this.config.initialSpacing;
+		const minSpacing = Math.max(1, Math.round(this.config.minimumGridSpacing));
+		const maxSpacing = Math.max(minSpacing, Math.round(this.config.maximumGridSpacing));
+		const ratio = Math.max(0, this.config.spacingOptionMinRatio);
+		const lowerMax = Math.min(maxSpacing, Math.floor(current * (1 - ratio)));
+		const upperMin = Math.max(minSpacing, Math.ceil(current * (1 + ratio)));
+		const ranges: { min: number; max: number; weight: number }[] = [];
+
+		if (lowerMax >= minSpacing) ranges.push({ min: minSpacing, max: lowerMax, weight: lowerMax - minSpacing + 1 });
+		if (upperMin <= maxSpacing) ranges.push({ min: upperMin, max: maxSpacing, weight: maxSpacing - upperMin + 1 });
+		if (ranges.length === 0)
+			return Math.abs(current - minSpacing) > Math.abs(maxSpacing - current) ? minSpacing : maxSpacing;
+
+		let pick = Math.random() * ranges.reduce((total, range) => total + range.weight, 0);
+		for (const range of ranges) {
+			if (pick <= range.weight) return Math.round(randomBetween(range.min, range.max));
+			pick -= range.weight;
+		}
+		const fallback = ranges[ranges.length - 1];
+		return Math.round(randomBetween(fallback.min, fallback.max));
+	}
+
+	private constrainSpacing(spacing: number): number {
+		const minSpacing = Math.max(1, Math.round(this.config.minimumGridSpacing));
+		const maxSpacing = Math.max(minSpacing, Math.round(this.config.maximumGridSpacing));
+		return Math.min(maxSpacing, Math.max(minSpacing, Math.round(spacing)));
 	}
 
 	private normalizeGridOrigin(spacing: number): void {
@@ -1087,10 +1110,6 @@ export function randomBetween(min: number, max: number): number {
 
 export function randomRange(range: readonly [number, number]): number {
 	return randomBetween(range[0], range[1]);
-}
-
-function randomInt(min: number, max: number): number {
-	return Math.floor(randomBetween(min, max + 1));
 }
 
 function lerpAngle(from: number, to: number, progress: number): number {
