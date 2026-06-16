@@ -606,9 +606,10 @@ export class LetterGridEngine {
 	): void {
 		if (count <= 0 || intensity <= 0 || ttlScale <= 0) return;
 		const now = this.currentTime;
-		const angle = Math.random() * Math.PI * 2;
+		const angle = screenLocked ? -Math.PI / 2 + randomBetween(-0.55, 0.55) : Math.random() * Math.PI * 2;
 		const countScale = Math.max(1, Math.sqrt(count));
-		const distance = randomRange(this.config.smokeDistance) * intensity * (0.6 + countScale * 0.06);
+		const distance =
+			randomRange(this.config.smokeDistance) * intensity * (screenLocked ? 0.9 : 0.45 + countScale * 0.04);
 		const scale = randomRange(this.config.smokeScale) * intensity * (0.85 + countScale * 0.12);
 		const ttl = randomRange(this.config.smokeTtlMs) * ttlScale;
 		this.puffs.push({

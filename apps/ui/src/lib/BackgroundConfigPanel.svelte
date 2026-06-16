@@ -61,7 +61,7 @@
 		},
 		{
 			key: 'tapPuffIntensity',
-			label: 'Tap Smoke',
+			label: 'Tap Flame',
 			min: 0,
 			max: 2.4,
 			step: 0.05,
@@ -146,7 +146,7 @@
 		backgroundState.notifyConfigChanged('glyphOpacity');
 	}
 
-	function updateSmokeDuration(index: 0 | 1, event: Event): void {
+	function updateFlameDuration(index: 0 | 1, event: Event): void {
 		const input = event.currentTarget as HTMLInputElement;
 		const next = [...backgroundState.config.smokeTtlMs] as [number, number];
 		next[index] = clamp(Number(input.value), 150, 2600);
@@ -301,17 +301,17 @@
 		</div>
 
 		<div class="debug-config-range">
-			<span>Smoke Duration</span>
+			<span>Flame Duration</span>
 			<label>
 				<em>min</em>
 				<input
 					type="range"
-					aria-label="Minimum smoke duration"
+					aria-label="Minimum flame duration"
 					min="150"
 					max="2600"
 					step="50"
 					value={backgroundState.config.smokeTtlMs[0]}
-					oninput={event => updateSmokeDuration(0, event)}
+					oninput={event => updateFlameDuration(0, event)}
 				/>
 				<output>{Math.round(backgroundState.config.smokeTtlMs[0])}ms</output>
 			</label>
@@ -319,12 +319,12 @@
 				<em>max</em>
 				<input
 					type="range"
-					aria-label="Maximum smoke duration"
+					aria-label="Maximum flame duration"
 					min="150"
 					max="2600"
 					step="50"
 					value={backgroundState.config.smokeTtlMs[1]}
-					oninput={event => updateSmokeDuration(1, event)}
+					oninput={event => updateFlameDuration(1, event)}
 				/>
 				<output>{Math.round(backgroundState.config.smokeTtlMs[1])}ms</output>
 			</label>

@@ -356,6 +356,7 @@
 		const ratio = currentPixelRatio();
 		gl.clearColor(0, 0, 0, 0);
 		gl.clear(gl.COLOR_BUFFER_BIT);
+		gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 		gl.useProgram(glyphProgram.program);
 		setupGlyphAttributes(gl, instanced, quadBuffer, instanceBuffer);
 		gl.activeTexture(gl.TEXTURE0);
@@ -408,6 +409,7 @@
 		const ratio = currentPixelRatio();
 		gl.bindBuffer(gl.ARRAY_BUFFER, smokeBuffer);
 		gl.bufferData(gl.ARRAY_BUFFER, smokeData.subarray(0, count * smokeInstanceFloats), gl.DYNAMIC_DRAW);
+		gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
 		gl.useProgram(smokeProgram.program);
 		setupSmokeAttributes(gl, instanced, quadBuffer, smokeBuffer);
 		gl.uniform2f(smokeProgram.resolution, gl.drawingBufferWidth, gl.drawingBufferHeight);
@@ -576,6 +578,7 @@
 				varying float v_alpha;
 				varying float v_rotation;
 				varying float v_progress;
+				varying float v_intensity;
 				varying float v_seed;
 
 				float smooth01(float value) {
@@ -586,21 +589,22 @@
 				void main() {
 					float progress = clamp((u_time - a_smokeB.x) / max(1.0, a_smokeB.y), 0.0, 1.0);
 					float eased = smooth01(progress);
-					float fade = smoothstep(0.0, 0.12, progress) * (1.0 - smoothstep(0.58, 1.0, progress));
+					float flash = smoothstep(0.0, 0.08, progress) * (1.0 - smoothstep(0.5, 1.0, progress));
 					float locked = step(a_smokeC.w, 0.0);
 					vec2 base = mix(u_gridShift + a_smokeA.xy, a_smokeA.xy, locked);
 					vec2 center = (base + a_smokeA.zw * eased) * u_pixelRatio;
-					float radius = max(1.0, u_glyphSize * mix(a_smokeB.z, a_smokeB.w, eased) * 0.67 * u_pixelRatio);
-					float extent = radius * 3.9;
+					float radius = max(1.0, u_glyphSize * mix(a_smokeB.z, a_smokeB.w, eased) * 0.74 * u_pixelRatio);
+					float extent = radius * 2.9;
 					vec2 screen = center + a_corner * extent;
 					vec2 zeroToOne = screen / u_resolution;
 					vec2 clip = zeroToOne * 2.0 - 1.0;
 					gl_Position = vec4(clip * vec2(1.0, -1.0), 0.0, 1.0);
 					v_delta = (a_corner * extent) / radius;
 					v_screen = screen;
-					v_alpha = a_smokeC.x * fade;
-					v_rotation = a_smokeC.y + a_smokeC.z * eased;
+					v_alpha = a_smokeC.x * flash;
+					v_rotation = a_smokeC.y + a_smokeC.z * eased * 0.45;
 					v_progress = progress;
+					v_intensity = a_smokeC.x;
 					v_seed = abs(a_smokeC.w);
 				}
 			`,
@@ -612,17 +616,16 @@
 				varying float v_alpha;
 				varying float v_rotation;
 				varying float v_progress;
+				varying float v_intensity;
 				varying float v_seed;
 
 				float hash(vec2 value) {
 					return fract(sin(dot(value, vec2(127.1, 311.7))) * 43758.5453123);
 				}
 
-				float softDisk(vec2 value, vec2 offset, float radius, float feather) {
-					vec2 point = value - offset;
-					float inner = radius * radius;
-					float outer = (radius + feather) * (radius + feather);
-					return 1.0 - smoothstep(inner, outer, dot(point, point));
+				float flameLobe(vec2 value, vec2 offset, float width, float height) {
+					vec2 point = (value - offset) / vec2(width, height);
+					return exp(-dot(point, point));
 				}
 
 				void main() {
@@ -632,28 +635,36 @@
 						v_delta.x * cosRotation - v_delta.y * sinRotation,
 						v_delta.x * sinRotation + v_delta.y * cosRotation
 					);
-					float swirl = (v_progress - 0.35) * 0.34;
+					float flicker = hash(floor(v_screen / 5.0) + vec2(v_seed * 1.7, floor(v_progress * 18.0)));
+					float rise = -warped.y + v_progress * 0.72;
+					float taper = clamp((rise + 0.18) / 2.2, 0.0, 1.0);
+					float width = mix(0.72, 0.15, taper);
+					float wavering = (flicker - 0.5) * 0.28 * (0.25 + taper);
 					warped += vec2(
-						sin(warped.y * 2.2 + v_seed) * swirl,
-						cos(warped.x * 1.8 + v_seed * 0.71) * swirl * 0.62
+						sin(rise * 4.2 + v_seed) * 0.11 + wavering,
+						cos(warped.x * 2.4 + v_seed * 0.71) * 0.05 * taper
 					);
-					float grain = 0.9 + 0.16 * hash(floor(v_screen / 4.0) + vec2(v_seed, v_seed * 0.37));
-					float body =
-						softDisk(warped, vec2(0.0, 0.0), 0.78, 0.78) * 0.36 +
-						softDisk(warped, vec2(0.4, 0.04), 0.42, 0.44) * 0.26 +
-						softDisk(warped, vec2(-0.36, -0.1), 0.5, 0.5) * 0.24 +
-						softDisk(warped, vec2(0.04, 0.44), 0.38, 0.5) * 0.2 +
-						softDisk(warped, vec2(-0.04, -0.38), 0.34, 0.42) * 0.14;
-					float hollow =
-						softDisk(warped, vec2(0.02, -0.01), 0.2 + v_progress * 0.24, 0.42) *
-						smoothstep(0.18, 0.92, v_progress) *
-						0.28;
-					body = max(0.0, min(1.0, body) - hollow);
-					float edgeFade = 1.0 - smoothstep(1.4, 1.82, max(abs(v_delta.x), abs(v_delta.y)));
-					float alpha = v_alpha * body * grain * edgeFade;
+					float baseGlow = flameLobe(warped, vec2(0.0, 0.2), 0.86, 0.62) * 0.42;
+					float tongue =
+						flameLobe(warped, vec2(-0.18, -0.34), width * 0.72, 1.05) * 0.44 +
+						flameLobe(warped, vec2(0.18, -0.68), width * 0.55, 0.92) * 0.34 +
+						flameLobe(warped, vec2(0.02, -1.1), width * 0.38, 0.66) * 0.3;
+					float core = flameLobe(warped, vec2(0.0, -0.28), width * 0.34, 0.74);
+					float ember = smoothstep(0.82, 1.0, flicker) * flameLobe(warped, vec2(0.0, 0.58), 1.05, 0.36) * 0.2;
+					float heightFade = smoothstep(-0.55, 0.08, rise) * (1.0 - smoothstep(2.35, 3.05, rise));
+					float edgeFade = 1.0 - smoothstep(1.65, 2.25, max(abs(v_delta.x), abs(v_delta.y)));
+					float heat = clamp(baseGlow + tongue + ember, 0.0, 1.0) * heightFade;
+					float alpha = v_alpha * heat * edgeFade;
 					if (alpha <= 0.002) discard;
-					vec3 color = mix(u_color.rgb * 1.18, u_color.rgb * 0.72, smoothstep(0.0, 1.0, v_progress));
-					gl_FragColor = vec4(color, u_color.a * clamp(alpha, 0.0, 0.72));
+					vec3 emberColor = mix(vec3(0.42, 0.05, 0.14), u_color.rgb * 0.75, 0.32);
+					vec3 orange = vec3(1.0, 0.28, 0.05);
+					vec3 gold = vec3(1.0, 0.75, 0.16);
+					vec3 whiteHot = vec3(1.0, 0.96, 0.7);
+					vec3 color = mix(emberColor, orange, smoothstep(0.05, 0.42, heat));
+					color = mix(color, gold, smoothstep(0.28, 0.72, core));
+					color = mix(color, whiteHot, smoothstep(0.55, 1.0, core) * (1.0 - smoothstep(0.28, 0.9, v_progress)));
+					color *= mix(1.22, 0.58, smoothstep(0.0, 1.0, v_progress));
+					gl_FragColor = vec4(color, u_color.a * clamp(alpha * (1.05 + v_intensity * 0.22), 0.0, 0.9));
 				}
 			`,
 			['a_corner', 'a_smokeA', 'a_smokeB', 'a_smokeC'],
