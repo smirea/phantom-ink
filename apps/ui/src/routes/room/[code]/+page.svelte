@@ -43,6 +43,7 @@
 	const canUseLobbyControls = $derived(
 		Boolean(roomCode && room?.phase === 'lobby' && self && self.role !== 'spectator'),
 	);
+	const readyButtonLabel = $derived(room?.startProblem ?? 'Ready?');
 
 	onMount(() => {
 		if (!roomCode) {
@@ -229,11 +230,8 @@
 					{:else}
 						<CircleDashed size={24} strokeWidth={2.4} />
 					{/if}
-					<span>{selfIsReady ? 'Ready' : 'Ready up'}</span>
+					<span>{readyButtonLabel}</span>
 				</button>
-				{#if room?.startProblem}
-					<div class="ready-problem">{room.startProblem}</div>
-				{/if}
 			</div>
 		</div>
 	{/if}
@@ -578,7 +576,6 @@
 		color: #102014;
 	}
 
-	.ready-problem,
 	.room-error {
 		color: var(--app-error);
 		font-size: 0.86rem;
