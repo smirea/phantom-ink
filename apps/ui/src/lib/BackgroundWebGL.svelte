@@ -6,7 +6,7 @@
 	type Atlas = {
 		texture: WebGLTexture;
 		entries: Map<string, [number, number, number, number]>;
-		key: string;
+		fallbackUv: [number, number, number, number];
 	};
 	type GlyphProgram = {
 		program: WebGLProgram;
@@ -39,6 +39,11 @@
 		capacity: number;
 		count: number;
 		data: Float32Array;
+	};
+	type VertexArrayState = {
+		extension: OES_vertex_array_object;
+		glyph: WebGLVertexArrayObjectOES;
+		smoke: WebGLVertexArrayObjectOES;
 	};
 
 	const instanceFloats = 16;
@@ -73,6 +78,7 @@
 		const instanceBuffer = gl.createBuffer();
 		const smokeBuffer = gl.createBuffer();
 		if (!instanceBuffer || !smokeBuffer) return;
+		const vertexArrays = createVertexArrays(gl, instanced, quadBuffer, instanceBuffer, smokeBuffer);
 
 		let frame = 0;
 		let engineNow = 0;
@@ -153,7 +159,7 @@
 
 			const updateStartedAt = performance.now();
 			engine.update(engineNow, window.innerWidth, window.innerHeight);
-			atlas = ensureAtlas(gl, atlas);
+			atlas ??= createAtlas(gl);
 			instanceUpload = syncInstances(gl, instanceBuffer, atlas, instanceUpload);
 
 			const drawStartedAt = performance.now();
@@ -165,10 +171,11 @@
 				instanceBuffer,
 				atlas,
 				instanceUpload.count,
+				vertexArrays,
 				colors.text,
 				engineNow,
 			);
-			drawSmoke(gl, instanced, smokeProgram, quadBuffer, smokeBuffer, smokeData, colors.smoke, engineNow);
+			drawSmoke(gl, instanced, smokeProgram, quadBuffer, smokeBuffer, smokeData, vertexArrays, colors.smoke, engineNow);
 			const finishedAt = performance.now();
 
 			backgroundState.recordFrame(
@@ -178,6 +185,11 @@
 				finishedAt - drawStartedAt,
 				engine.cells.length,
 				engine.puffs.length,
+				engine.gridColumns,
+				engine.gridRows,
+				engine.spacing.current,
+				engine.gridShiftX,
+				engine.gridShiftY,
 				engineNow,
 			);
 			startLoop();
@@ -194,6 +206,10 @@
 			window.removeEventListener('focus', handleFocus);
 			document.removeEventListener('visibilitychange', handleVisibility);
 			if (atlas) gl.deleteTexture(atlas.texture);
+			if (vertexArrays) {
+				vertexArrays.extension.deleteVertexArrayOES(vertexArrays.glyph);
+				vertexArrays.extension.deleteVertexArrayOES(vertexArrays.smoke);
+			}
 			gl.deleteBuffer(quadBuffer);
 			gl.deleteBuffer(instanceBuffer);
 			gl.deleteBuffer(smokeBuffer);
@@ -226,12 +242,8 @@
 		return buffer;
 	}
 
-	function ensureAtlas(gl: WebGLRenderingContext, atlas: Atlas | undefined): Atlas {
+	function createAtlas(gl: WebGLRenderingContext): Atlas {
 		const chars = uniqueChars([...backgroundState.config.glyphs, ...backgroundState.config.specialGlyphs]);
-		const key = chars.join('');
-		if (atlas?.key === key) return atlas;
-		if (atlas) gl.deleteTexture(atlas.texture);
-
 		const cellSize = 96;
 		const count = chars.length;
 		const columns = Math.ceil(Math.sqrt(count));
@@ -260,6 +272,7 @@
 				(y + cellSize) / source.height,
 			]);
 		});
+		const fallbackUv: [number, number, number, number] = entries.values().next().value ?? [0, 0, 1, 1];
 
 		const texture = gl.createTexture();
 		if (!texture) throw new Error('Unable to create background atlas texture');
@@ -270,7 +283,27 @@
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 		gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 1);
 		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
-		return { texture, entries, key };
+		return { texture, entries, fallbackUv };
+	}
+
+	function createVertexArrays(
+		gl: WebGLRenderingContext,
+		instanced: ANGLE_instanced_arrays,
+		quadBuffer: WebGLBuffer,
+		instanceBuffer: WebGLBuffer,
+		smokeBuffer: WebGLBuffer,
+	): VertexArrayState | undefined {
+		const extension = gl.getExtension('OES_vertex_array_object');
+		const glyph = extension?.createVertexArrayOES();
+		const smoke = extension?.createVertexArrayOES();
+		if (!extension || !glyph || !smoke) return undefined;
+
+		extension.bindVertexArrayOES(glyph);
+		setupGlyphAttributes(gl, instanced, quadBuffer, instanceBuffer);
+		extension.bindVertexArrayOES(smoke);
+		setupSmokeAttributes(gl, instanced, quadBuffer, smokeBuffer);
+		extension.bindVertexArrayOES(null);
+		return { extension, glyph, smoke };
 	}
 
 	function syncInstances(
@@ -322,9 +355,8 @@
 	}
 
 	function writeCellInstance(data: Float32Array, index: number, atlas: Atlas): void {
-		const fallbackUv: [number, number, number, number] = atlas.entries.values().next().value ?? [0, 0, 1, 1];
 		const cell = engine.cells[index];
-		const uv = atlas.entries.get(cell.char) ?? fallbackUv;
+		const uv = atlas.entries.get(cell.char) ?? atlas.fallbackUv;
 		const offset = index * instanceFloats;
 		const spinSpeed = ((Math.PI * 2) / cell.spinDuration) * cell.spinDirection;
 		data[offset] = cell.column;
@@ -353,6 +385,7 @@
 		instanceBuffer: WebGLBuffer,
 		atlas: Atlas,
 		instanceCount: number,
+		vertexArrays: VertexArrayState | undefined,
 		color: [number, number, number, number],
 		now: number,
 	): void {
@@ -361,7 +394,8 @@
 		gl.clear(gl.COLOR_BUFFER_BIT);
 		gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 		gl.useProgram(glyphProgram.program);
-		setupGlyphAttributes(gl, instanced, quadBuffer, instanceBuffer);
+		if (vertexArrays) vertexArrays.extension.bindVertexArrayOES(vertexArrays.glyph);
+		else setupGlyphAttributes(gl, instanced, quadBuffer, instanceBuffer);
 		gl.activeTexture(gl.TEXTURE0);
 		gl.bindTexture(gl.TEXTURE_2D, atlas.texture);
 		gl.uniform2f(glyphProgram.resolution, gl.drawingBufferWidth, gl.drawingBufferHeight);
@@ -385,6 +419,7 @@
 		quadBuffer: WebGLBuffer,
 		smokeBuffer: WebGLBuffer,
 		smokeData: Float32Array,
+		vertexArrays: VertexArrayState | undefined,
 		color: [number, number, number, number],
 		now: number,
 	): void {
@@ -414,7 +449,8 @@
 		gl.bufferData(gl.ARRAY_BUFFER, smokeData.subarray(0, count * smokeInstanceFloats), gl.DYNAMIC_DRAW);
 		gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
 		gl.useProgram(smokeProgram.program);
-		setupSmokeAttributes(gl, instanced, quadBuffer, smokeBuffer);
+		if (vertexArrays) vertexArrays.extension.bindVertexArrayOES(vertexArrays.smoke);
+		else setupSmokeAttributes(gl, instanced, quadBuffer, smokeBuffer);
 		gl.uniform2f(smokeProgram.resolution, gl.drawingBufferWidth, gl.drawingBufferHeight);
 		gl.uniform1f(smokeProgram.pixelRatio, ratio);
 		gl.uniform2f(smokeProgram.gridShift, engine.gridShiftX, engine.gridShiftY);

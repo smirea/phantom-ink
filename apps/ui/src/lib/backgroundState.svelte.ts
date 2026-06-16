@@ -11,6 +11,11 @@ export type BackgroundMetrics = {
 	avgDrawMs: number;
 	cells: number;
 	puffs: number;
+	gridColumns: number;
+	gridRows: number;
+	spacing: number;
+	gridShiftX: number;
+	gridShiftY: number;
 	lastAt: number;
 };
 
@@ -275,6 +280,11 @@ export class BackgroundState {
 		drawMs: number,
 		cells: number,
 		puffs: number,
+		gridColumns: number,
+		gridRows: number,
+		spacing: number,
+		gridShiftX: number,
+		gridShiftY: number,
 		now: number,
 	): void {
 		const current = this.metrics[id] ?? {
@@ -285,6 +295,11 @@ export class BackgroundState {
 			avgDrawMs: 0,
 			cells: 0,
 			puffs: 0,
+			gridColumns: 0,
+			gridRows: 0,
+			spacing: 0,
+			gridShiftX: 0,
+			gridShiftY: 0,
 			lastAt: 0,
 		};
 		const frames = current.frames + 1;
@@ -296,6 +311,11 @@ export class BackgroundState {
 		current.avgDrawMs = current.avgDrawMs * (1 - weight) + drawMs * weight;
 		current.cells = cells;
 		current.puffs = puffs;
+		current.gridColumns = gridColumns;
+		current.gridRows = gridRows;
+		current.spacing = spacing;
+		current.gridShiftX = gridShiftX;
+		current.gridShiftY = gridShiftY;
 		current.lastAt = now;
 		this.metrics[id] = current;
 

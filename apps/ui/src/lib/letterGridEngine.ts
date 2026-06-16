@@ -79,6 +79,8 @@ type SpacingState = {
 	current: number;
 	from: number;
 	target: number;
+	anchorColumn: number;
+	anchorRow: number;
 	startedAt: number;
 	duration: number;
 	nextChangeAt: number;
@@ -295,30 +297,44 @@ export class LetterGridEngine {
 
 		const spawnNew = this.spacing.active && this.spacing.target < this.spacing.from;
 		const padding = spacing * this.config.gridPaddingCells;
+		const maxColumns = required.columns + this.config.gridPaddingCells * 4 + 8;
+		const maxRows = required.rows + this.config.gridPaddingCells * 4 + 8;
 		let guard = 0;
-		while (this.gridShiftX + (this.minColumn + 0.5) * spacing > -padding && guard < 200) {
+		while (
+			this.gridShiftX + (this.minColumn + 0.5) * spacing > -padding &&
+			this.gridColumns < maxColumns &&
+			guard < 200
+		) {
 			this.addColumn('left', spawnNew);
 			guard += 1;
 		}
-		while (this.gridShiftX + (this.maxColumn + 0.5) * spacing < width + padding && guard < 400) {
+		while (
+			this.gridShiftX + (this.maxColumn + 0.5) * spacing < width + padding &&
+			this.gridColumns < maxColumns &&
+			guard < 400
+		) {
 			this.addColumn('right', spawnNew);
 			guard += 1;
 		}
-		while (this.gridColumns < required.columns && guard < 600) {
+		while (this.gridColumns < required.columns && this.gridColumns < maxColumns && guard < 600) {
 			this.addColumn(this.nextColumnSide(width, spacing), spawnNew);
 			guard += 1;
 		}
 
 		guard = 0;
-		while (this.gridShiftY + (this.minRow + 0.5) * spacing > -padding && guard < 200) {
+		while (this.gridShiftY + (this.minRow + 0.5) * spacing > -padding && this.gridRows < maxRows && guard < 200) {
 			this.addRow('top', spawnNew);
 			guard += 1;
 		}
-		while (this.gridShiftY + (this.maxRow + 0.5) * spacing < height + padding && guard < 400) {
+		while (
+			this.gridShiftY + (this.maxRow + 0.5) * spacing < height + padding &&
+			this.gridRows < maxRows &&
+			guard < 400
+		) {
 			this.addRow('bottom', spawnNew);
 			guard += 1;
 		}
-		while (this.gridRows < required.rows && guard < 600) {
+		while (this.gridRows < required.rows && this.gridRows < maxRows && guard < 600) {
 			this.addRow(this.nextRowSide(height, spacing), spawnNew);
 			guard += 1;
 		}
@@ -401,14 +417,23 @@ export class LetterGridEngine {
 	private updateCellLife(now: number): void {
 		if (now < this.nextCellLifeTickAt) return;
 		this.nextCellLifeTickAt = now + this.config.cellLifeTickMs;
-		const activePuffs = this.puffs.filter(puff => now < puff.removeAt);
-		if (activePuffs.length !== this.puffs.length) {
-			this.puffs = activePuffs;
+
+		let activePuffCount = 0;
+		for (const puff of this.puffs) {
+			if (now >= puff.removeAt) continue;
+			this.puffs[activePuffCount] = puff;
+			activePuffCount += 1;
+		}
+		if (activePuffCount !== this.puffs.length) {
+			this.puffs.length = activePuffCount;
 			this.smokeRevision += 1;
 		}
 
 		const total = Math.max(1, this.cells.length);
-		const living = this.cells.filter(cell => cell.status === 'alive' || cell.status === 'spawning').length;
+		let living = 0;
+		for (const cell of this.cells) {
+			if (cell.status === 'alive' || cell.status === 'spawning') living += 1;
+		}
 		const occupancy = living / total;
 		const tickSeconds = this.config.cellLifeTickMs / 1000;
 		const spawnPressure = Math.max(0, (this.config.targetAliveRatio - occupancy) / this.config.targetAliveRatio);
@@ -482,8 +507,10 @@ export class LetterGridEngine {
 		if (!this.spacing.active && now >= this.spacing.nextChangeAt) this.startSpacingChange(now);
 		if (!this.spacing.active) return;
 
+		const previousSpacing = this.spacing.current;
 		const progress = smoothProgress((now - this.spacing.startedAt) / this.spacing.duration);
 		this.spacing.current = this.spacing.from + (this.spacing.target - this.spacing.from) * progress;
+		this.adjustGridShiftForSpacing(previousSpacing, this.spacing.current);
 		if (progress >= 1) {
 			this.spacing.current = this.spacing.target;
 			this.spacing.active = false;
@@ -755,6 +782,8 @@ export class LetterGridEngine {
 			current: initialSpacing,
 			from: initialSpacing,
 			target: initialSpacing,
+			anchorColumn: 0,
+			anchorRow: 0,
 			startedAt: now,
 			duration: 0,
 			nextChangeAt: now + randomRange(this.config.spacingChangeDelay),
@@ -779,6 +808,8 @@ export class LetterGridEngine {
 		this.captureOnscreenState();
 		this.spacing.from = this.spacing.current;
 		this.spacing.target = nextSpacing;
+		this.spacing.anchorColumn = this.viewportAnchorColumn(this.spacing.current);
+		this.spacing.anchorRow = this.viewportAnchorRow(this.spacing.current);
 		this.spacing.startedAt = now;
 		this.spacing.duration = Math.max(1, randomRange(this.config.spacingTransitionMs));
 		this.spacing.active = true;
@@ -874,30 +905,57 @@ export class LetterGridEngine {
 
 	private normalizeGridOrigin(spacing: number): void {
 		const safeSpacing = Math.max(1, spacing);
-		const columnOffset = Math.floor(this.gridShiftX / safeSpacing);
-		const rowOffset = Math.floor(this.gridShiftY / safeSpacing);
+		const width = typeof window === 'undefined' ? 0 : window.innerWidth;
+		const height = typeof window === 'undefined' ? 0 : window.innerHeight;
+		const columnOffset = Math.round((width * 0.5 - this.gridShiftX) / safeSpacing - 0.5);
+		const rowOffset = Math.round((height * 0.5 - this.gridShiftY) / safeSpacing - 0.5);
 		if (columnOffset === 0 && rowOffset === 0) return;
 
-		this.gridShiftX -= columnOffset * safeSpacing;
-		this.gridShiftY -= rowOffset * safeSpacing;
-		this.minColumn += columnOffset;
-		this.maxColumn += columnOffset;
-		this.minRow += rowOffset;
-		this.maxRow += rowOffset;
 		const xOffset = columnOffset * safeSpacing;
 		const yOffset = rowOffset * safeSpacing;
+		this.gridShiftX += xOffset;
+		this.gridShiftY += yOffset;
+		this.minColumn -= columnOffset;
+		this.maxColumn -= columnOffset;
+		this.minRow -= rowOffset;
+		this.maxRow -= rowOffset;
 		for (const cell of this.cells) {
-			cell.column += columnOffset;
-			cell.row += rowOffset;
+			cell.column -= columnOffset;
+			cell.row -= rowOffset;
 			this.markCellDirty(cell);
 		}
 		for (const puff of this.puffs) {
 			if (puff.screenLocked) continue;
-			puff.x += xOffset;
-			puff.y += yOffset;
+			puff.x -= xOffset;
+			puff.y -= yOffset;
 		}
 		this.revision += 1;
 		this.smokeRevision += 1;
+	}
+
+	private adjustGridShiftForSpacing(previousSpacing: number, nextSpacing: number): void {
+		const delta = previousSpacing - nextSpacing;
+		if (Math.abs(delta) < 0.0001) return;
+		const xOffset = delta * (this.spacing.anchorColumn + 0.5);
+		const yOffset = delta * (this.spacing.anchorRow + 0.5);
+		this.gridShiftX += xOffset;
+		this.gridShiftY += yOffset;
+		for (const puff of this.puffs) {
+			if (puff.screenLocked) continue;
+			puff.x -= xOffset;
+			puff.y -= yOffset;
+		}
+		this.smokeRevision += 1;
+	}
+
+	private viewportAnchorColumn(spacing: number): number {
+		const width = typeof window === 'undefined' ? 0 : window.innerWidth;
+		return (width * 0.5 - this.gridShiftX) / Math.max(1, spacing) - 0.5;
+	}
+
+	private viewportAnchorRow(spacing: number): number {
+		const height = typeof window === 'undefined' ? 0 : window.innerHeight;
+		return (height * 0.5 - this.gridShiftY) / Math.max(1, spacing) - 0.5;
 	}
 
 	private capacitySpacing(): number {
