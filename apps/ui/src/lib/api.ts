@@ -94,6 +94,20 @@ export async function getRoomDirectory(): Promise<RoomDirectoryListing[]> {
 	return payload.rooms;
 }
 
+export async function pingPresence(): Promise<void> {
+	const userId = getStoredUserId();
+	const clientKey = readStoredClientKey();
+	if (!userId && !clientKey) return;
+
+	await readJson<{ ok: boolean }>(
+		await fetch(`${apiBase}/presence/ping`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ userId, clientKey }),
+		}),
+	);
+}
+
 export async function joinRoom(code: string, name: string): Promise<RoomViewState> {
 	const roomCode = requireRoomCode(code);
 	const user = await ensureUser({

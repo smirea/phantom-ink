@@ -4,7 +4,7 @@
 	import PlayerAvatar from '$lib/PlayerAvatar.svelte';
 	import { beforeNavigate, goto, onNavigate } from '$app/navigation';
 	import { page } from '$app/state';
-	import { leaveRoomForStoredUser, loadStoredUser } from '$lib/api';
+	import { leaveRoomForStoredUser, loadStoredUser, pingPresence } from '$lib/api';
 	import { playerColorPreset } from '$lib/playerPresentation';
 	import { parseRoomCode } from '$lib/roomCodes';
 	import { LS, storageKeys } from '$lib/storage';
@@ -25,6 +25,7 @@
 
 	let { children } = $props();
 	const browser = typeof window !== 'undefined';
+	const presencePingMs = 10_000;
 	type Theme = 'dark' | 'light';
 
 	const queryClient = new QueryClient({
@@ -106,13 +107,18 @@
 		const handleEscape = (event: KeyboardEvent) => {
 			if (event.key === 'Escape') closeSettings();
 		};
+		const presenceInterval = window.setInterval(() => {
+			void pingPresenceForPath(window.location.pathname);
+		}, presencePingMs);
 
+		void pingPresenceForPath(window.location.pathname);
 		document.addEventListener('click', handleLinkClick, true);
 		document.addEventListener('pointerdown', handleOutsidePointer, true);
 		document.addEventListener('keydown', handleEscape);
 
 		return () => {
 			stopStorage();
+			window.clearInterval(presenceInterval);
 			if (settingsCloseTimer) clearTimeout(settingsCloseTimer);
 			document.removeEventListener('click', handleLinkClick, true);
 			document.removeEventListener('pointerdown', handleOutsidePointer, true);
@@ -122,6 +128,10 @@
 
 	$effect(() => {
 		void checkProfileForPath(page.url);
+	});
+
+	$effect(() => {
+		void pingPresenceForPath(page.url.pathname);
 	});
 
 	function prefersReducedMotion(): boolean {
@@ -153,6 +163,14 @@
 				await goto(`${setupUrl.pathname}${setupUrl.search}${setupUrl.hash}`, { noScroll: true });
 			}
 		}
+	}
+
+	async function pingPresenceForPath(path: string) {
+		if (!browser || isPublicPath(path)) return;
+
+		try {
+			await pingPresence();
+		} catch {}
 	}
 
 	function syncPlayerFromStorage() {

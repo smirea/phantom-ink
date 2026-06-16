@@ -24,6 +24,8 @@ import {
 const uiBuildPath = new URL('../../ui/build/', import.meta.url);
 const databaseUrl = process.env.DATABASE_URL ?? new URL('../../../.data/phantom-ink.sqlite', import.meta.url).pathname;
 const sseHeartbeatMs = 5_000;
+const presenceTimeoutMs = 30_000;
+const serverStartedAt = Date.now();
 
 mkdirSync(dirname(databaseUrl), { recursive: true });
 
@@ -91,6 +93,7 @@ type RoomClient = {
 
 const roomClients = new Map<string, Set<RoomClient>>();
 const roomStateCache = new Map<string, OnlineRoomState>();
+const userPresence = new Map<number, number>();
 const encoder = new TextEncoder();
 
 const userColumns = sqlite.query<{ name: string }, []>('PRAGMA table_info(users)').all();
@@ -159,12 +162,24 @@ async function handleApi(request: Request, url: URL): Promise<Response> {
 	}
 
 	if (method === 'GET' && pathname === '/users/current-room') {
+		pruneInactiveLobbyRooms();
 		const user = getUserByIdOrClientKey(numberParam(url.searchParams.get('userId')), url.searchParams.get('clientKey'));
 		const roomCode = user ? findCurrentRoomForUser(user.id) : null;
 		return json({ roomCode } satisfies CurrentRoomResponse);
 	}
 
+	if (method === 'POST' && pathname === '/presence/ping') {
+		const body = await readBody<{ userId?: number | null; clientKey?: string | null }>(request);
+		const user = getUserByIdOrClientKey(body.userId ?? null, body.clientKey);
+		if (!user) throw new HttpError('User not found', 404);
+
+		touchUserPresence(user.id);
+		pruneInactiveLobbyRooms();
+		return json({ ok: true, timeoutMs: presenceTimeoutMs });
+	}
+
 	if (method === 'GET' && pathname === '/rooms') {
+		pruneInactiveLobbyRooms();
 		const rooms = getRooms()
 			.map(room => ({ code: room.code, state: loadRoomState(room.code) }))
 			.filter(room => room.state.members.length > 0);
@@ -172,6 +187,7 @@ async function handleApi(request: Request, url: URL): Promise<Response> {
 	}
 
 	if (roomMatch) {
+		pruneInactiveLobbyRooms();
 		const code = roomMatch[1] ?? '';
 		const subpath = roomMatch[2] ?? '';
 		const userId = numberParam(url.searchParams.get('userId'));
@@ -195,6 +211,7 @@ async function handleApi(request: Request, url: URL): Promise<Response> {
 				icon?: string | null;
 			}>(request);
 			const user = ensureUser(body.userId ?? null, body.clientKey ?? null, body.name ?? null, body.color, body.icon);
+			touchUserPresence(user.id);
 			leaveOtherRooms(code, user);
 			const state = appendRoomAction(code, user.id, {
 				type: 'join',
@@ -214,6 +231,7 @@ async function handleApi(request: Request, url: URL): Promise<Response> {
 			if (!actorUserId) throw new HttpError('userId is required', 400);
 			if (!action) throw new HttpError('action is required', 400);
 
+			touchUserPresence(actorUserId);
 			const state = appendRoomAction(code, actorUserId, action);
 			return json(roomResponse(code, actorUserId, state));
 		}
@@ -331,12 +349,69 @@ function getRooms(): RoomRow[] {
 	return sqlite.query<RoomRow, []>('SELECT * FROM rooms ORDER BY updated_at DESC').all();
 }
 
+function touchUserPresence(userId: number, now = Date.now()): void {
+	userPresence.set(userId, now);
+}
+
+function pruneInactiveLobbyRooms(now = Date.now()): void {
+	pruneExpiredPresence(now);
+
+	for (const room of getRooms()) {
+		const state = loadRoomState(room.code);
+		if (state.phase !== 'lobby') continue;
+
+		const inactiveMembers = state.members.filter(member => !isUserOnline(member.userId, now));
+		if (!inactiveMembers.length) continue;
+
+		if (inactiveMembers.length === state.members.length) {
+			deleteRoom(room.code);
+			continue;
+		}
+
+		for (const member of inactiveMembers) {
+			appendRoomAction(room.code, member.userId, { type: 'leave', actorId: member.id });
+		}
+
+		if (!hasActiveRoomMember(loadRoomState(room.code), now)) deleteRoom(room.code);
+	}
+}
+
+function pruneExpiredPresence(now: number): void {
+	for (const [userId, lastSeen] of userPresence) {
+		if (now - lastSeen > presenceTimeoutMs) userPresence.delete(userId);
+	}
+}
+
+function isUserOnline(userId: number, now: number): boolean {
+	return now - (userPresence.get(userId) ?? serverStartedAt) <= presenceTimeoutMs;
+}
+
+function hasActiveRoomMember(state: OnlineRoomState, now: number): boolean {
+	return state.members.some(member => isUserOnline(member.userId, now));
+}
+
 function ensureRoom(code: string): void {
 	const existing = sqlite.query<RoomRow, [string]>('SELECT * FROM rooms WHERE code = ?').get(code);
 	if (existing) return;
 
 	const timestamp = nowIso();
 	sqlite.query('INSERT INTO rooms (code, created_at, updated_at) VALUES (?, ?, ?)').run(code, timestamp, timestamp);
+}
+
+function deleteRoom(code: string): void {
+	const clients = roomClients.get(code);
+	if (clients) {
+		for (const client of clients) {
+			try {
+				client.controller.close();
+			} catch {}
+		}
+		roomClients.delete(code);
+	}
+
+	sqlite.query('DELETE FROM room_actions WHERE room_code = ?').run(code);
+	sqlite.query('DELETE FROM rooms WHERE code = ?').run(code);
+	roomStateCache.delete(code);
 }
 
 function getRoomActions(code: string): RoomActionRow[] {
