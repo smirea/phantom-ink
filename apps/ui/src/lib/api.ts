@@ -1,25 +1,58 @@
 import {
+	DEFAULT_PLAYER_COLOR,
+	DEFAULT_PLAYER_ICON,
 	playerIdForUser,
+	type CurrentUserResponse,
 	type CurrentRoomResponse,
 	type DirectoryResponse,
 	type OnlineRoomAction,
+	type PlayerColorId,
+	type PlayerIconId,
 	type RoomDirectoryListing,
 	type RoomResponse,
 	type RoomViewState,
 	type UserRecord,
 	type UserResponse,
 } from '@repo/shared/onlineGame';
-import { getStored, getStoredClientKey, setStored, storageKeys } from './storage';
+import { getStoredClientKey, LS, readStoredClientKey, storageKeys } from './storage';
 import { parseRoomCode } from './roomCodes';
 
 const apiBase = '/api';
 
 export function getStoredUserId(): number | null {
-	const userId = getStored(storageKeys.serverUserId);
+	const userId = LS.get(storageKeys.serverUserId);
 	return typeof userId === 'number' && Number.isInteger(userId) && userId > 0 ? userId : null;
 }
 
-export async function ensureUser(name: string): Promise<UserRecord> {
+export async function loadStoredUser(): Promise<UserRecord | null> {
+	const params = new URLSearchParams();
+	const userId = getStoredUserId();
+	const clientKey = readStoredClientKey();
+	if (userId) params.set('userId', String(userId));
+	if (clientKey) params.set('clientKey', clientKey);
+	if (!params.size) return null;
+
+	const payload = await readJson<CurrentUserResponse>(
+		await fetch(`${apiBase}/users/me?${params.toString()}`, {
+			headers: { Accept: 'application/json' },
+		}),
+	);
+	if (payload.user) {
+		LS.set({
+			[storageKeys.serverUserId]: payload.user.id,
+			[storageKeys.playerName]: payload.user.name,
+			[storageKeys.playerColor]: payload.user.color,
+			[storageKeys.playerIcon]: payload.user.icon,
+		});
+	}
+	return payload.user;
+}
+
+export async function ensureUser(profile: {
+	name: string;
+	color: PlayerColorId;
+	icon: PlayerIconId;
+}): Promise<UserRecord> {
 	const payload = await readJson<UserResponse>(
 		await fetch(`${apiBase}/users`, {
 			method: 'POST',
@@ -27,11 +60,16 @@ export async function ensureUser(name: string): Promise<UserRecord> {
 			body: JSON.stringify({
 				userId: getStoredUserId(),
 				clientKey: getStoredClientKey(),
-				name,
+				...profile,
 			}),
 		}),
 	);
-	setStored(storageKeys.serverUserId, payload.user.id);
+	LS.set({
+		[storageKeys.serverUserId]: payload.user.id,
+		[storageKeys.playerName]: payload.user.name,
+		[storageKeys.playerColor]: payload.user.color,
+		[storageKeys.playerIcon]: payload.user.icon,
+	});
 	return payload.user;
 }
 
@@ -58,7 +96,11 @@ export async function getRoomDirectory(): Promise<RoomDirectoryListing[]> {
 
 export async function joinRoom(code: string, name: string): Promise<RoomViewState> {
 	const roomCode = requireRoomCode(code);
-	const user = await ensureUser(name);
+	const user = await ensureUser({
+		name,
+		color: LS.get(storageKeys.playerColor, DEFAULT_PLAYER_COLOR),
+		icon: LS.get(storageKeys.playerIcon, DEFAULT_PLAYER_ICON),
+	});
 	const payload = await readJson<RoomResponse>(
 		await fetch(`${apiBase}/rooms/${encodeURIComponent(roomCode)}/join`, {
 			method: 'POST',
@@ -66,11 +108,13 @@ export async function joinRoom(code: string, name: string): Promise<RoomViewStat
 			body: JSON.stringify({
 				userId: user.id,
 				clientKey: getStoredClientKey(),
-				name,
+				name: user.name,
+				color: user.color,
+				icon: user.icon,
 			}),
 		}),
 	);
-	setStored(storageKeys.currentRoom, roomCode);
+	LS.set({ [storageKeys.currentRoom]: roomCode });
 	return payload.room;
 }
 

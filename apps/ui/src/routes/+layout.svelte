@@ -3,8 +3,10 @@
 	import InkButton from '$lib/InkButton.svelte';
 	import PhantomLogo from '$lib/PhantomLogo.svelte';
 	import { goto, onNavigate } from '$app/navigation';
-	import { getStored, setStored, storageKeys } from '$lib/storage';
+	import { loadStoredUser } from '$lib/api';
+	import { LS, storageKeys } from '$lib/storage';
 	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
+	import { isCompleteUserProfile } from '@repo/shared/onlineGame';
 	import { onMount } from 'svelte';
 	import './layout.css';
 
@@ -26,12 +28,14 @@
 		},
 	});
 
-	let theme = $state<Theme>(getStored(storageKeys.darkMode) ? 'dark' : 'light');
+	let theme = $state<Theme>(LS.get(storageKeys.darkMode) ? 'dark' : 'light');
 	let activePath = $state(typeof location === 'undefined' ? '/' : location.pathname);
 	let supportsViewTransitions = $state(false);
 	let isViewTransitioning = $state(false);
+	let isProfileChecking = $state(browser && !isPublicPath(typeof location === 'undefined' ? '/' : location.pathname));
 	let manualViewTransition = false;
-	const isStartScreen = $derived(activePath === '/');
+	let profileCheckId = 0;
+	const isBareScreen = $derived(activePath === '/' || activePath === '/setup' || isProfileChecking);
 
 	onNavigate(navigation => {
 		if (!browser || !supportsViewTransitions || manualViewTransition) return;
@@ -52,12 +56,15 @@
 	$effect(() => {
 		if (typeof document === 'undefined') return;
 		document.documentElement.dataset.theme = theme;
-		setStored(storageKeys.darkMode, theme === 'dark');
+		LS.set({ [storageKeys.darkMode]: theme === 'dark' });
 	});
 
 	onMount(() => {
 		supportsViewTransitions = Boolean(document.startViewTransition) && !prefersReducedMotion();
-		const updatePath = () => (activePath = window.location.pathname);
+		const updatePath = () => {
+			activePath = window.location.pathname;
+			void checkProfileForPath(activePath);
+		};
 		const pushState = history.pushState;
 		const replaceState = history.replaceState;
 		const handleLinkClick = (event: MouseEvent) => {
@@ -78,6 +85,7 @@
 		};
 		document.addEventListener('click', handleLinkClick, true);
 		window.addEventListener('popstate', updatePath);
+		void checkProfileForPath(window.location.pathname);
 
 		return () => {
 			history.pushState = pushState;
@@ -93,6 +101,36 @@
 
 	function prefersReducedMotion(): boolean {
 		return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+	}
+
+	function isPublicPath(path: string): boolean {
+		return path === '/' || path === '/setup';
+	}
+
+	async function checkProfileForPath(path: string) {
+		if (!browser || isPublicPath(path)) {
+			isProfileChecking = false;
+			return;
+		}
+
+		const checkId = ++profileCheckId;
+		isProfileChecking = true;
+		try {
+			const user = await loadStoredUser();
+			if (checkId !== profileCheckId) return;
+			if (!isCompleteUserProfile(user)) {
+				await goto('/setup', { noScroll: true });
+				return;
+			}
+		} catch {
+			if (checkId === profileCheckId) {
+				await goto('/setup', { noScroll: true });
+			}
+		} finally {
+			if (checkId === profileCheckId) {
+				isProfileChecking = false;
+			}
+		}
 	}
 
 	function getAnchor(target: EventTarget | null): HTMLAnchorElement | null {
@@ -149,7 +187,7 @@
 	<div class:view-transitioning={isViewTransitioning} class="app-scene">
 		<BackgroundHost />
 
-		{#if isStartScreen}
+		{#if isBareScreen}
 			{@render children()}
 		{:else}
 			<div class="screen-shell">

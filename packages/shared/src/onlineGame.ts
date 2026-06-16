@@ -8,13 +8,46 @@ import {
 } from './game';
 
 export const ROOM_CODE_LENGTH = 4;
-export const MAX_PLAYER_NAME_LENGTH = 24;
+export const MIN_PLAYER_NAME_LENGTH = 2;
+export const MAX_PLAYER_NAME_LENGTH = 12;
 export const MIN_SEATED_PLAYER_COUNT = 4;
 export const MAX_SEATED_PLAYER_COUNT = 12;
+export const PLAYER_COLOR_PRESETS = [
+	{ id: 'ectoplasm', label: 'Ectoplasm', value: '#9ee6cf' },
+	{ id: 'willowisp', label: 'Will-o-wisp', value: '#8ac7ff' },
+	{ id: 'moonmilk', label: 'Moonmilk', value: '#d8d2ff' },
+	{ id: 'haunt', label: 'Haunt', value: '#b990ff' },
+	{ id: 'velvet', label: 'Velvet', value: '#d782ba' },
+	{ id: 'bloodink', label: 'Blood ink', value: '#d85b68' },
+	{ id: 'pumpkin', label: 'Pumpkin', value: '#e58a45' },
+	{ id: 'brass', label: 'Brass', value: '#d0a45f' },
+	{ id: 'moss', label: 'Moss', value: '#92b86d' },
+	{ id: 'lagoon', label: 'Lagoon', value: '#55b7b2' },
+	{ id: 'ash', label: 'Ash', value: '#a7a4ac' },
+	{ id: 'bone', label: 'Bone', value: '#e3d7b8' },
+] as const;
+export const PLAYER_ICON_PRESETS = [
+	{ id: 'ghost', label: 'Ghost' },
+	{ id: 'skull', label: 'Skull' },
+	{ id: 'venetian-mask', label: 'Mask' },
+	{ id: 'drama', label: 'Drama' },
+	{ id: 'cat', label: 'Cat' },
+	{ id: 'rabbit', label: 'Rabbit' },
+	{ id: 'rat', label: 'Rat' },
+	{ id: 'snail', label: 'Snail' },
+	{ id: 'bug', label: 'Bug' },
+	{ id: 'worm', label: 'Worm' },
+	{ id: 'fish', label: 'Fish' },
+	{ id: 'angry', label: 'Grump' },
+] as const;
+export const DEFAULT_PLAYER_COLOR = PLAYER_COLOR_PRESETS[0].id;
+export const DEFAULT_PLAYER_ICON = PLAYER_ICON_PRESETS[0].id;
 
 export type PlayerId = string;
 export type RoomPhase = 'lobby' | 'playing';
 export type PlayerRole = 'spirit' | 'medium' | 'spectator';
+export type PlayerColorId = (typeof PLAYER_COLOR_PRESETS)[number]['id'];
+export type PlayerIconId = (typeof PLAYER_ICON_PRESETS)[number]['id'];
 
 export interface RoomMember {
 	id: PlayerId;
@@ -83,10 +116,16 @@ export interface CurrentRoomResponse {
 export interface UserRecord {
 	id: number;
 	name: string;
+	color: PlayerColorId;
+	icon: PlayerIconId;
 }
 
 export interface UserResponse {
 	user: UserRecord;
+}
+
+export interface CurrentUserResponse {
+	user: UserRecord | null;
 }
 
 export function playerIdForUser(userId: number): PlayerId {
@@ -106,7 +145,27 @@ export function createInitialOnlineRoomState(): OnlineRoomState {
 
 export function sanitizePlayerName(value: string): string | null {
 	const trimmed = value.trim().replace(/\s+/g, ' ');
-	return trimmed.length === 0 ? null : trimmed.slice(0, MAX_PLAYER_NAME_LENGTH);
+	if (trimmed.length < MIN_PLAYER_NAME_LENGTH) return null;
+	return trimmed.slice(0, MAX_PLAYER_NAME_LENGTH);
+}
+
+export function isValidPlayerName(value: string): boolean {
+	const trimmed = value.trim().replace(/\s+/g, ' ');
+	return trimmed.length >= MIN_PLAYER_NAME_LENGTH && trimmed.length <= MAX_PLAYER_NAME_LENGTH;
+}
+
+export function sanitizePlayerColor(value: string | null | undefined): PlayerColorId {
+	const color = PLAYER_COLOR_PRESETS.find(preset => preset.id === value);
+	return color?.id ?? DEFAULT_PLAYER_COLOR;
+}
+
+export function sanitizePlayerIcon(value: string | null | undefined): PlayerIconId {
+	const icon = PLAYER_ICON_PRESETS.find(preset => preset.id === value);
+	return icon?.id ?? DEFAULT_PLAYER_ICON;
+}
+
+export function isCompleteUserProfile(user: UserRecord | null | undefined): user is UserRecord {
+	return Boolean(user && isValidPlayerName(user.name));
 }
 
 export function buildRoomMembers(

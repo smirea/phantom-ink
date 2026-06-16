@@ -9,6 +9,7 @@
 		"preview": "bun --env-file=../../.env --env-file=../../.env.local --bun vite preview"
 	},
 	"dependencies": {
+		"@lucide/svelte": "^1.20.0",
 		"@sveltejs/adapter-static": "^3.0.9",
 		"@sveltejs/kit": "^2.48.4",
 		"@tanstack/svelte-query": "^6.1.33",

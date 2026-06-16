@@ -1,8 +1,17 @@
 import type { PhantomInkGameState } from '@repo/shared/game';
+import {
+	DEFAULT_PLAYER_COLOR,
+	DEFAULT_PLAYER_ICON,
+	type PlayerColorId,
+	type PlayerIconId,
+} from '@repo/shared/onlineGame';
+import createLocalStorage from './createLocalStorage';
 
 export const storageKeys = {
 	currentRoom: 'current_room',
 	darkMode: 'dark_mode',
+	playerColor: 'player_color',
+	playerIcon: 'player_icon',
 	playerName: 'player_name',
 	savedState: 'saved_state',
 	serverClientKey: 'server_client_key',
@@ -14,6 +23,8 @@ export type StorageKey = (typeof storageKeys)[keyof typeof storageKeys];
 export interface StorageShape {
 	[storageKeys.currentRoom]: string | null;
 	[storageKeys.darkMode]: boolean;
+	[storageKeys.playerColor]: PlayerColorId;
+	[storageKeys.playerIcon]: PlayerIconId;
 	[storageKeys.playerName]: string;
 	[storageKeys.savedState]: PhantomInkGameState | null;
 	[storageKeys.serverClientKey]: string | null;
@@ -23,6 +34,8 @@ export interface StorageShape {
 const defaults: StorageShape = {
 	[storageKeys.currentRoom]: null,
 	[storageKeys.darkMode]: true,
+	[storageKeys.playerColor]: DEFAULT_PLAYER_COLOR,
+	[storageKeys.playerIcon]: DEFAULT_PLAYER_ICON,
 	[storageKeys.playerName]: '',
 	[storageKeys.savedState]: null,
 	[storageKeys.serverClientKey]: null,
@@ -31,42 +44,29 @@ const defaults: StorageShape = {
 
 const searchParams = typeof location === 'undefined' ? new URLSearchParams() : new URLSearchParams(location.search);
 export const DEBUG_ID = searchParams.get('DEBUG_ID') || searchParams.get('debug_id') || null;
-const prefix = `phantom-ink${DEBUG_ID ? `-DEBUG_ID=${DEBUG_ID}` : ''}:`;
+const storageNamespace = `phantom-ink${DEBUG_ID ? `-DEBUG_ID=${DEBUG_ID}` : ''}`;
+export const { LS } = createLocalStorage<StorageShape>({
+	namespace: storageNamespace,
+	getDefaults: () => defaults,
+});
 
 export function getDebugId(): string | null {
 	return DEBUG_ID;
 }
 
-export function getStored<K extends StorageKey>(key: K): StorageShape[K] {
-	if (typeof localStorage === 'undefined') return defaults[key];
-
-	try {
-		const raw = localStorage.getItem(prefix + key);
-		return raw === null ? defaults[key] : (JSON.parse(raw) as StorageShape[K]);
-	} catch {
-		deleteStored(key);
-		return defaults[key];
-	}
-}
-
-export function setStored<K extends StorageKey>(key: K, value: StorageShape[K]): void {
-	if (typeof localStorage === 'undefined') return;
-	localStorage.setItem(prefix + key, JSON.stringify(value));
-}
-
-export function deleteStored(key: StorageKey): void {
-	if (typeof localStorage === 'undefined') return;
-	localStorage.removeItem(prefix + key);
+export function readStoredClientKey(): string | null {
+	const stored = LS.get(storageKeys.serverClientKey);
+	return stored?.trim() ? stored : null;
 }
 
 export function getStoredClientKey(): string {
-	const stored = getStored(storageKeys.serverClientKey);
+	const stored = readStoredClientKey();
 	if (stored) return stored;
 
 	const next =
 		typeof crypto !== 'undefined' && crypto.randomUUID
 			? crypto.randomUUID()
 			: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-	setStored(storageKeys.serverClientKey, next);
+	LS.set({ [storageKeys.serverClientKey]: next });
 	return next;
 }

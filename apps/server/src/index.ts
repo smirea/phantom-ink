@@ -6,10 +6,13 @@ import {
 	applyOnlineRoomAction,
 	createInitialOnlineRoomState,
 	playerIdForUser,
+	sanitizePlayerColor,
+	sanitizePlayerIcon,
 	sanitizePlayerName,
 	selectRoomDirectoryListings,
 	selectRoomViewState,
 	type CurrentRoomResponse,
+	type CurrentUserResponse,
 	type DirectoryResponse,
 	type OnlineRoomAction,
 	type OnlineRoomState,
@@ -32,6 +35,8 @@ sqlite.exec(`
 		id integer PRIMARY KEY AUTOINCREMENT,
 		client_key text,
 		name text NOT NULL,
+		color text NOT NULL DEFAULT 'ectoplasm',
+		icon text NOT NULL DEFAULT 'ghost',
 		created_at text NOT NULL,
 		updated_at text NOT NULL
 	);
@@ -58,6 +63,8 @@ type UserRow = {
 	id: number;
 	client_key: string | null;
 	name: string;
+	color: string | null;
+	icon: string | null;
 	created_at: string;
 	updated_at: string;
 };
@@ -85,6 +92,14 @@ type RoomClient = {
 const roomClients = new Map<string, Set<RoomClient>>();
 const roomStateCache = new Map<string, OnlineRoomState>();
 const encoder = new TextEncoder();
+
+const userColumns = sqlite.query<{ name: string }, []>('PRAGMA table_info(users)').all();
+if (!userColumns.some(column => column.name === 'color')) {
+	sqlite.exec("ALTER TABLE users ADD COLUMN color text NOT NULL DEFAULT 'ectoplasm'");
+}
+if (!userColumns.some(column => column.name === 'icon')) {
+	sqlite.exec("ALTER TABLE users ADD COLUMN icon text NOT NULL DEFAULT 'ghost'");
+}
 
 class HttpError extends Error {
 	constructor(
@@ -131,9 +146,16 @@ async function handleApi(request: Request, url: URL): Promise<Response> {
 			userId?: number | null;
 			clientKey?: string | null;
 			name?: string | null;
+			color?: string | null;
+			icon?: string | null;
 		}>(request);
-		const user = ensureUser(body.userId ?? null, body.clientKey ?? null, body.name ?? null);
+		const user = ensureUser(body.userId ?? null, body.clientKey ?? null, body.name ?? null, body.color, body.icon);
 		return json({ user } satisfies UserResponse);
+	}
+
+	if (method === 'GET' && pathname === '/users/me') {
+		const user = getUserByIdOrClientKey(numberParam(url.searchParams.get('userId')), url.searchParams.get('clientKey'));
+		return json({ user: user ? userRecord(user) : null } satisfies CurrentUserResponse);
 	}
 
 	if (method === 'GET' && pathname === '/users/current-room') {
@@ -169,8 +191,10 @@ async function handleApi(request: Request, url: URL): Promise<Response> {
 				userId?: number | null;
 				clientKey?: string | null;
 				name?: string | null;
+				color?: string | null;
+				icon?: string | null;
 			}>(request);
-			const user = ensureUser(body.userId ?? null, body.clientKey ?? null, body.name ?? null);
+			const user = ensureUser(body.userId ?? null, body.clientKey ?? null, body.name ?? null, body.color, body.icon);
 			leaveOtherRooms(code, user);
 			const state = appendRoomAction(code, user.id, {
 				type: 'join',
@@ -232,7 +256,12 @@ function sanitizeClientKey(value: string | null | undefined): string | null {
 }
 
 function userRecord(user: UserRow): UserRecord {
-	return { id: user.id, name: user.name };
+	return {
+		id: user.id,
+		name: sanitizePlayerName(user.name) ?? 'Player',
+		color: sanitizePlayerColor(user.color),
+		icon: sanitizePlayerIcon(user.icon),
+	};
 }
 
 function getUserRow(userId: number | null): UserRow | null {
@@ -253,32 +282,45 @@ function ensureUser(
 	userId: number | null,
 	clientKeyValue: string | null | undefined,
 	rawName: string | null | undefined,
+	rawColor?: string | null,
+	rawIcon?: string | null,
 ): UserRecord {
 	const name = sanitizePlayerName(rawName ?? '') ?? 'Player';
+	const color = sanitizePlayerColor(rawColor);
+	const icon = sanitizePlayerIcon(rawIcon);
 	const clientKey = sanitizeClientKey(clientKeyValue);
 	const existing = getUserByIdOrClientKey(userId, clientKey);
 	const timestamp = nowIso();
 
 	if (existing) {
-		if (existing.name !== name || (clientKey && !existing.client_key)) {
+		const existingColor = sanitizePlayerColor(existing.color);
+		const existingIcon = sanitizePlayerIcon(existing.icon);
+		if (
+			existing.name !== name ||
+			existingColor !== color ||
+			existingIcon !== icon ||
+			(clientKey && !existing.client_key)
+		) {
 			sqlite
-				.query('UPDATE users SET name = ?, client_key = coalesce(client_key, ?), updated_at = ? WHERE id = ?')
-				.run(name, clientKey, timestamp, existing.id);
+				.query(
+					'UPDATE users SET name = ?, color = ?, icon = ?, client_key = coalesce(client_key, ?), updated_at = ? WHERE id = ?',
+				)
+				.run(name, color, icon, clientKey, timestamp, existing.id);
 		}
-		return { id: existing.id, name };
+		return { id: existing.id, name, color, icon };
 	}
 
 	try {
 		const inserted = sqlite
-			.query<UserRow, [string | null, string, string, string]>(
-				'INSERT INTO users (client_key, name, created_at, updated_at) VALUES (?, ?, ?, ?) RETURNING *',
+			.query<UserRow, [string | null, string, string, string, string, string]>(
+				'INSERT INTO users (client_key, name, color, icon, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING *',
 			)
-			.get(clientKey, name, timestamp, timestamp);
+			.get(clientKey, name, color, icon, timestamp, timestamp);
 		if (!inserted) throw new Error('Unable to create user');
 		return userRecord(inserted);
 	} catch (error) {
 		const existingByKey = getUserByClientKey(clientKey);
-		if (existingByKey) return userRecord(existingByKey);
+		if (existingByKey) return ensureUser(existingByKey.id, clientKey, name, color, icon);
 		throw error;
 	}
 }
