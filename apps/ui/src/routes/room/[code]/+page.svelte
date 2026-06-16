@@ -84,6 +84,16 @@
 		return room?.votes.find(vote => vote.action === action) ?? null;
 	}
 
+	function hasSelfPendingVote(summary: RoomVoteSummary | null): boolean {
+		return Boolean(self && summary && !summary.consensus && summary.voterIds.includes(self.id));
+	}
+
+	function hasOtherPendingVote(summary: RoomVoteSummary | null): boolean {
+		return Boolean(
+			self && summary && !summary.consensus && summary.currentVotes > 0 && !summary.voterIds.includes(self.id),
+		);
+	}
+
 	function colorValue(member: RoomMemberView): string {
 		return PLAYER_COLOR_PRESETS.find(preset => preset.id === member.color)?.value ?? PLAYER_COLOR_PRESETS[0].value;
 	}
@@ -156,7 +166,11 @@
 		</div>
 	{:else}
 		<div class="room-settings">
-			<div class="word-toggle-wrap">
+			<div
+				class:otherVoted={hasOtherPendingVote(targetWordVote)}
+				class:selfVoted={hasSelfPendingVote(targetWordVote)}
+				class="word-toggle-wrap vote-host"
+			>
 				<button
 					aria-checked={room?.wordMode === 'custom'}
 					class:checked={room?.wordMode === 'custom'}
@@ -215,7 +229,7 @@
 		{/if}
 
 		<div class="ready-dock">
-			<div class="ready-action">
+			<div class:selfVoted={hasSelfPendingVote(readyVote)} class="ready-action vote-host">
 				<VoteBadge summary={readyVote} {members} label="Ready" />
 				<button
 					class:ready={selfIsReady}
@@ -303,6 +317,20 @@
 		min-width: 0;
 	}
 
+	.vote-host {
+		--vote-badge-opacity: 0;
+		--vote-badge-pointer-events: none;
+		--vote-badge-scale: 0.92;
+	}
+
+	.vote-host:hover,
+	.vote-host:focus-within,
+	.vote-host.selfVoted {
+		--vote-badge-opacity: 1;
+		--vote-badge-pointer-events: auto;
+		--vote-badge-scale: 1;
+	}
+
 	.word-toggle-wrap {
 		position: relative;
 		display: inline-flex;
@@ -355,6 +383,31 @@
 	.word-toggle.checked .checkbox-mark {
 		border-color: #78d88d;
 		background: #78d88d;
+	}
+
+	.word-toggle-wrap.selfVoted .word-toggle {
+		border-color: color-mix(in oklab, #d85b68 74%, var(--app-border));
+		background: color-mix(in oklab, #d85b68 13%, var(--app-input));
+	}
+
+	.word-toggle-wrap.selfVoted .checkbox-mark {
+		border-color: #d85b68;
+		background: color-mix(in oklab, #d85b68 22%, var(--app-panel));
+		box-shadow: 0 0 0.75rem color-mix(in oklab, #d85b68 28%, transparent);
+		color: #ffd9dd;
+	}
+
+	.checkbox-mark {
+		position: relative;
+	}
+
+	.word-toggle-wrap.otherVoted .checkbox-mark::after {
+		position: absolute;
+		inset: -0.42rem;
+		border: 2px dashed color-mix(in oklab, var(--app-accent) 72%, transparent);
+		border-radius: 0.46rem;
+		animation: checkbox-vote 1.45s linear infinite;
+		content: '';
 	}
 
 	.teams-grid {
@@ -624,6 +677,12 @@
 		50% {
 			filter: drop-shadow(0 0 0.85rem color-mix(in oklab, var(--team-color) 56%, transparent))
 				drop-shadow(0 0 1.65rem color-mix(in oklab, var(--team-color) 28%, transparent));
+		}
+	}
+
+	@keyframes checkbox-vote {
+		to {
+			transform: rotate(360deg);
 		}
 	}
 

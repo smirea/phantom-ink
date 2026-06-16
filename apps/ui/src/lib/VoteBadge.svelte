@@ -115,7 +115,7 @@
 	}
 </script>
 
-<div class="vote-wrap">
+<div class:open={isOpen} class="vote-wrap">
 	<button
 		bind:this={badgeButton}
 		aria-expanded={isOpen}
@@ -171,7 +171,18 @@
 		top: 0;
 		right: 0;
 		z-index: 3;
-		transform: translate(50%, -50%);
+		opacity: var(--vote-badge-opacity, 1);
+		pointer-events: var(--vote-badge-pointer-events, auto);
+		transform: translate(50%, -50%) scale(var(--vote-badge-scale, 1));
+		transition:
+			opacity 160ms ease,
+			transform 160ms ease;
+	}
+
+	.vote-wrap.open {
+		opacity: 1;
+		pointer-events: auto;
+		transform: translate(50%, -50%) scale(1);
 	}
 
 	.vote-badge {

@@ -492,20 +492,23 @@ function leastPopulatedTeam(members: readonly RoomMember[]): Team {
 }
 
 type VoteBehavior =
-	| { ns: 'ready'; type: 'single'; voterIds: PlayerId[] }
-	| { ns: 'word-mode'; type: 'choice'; voterIds: PlayerId[] };
+	| { ns: 'ready'; type: 'single'; voterIds: PlayerId[]; requiredVotes: number }
+	| { ns: 'word-mode'; type: 'choice'; voterIds: PlayerId[]; requiredVotes: number };
 
 function getVoteBehavior(state: OnlineRoomState, action: RoomVoteActionName): VoteBehavior | null {
 	const voterIds = state.members.filter(member => member.role !== 'spectator').map(member => member.id);
 	if (state.phase !== 'lobby' || voterIds.length === 0) return null;
-	if (action === 'ready') return { ns: 'ready', type: 'single', voterIds };
-	if (action.startsWith('word-mode:')) return { ns: 'word-mode', type: 'choice', voterIds };
+	if (action === 'ready') return { ns: 'ready', type: 'single', voterIds, requiredVotes: voterIds.length };
+	if (action.startsWith('word-mode:')) {
+		return { ns: 'word-mode', type: 'choice', voterIds, requiredVotes: simpleMajority(voterIds.length) };
+	}
 	return null;
 }
 
 function buildVoteSummary(state: OnlineRoomState, action: RoomVoteActionName, label: string): RoomVoteSummary {
 	const behavior = getVoteBehavior(state, action);
 	const eligiblePlayerIds = behavior?.voterIds ?? [];
+	const requiredVotes = behavior?.requiredVotes ?? eligiblePlayerIds.length;
 	const voterIds = state.votes
 		.filter(vote => vote.action === action && eligiblePlayerIds.includes(vote.playerId))
 		.map(vote => vote.playerId);
@@ -515,24 +518,30 @@ function buildVoteSummary(state: OnlineRoomState, action: RoomVoteActionName, la
 		action,
 		label,
 		currentVotes: uniqueVoterIds.length,
-		requiredVotes: eligiblePlayerIds.length,
+		requiredVotes,
 		voterIds: uniqueVoterIds,
 		missingPlayerIds: eligiblePlayerIds.filter(playerId => !uniqueVoterIds.includes(playerId)),
 		eligiblePlayerIds,
-		consensus: eligiblePlayerIds.length > 0 && uniqueVoterIds.length === eligiblePlayerIds.length,
+		consensus: requiredVotes > 0 && uniqueVoterIds.length >= requiredVotes,
 	};
 }
 
 function winningChoice(state: OnlineRoomState, ns: Extract<RoomVoteNamespace, 'word-mode'>): RoomVoteActionName | null {
-	const eligiblePlayerIds = getVoteBehavior(state, 'word-mode:standard')?.voterIds ?? [];
-	if (!eligiblePlayerIds.length) return null;
+	const behavior = getVoteBehavior(state, 'word-mode:standard');
+	const eligiblePlayerIds = behavior?.voterIds ?? [];
+	const requiredVotes = behavior?.requiredVotes ?? 0;
+	if (!eligiblePlayerIds.length || requiredVotes === 0) return null;
 
 	for (const action of [`${ns}:standard`, `${ns}:custom`] as RoomVoteActionName[]) {
 		const votes = state.votes.filter(vote => vote.action === action && eligiblePlayerIds.includes(vote.playerId));
-		if (new Set(votes.map(vote => vote.playerId)).size === eligiblePlayerIds.length) return action;
+		if (new Set(votes.map(vote => vote.playerId)).size >= requiredVotes) return action;
 	}
 
 	return null;
+}
+
+function simpleMajority(total: number): number {
+	return Math.floor(total / 2) + 1;
 }
 
 function pruneVotes(state: OnlineRoomState): RoomVote[] {
