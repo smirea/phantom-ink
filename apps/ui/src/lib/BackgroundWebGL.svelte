@@ -388,7 +388,6 @@
 		const count = engine.puffs.length - start;
 		if (count === 0) return;
 
-		smokeData.fill(0);
 		for (let index = 0; index < count; index += 1) {
 			const puff = engine.puffs[start + index];
 			const offset = index * smokeInstanceFloats;
@@ -576,6 +575,7 @@
 				varying vec2 v_screen;
 				varying float v_alpha;
 				varying float v_rotation;
+				varying float v_progress;
 				varying float v_seed;
 
 				float smooth01(float value) {
@@ -586,12 +586,12 @@
 				void main() {
 					float progress = clamp((u_time - a_smokeB.x) / max(1.0, a_smokeB.y), 0.0, 1.0);
 					float eased = smooth01(progress);
-					float fade = sin(3.14159265359 * progress);
+					float fade = smoothstep(0.0, 0.12, progress) * (1.0 - smoothstep(0.58, 1.0, progress));
 					float locked = step(a_smokeC.w, 0.0);
 					vec2 base = mix(u_gridShift + a_smokeA.xy, a_smokeA.xy, locked);
 					vec2 center = (base + a_smokeA.zw * eased) * u_pixelRatio;
 					float radius = max(1.0, u_glyphSize * mix(a_smokeB.z, a_smokeB.w, eased) * 0.67 * u_pixelRatio);
-					float extent = radius * 2.8;
+					float extent = radius * 3.9;
 					vec2 screen = center + a_corner * extent;
 					vec2 zeroToOne = screen / u_resolution;
 					vec2 clip = zeroToOne * 2.0 - 1.0;
@@ -600,6 +600,7 @@
 					v_screen = screen;
 					v_alpha = a_smokeC.x * fade;
 					v_rotation = a_smokeC.y + a_smokeC.z * eased;
+					v_progress = progress;
 					v_seed = abs(a_smokeC.w);
 				}
 			`,
@@ -610,15 +611,18 @@
 				varying vec2 v_screen;
 				varying float v_alpha;
 				varying float v_rotation;
+				varying float v_progress;
 				varying float v_seed;
 
 				float hash(vec2 value) {
 					return fract(sin(dot(value, vec2(127.1, 311.7))) * 43758.5453123);
 				}
 
-				float smokeLobe(vec2 value, vec2 offset, float tightness) {
+				float softDisk(vec2 value, vec2 offset, float radius, float feather) {
 					vec2 point = value - offset;
-					return exp(-dot(point, point) * tightness);
+					float inner = radius * radius;
+					float outer = (radius + feather) * (radius + feather);
+					return 1.0 - smoothstep(inner, outer, dot(point, point));
 				}
 
 				void main() {
@@ -628,14 +632,28 @@
 						v_delta.x * cosRotation - v_delta.y * sinRotation,
 						v_delta.x * sinRotation + v_delta.y * cosRotation
 					);
-					float grain = 0.86 + 0.14 * hash(floor(v_screen / 3.0) + vec2(v_seed, v_seed * 0.37));
+					float swirl = (v_progress - 0.35) * 0.34;
+					warped += vec2(
+						sin(warped.y * 2.2 + v_seed) * swirl,
+						cos(warped.x * 1.8 + v_seed * 0.71) * swirl * 0.62
+					);
+					float grain = 0.9 + 0.16 * hash(floor(v_screen / 4.0) + vec2(v_seed, v_seed * 0.37));
 					float body =
-						smokeLobe(warped, vec2(0.0, 0.0), 2.1) * 0.72 +
-						smokeLobe(warped, vec2(0.34, 0.12), 5.2) * 0.18 +
-						smokeLobe(warped, vec2(-0.28, -0.16), 4.4) * 0.14;
-					float alpha = v_alpha * body * grain;
+						softDisk(warped, vec2(0.0, 0.0), 0.78, 0.78) * 0.36 +
+						softDisk(warped, vec2(0.4, 0.04), 0.42, 0.44) * 0.26 +
+						softDisk(warped, vec2(-0.36, -0.1), 0.5, 0.5) * 0.24 +
+						softDisk(warped, vec2(0.04, 0.44), 0.38, 0.5) * 0.2 +
+						softDisk(warped, vec2(-0.04, -0.38), 0.34, 0.42) * 0.14;
+					float hollow =
+						softDisk(warped, vec2(0.02, -0.01), 0.2 + v_progress * 0.24, 0.42) *
+						smoothstep(0.18, 0.92, v_progress) *
+						0.28;
+					body = max(0.0, min(1.0, body) - hollow);
+					float edgeFade = 1.0 - smoothstep(1.4, 1.82, max(abs(v_delta.x), abs(v_delta.y)));
+					float alpha = v_alpha * body * grain * edgeFade;
 					if (alpha <= 0.002) discard;
-					gl_FragColor = vec4(u_color.rgb, u_color.a * clamp(alpha, 0.0, 0.68));
+					vec3 color = mix(u_color.rgb * 1.18, u_color.rgb * 0.72, smoothstep(0.0, 1.0, v_progress));
+					gl_FragColor = vec4(color, u_color.a * clamp(alpha, 0.0, 0.72));
 				}
 			`,
 			['a_corner', 'a_smokeA', 'a_smokeB', 'a_smokeC'],
