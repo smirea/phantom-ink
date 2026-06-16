@@ -346,7 +346,7 @@
 										{:else}
 											<Moon size={17} strokeWidth={2.25} />
 										{/if}
-										<span>Toggle {theme === 'dark' ? 'Light' : 'Dark'} mode</span>
+										<span>Let there be {theme === 'dark' ? 'light' : 'dark'}</span>
 									</button>
 									<a href={setupHref} onclick={closeSettings} role="menuitem">
 										<UserRound size={17} strokeWidth={2.25} />
