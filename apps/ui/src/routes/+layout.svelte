@@ -1,6 +1,5 @@
 <script lang="ts">
 	import BackgroundHost from '$lib/BackgroundHost.svelte';
-	import InkButton from '$lib/InkButton.svelte';
 	import PhantomLogo from '$lib/PhantomLogo.svelte';
 	import PlayerAvatar from '$lib/PlayerAvatar.svelte';
 	import { goto, onNavigate } from '$app/navigation';
@@ -43,6 +42,7 @@
 	let playerIcon = $state<PlayerIconId>(LS.get(storageKeys.playerIcon, DEFAULT_PLAYER_ICON));
 	let supportsViewTransitions = $state(false);
 	let isViewTransitioning = $state(false);
+	let isSettingsOpen = $state(false);
 	let manualViewTransition = false;
 	let profileCheckId = 0;
 	const activePath = $derived(page.url.pathname);
@@ -87,12 +87,24 @@
 			event.preventDefault();
 			void navigateWithViewTransition(anchor.href);
 		};
+		const handleOutsidePointer = (event: PointerEvent) => {
+			if (!isSettingsOpen || !(event.target instanceof Element)) return;
+			if (event.target.closest('.settings-menu-wrap')) return;
+			isSettingsOpen = false;
+		};
+		const handleEscape = (event: KeyboardEvent) => {
+			if (event.key === 'Escape') isSettingsOpen = false;
+		};
 
 		document.addEventListener('click', handleLinkClick, true);
+		document.addEventListener('pointerdown', handleOutsidePointer, true);
+		document.addEventListener('keydown', handleEscape);
 
 		return () => {
 			stopStorage();
 			document.removeEventListener('click', handleLinkClick, true);
+			document.removeEventListener('pointerdown', handleOutsidePointer, true);
+			document.removeEventListener('keydown', handleEscape);
 		};
 	});
 
@@ -139,6 +151,11 @@
 		playerName = LS.get(storageKeys.playerName) ?? '';
 		playerColor = LS.get(storageKeys.playerColor, DEFAULT_PLAYER_COLOR);
 		playerIcon = LS.get(storageKeys.playerIcon, DEFAULT_PLAYER_ICON);
+	}
+
+	function toggleTheme() {
+		theme = theme === 'dark' ? 'light' : 'dark';
+		isSettingsOpen = false;
 	}
 
 	function getAnchor(target: EventTarget | null): HTMLAnchorElement | null {
@@ -224,17 +241,31 @@
 						<PhantomLogo compact textOnly />
 					</a>
 					<div class="screen-actions">
-						<InkButton size="sm" onclick={() => (theme = theme === 'dark' ? 'light' : 'dark')}>
-							{theme === 'dark' ? 'Light' : 'Dark'}
-						</InkButton>
-						<a class="user-profile-link" href={setupHref} aria-label="Edit profile for {displayedPlayerName}">
-							<span class="user-name">{displayedPlayerName}</span>
-							<PlayerAvatar
-								color={displayedPlayerColor.value}
-								icon={playerIcon}
-								label={`${displayedPlayerName} avatar`}
-							/>
-						</a>
+						<div class="settings-menu-wrap">
+							<button
+								aria-expanded={isSettingsOpen}
+								aria-haspopup="menu"
+								class="user-profile-trigger"
+								onclick={() => (isSettingsOpen = !isSettingsOpen)}
+								type="button"
+							>
+								<span class="user-name">{displayedPlayerName}</span>
+								<PlayerAvatar
+									color={displayedPlayerColor.value}
+									icon={playerIcon}
+									label={`${displayedPlayerName} avatar`}
+								/>
+							</button>
+
+							{#if isSettingsOpen}
+								<div class="settings-menu" role="menu">
+									<button onclick={toggleTheme} role="menuitem" type="button">
+										Toggle {theme === 'dark' ? 'Light' : 'Dark'} mode
+									</button>
+									<a href={setupHref} role="menuitem">Change Yourself</a>
+								</div>
+							{/if}
+						</div>
 					</div>
 				</header>
 

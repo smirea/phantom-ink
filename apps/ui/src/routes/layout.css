@@ -121,33 +121,48 @@ button {
 .screen-actions {
 	display: inline-flex;
 	align-items: center;
-	gap: 0.55rem;
 	justify-self: end;
 	min-width: 0;
 }
 
-.user-profile-link {
+.settings-menu-wrap {
+	position: relative;
+	display: inline-flex;
+	min-width: 0;
+}
+
+.user-profile-trigger {
 	display: inline-flex;
 	align-items: center;
 	gap: 0.55rem;
 	min-width: 0;
+	border: 0;
+	background: transparent;
 	color: var(--app-text);
-	text-decoration: none;
+	cursor: pointer;
+	font: inherit;
+	padding: 0;
 	transition:
 		color 180ms ease,
 		filter 180ms ease,
 		transform 180ms ease;
 }
 
-.user-profile-link:hover {
+.user-profile-trigger:hover,
+.user-profile-trigger[aria-expanded='true'] {
 	color: var(--app-accent);
 	filter: drop-shadow(0 0 0.55rem color-mix(in oklab, var(--app-accent) 35%, transparent));
 	transform: translateY(-1px);
 }
 
-.user-profile-link:active,
+.user-profile-trigger:active,
 .top-logo-link:active {
 	transform: translateY(1px) scale(0.98);
+}
+
+.user-profile-trigger:focus-visible {
+	outline: 2px solid var(--app-focus);
+	outline-offset: 4px;
 }
 
 .user-name {
@@ -162,6 +177,62 @@ button {
 	padding-block: 0.02em 0.1em;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+.settings-menu {
+	position: absolute;
+	top: calc(100% + 0.55rem);
+	right: 0;
+	z-index: 8;
+	display: grid;
+	gap: 0.25rem;
+	width: max-content;
+	min-width: 13.5rem;
+	border: 1px solid color-mix(in oklab, var(--app-border) 78%, transparent);
+	border-radius: 0.5rem;
+	background:
+		linear-gradient(180deg, color-mix(in oklab, var(--app-panel) 96%, white 4%), var(--app-panel)), var(--app-panel);
+	box-shadow:
+		0 1rem 2.4rem color-mix(in oklab, black 44%, transparent),
+		inset 0 0 0 1px color-mix(in oklab, white 6%, transparent);
+	padding: 0.35rem;
+}
+
+.settings-menu button,
+.settings-menu a {
+	display: flex;
+	align-items: center;
+	justify-content: flex-start;
+	min-height: 2.35rem;
+	border: 0;
+	border-radius: 0.35rem;
+	background: transparent;
+	color: var(--app-text);
+	cursor: pointer;
+	font: inherit;
+	font-size: 0.9rem;
+	font-weight: 800;
+	line-height: 1;
+	padding: 0 0.7rem;
+	text-align: left;
+	text-decoration: none;
+	transition:
+		background 160ms ease,
+		color 160ms ease,
+		transform 160ms ease;
+}
+
+.settings-menu button:hover,
+.settings-menu a:hover {
+	background: color-mix(in oklab, var(--app-accent) 16%, transparent);
+	color: var(--app-accent);
+	transform: translateX(2px);
+}
+
+.settings-menu button:focus-visible,
+.settings-menu a:focus-visible {
+	outline: 2px solid var(--app-focus);
+	outline-offset: 2px;
 }
 
 .screen-nav {
@@ -498,10 +569,6 @@ html[data-logo-transition='letters']::view-transition-image-pair(phantom-logo-le
 
 	.screen-top {
 		padding: 0 0.1rem;
-	}
-
-	.screen-actions {
-		gap: 0.4rem;
 	}
 
 	.user-name {

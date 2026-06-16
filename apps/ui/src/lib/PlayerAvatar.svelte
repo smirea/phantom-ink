@@ -33,24 +33,17 @@
 </script>
 
 <span aria-label={label} class="player-avatar" role="img" style={`--avatar-color: ${color}`}>
-	<Icon size={22} strokeWidth={1.9} />
+	<Icon size={30} strokeWidth={2} />
 </span>
 
 <style>
 	.player-avatar {
 		display: inline-grid;
 		place-items: center;
-		width: 2.35rem;
-		height: 2.35rem;
-		border: 1px solid color-mix(in oklab, var(--avatar-color) 70%, var(--app-border));
-		border-radius: 999px;
-		background:
-			radial-gradient(circle at 34% 28%, color-mix(in oklab, var(--avatar-color) 24%, white 6%), transparent 54%),
-			color-mix(in oklab, var(--avatar-color) 18%, var(--app-panel));
-		box-shadow:
-			0 0.65rem 1.3rem color-mix(in oklab, var(--avatar-color) 20%, transparent),
-			inset 0 0 0 1px color-mix(in oklab, white 10%, transparent);
+		width: 2rem;
+		height: 2rem;
 		color: var(--avatar-color);
 		flex: 0 0 auto;
+		filter: drop-shadow(0 0 0.45rem color-mix(in oklab, var(--avatar-color) 25%, transparent));
 	}
 </style>
