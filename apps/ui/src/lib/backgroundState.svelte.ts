@@ -1,4 +1,4 @@
-export type BackgroundId = 'dom-svelte' | 'canvas-2d' | 'webgl' | 'svg' | 'dom-imperative';
+export type BackgroundId = 'webgl';
 export type BackgroundAction = { type: 'direction' } | { type: 'spacing' } | { type: 'config'; key: string };
 export type BackgroundMetrics = {
 	frames: number;
@@ -157,14 +157,6 @@ type DebugRoot = typeof globalThis & {
 	};
 };
 
-export const backgroundOptions: { id: BackgroundId; label: string }[] = [
-	{ id: 'dom-svelte', label: 'DOM Svelte' },
-	{ id: 'canvas-2d', label: 'Canvas 2D' },
-	{ id: 'webgl', label: 'WebGL' },
-	{ id: 'svg', label: 'SVG' },
-	{ id: 'dom-imperative', label: 'DOM Direct' },
-];
-
 export const defaultDirectionOptions = Array.from({ length: 24 }, (_, index) => degreesToRadians(index * 15));
 
 export const numberConfigFields = [
@@ -190,7 +182,7 @@ export const numberConfigFields = [
 	{ key: 'edgePuffOutsidePaddingCells', label: 'edgePuffOutsidePaddingCells', min: 0, max: 4, step: 0.05 },
 	{ key: 'spacingChangeThreshold', label: 'spacingChangeThreshold', min: 0, max: 12, step: 0.1 },
 	{ key: 'spacingOptionMinDelta', label: 'spacingOptionMinDelta', min: 0, max: 24, step: 0.1 },
-	{ key: 'maxPuffs', label: 'maxPuffs', min: 12, max: 240, step: 1, integer: true },
+	{ key: 'maxPuffs', label: 'maxPuffs', min: 4, max: 32, step: 1, integer: true },
 	{ key: 'minGlyphScale', label: 'minGlyphScale', min: 0.2, max: 2.6, step: 0.01 },
 	{ key: 'maxGlyphScale', label: 'maxGlyphScale', min: 0.2, max: 3, step: 0.01 },
 	{ key: 'naturalPuffCount', label: 'naturalPuffCount', min: 0, max: 24, step: 1, integer: true },
@@ -241,7 +233,6 @@ export const glyphListConfigFields = [
 export class BackgroundState {
 	config = $state<BackgroundConfig>(createDefaultBackgroundConfig());
 	configOpen = $state(false);
-	selectedBackgroundId = $state<BackgroundId>('canvas-2d');
 	metrics: Partial<Record<BackgroundId, BackgroundMetrics>> = {};
 
 	#listeners = new Set<(action: BackgroundAction) => void>();
@@ -315,15 +306,19 @@ export class BackgroundState {
 
 	installDebug(): () => void {
 		if (typeof window === 'undefined') return () => {};
-		const root = globalThis as DebugRoot;
+		const root = window as DebugRoot;
 		const previous = root.DEBUG?.backgroundConfig;
+		const previousReady = document.documentElement.dataset.backgroundDebug;
 		root.DEBUG ??= {};
 		const backgroundConfig = (open = true) => this.backgroundConfig(open);
 		root.DEBUG.backgroundConfig = backgroundConfig;
+		document.documentElement.dataset.backgroundDebug = 'ready';
 		return () => {
 			if (!root.DEBUG || root.DEBUG.backgroundConfig !== backgroundConfig) return;
 			if (previous) root.DEBUG.backgroundConfig = previous;
 			else delete root.DEBUG.backgroundConfig;
+			if (previousReady === undefined) delete document.documentElement.dataset.backgroundDebug;
+			else document.documentElement.dataset.backgroundDebug = previousReady;
 		};
 	}
 
@@ -337,7 +332,7 @@ export function createDefaultBackgroundConfig(): BackgroundConfig {
 		glyphs: 'PHANTOMINKSILENCIOSEANCEGHOSTWRITERMOONSUNOBJECTCLUE'.split(''),
 		specialGlyphs: ['☺', '☻', '☹'],
 		specialGlyphChance: 0.02,
-		targetAliveRatio: 0.7,
+		targetAliveRatio: 0.85,
 		initialSpacing: 64,
 		minimumGridSpacing: 54,
 		gridPaddingCells: 4,
@@ -351,8 +346,8 @@ export function createDefaultBackgroundConfig(): BackgroundConfig {
 		maxFrameMs: 1000,
 		spawnBaseChancePerSecond: 0.04,
 		spawnPressureChancePerSecond: 1.4,
-		decayBaseChancePerSecond: 0.012,
-		decayPressureChancePerSecond: 0.52,
+		decayBaseChancePerSecond: 0.006,
+		decayPressureChancePerSecond: 0.28,
 		stateChangeCooldownMs: 10000,
 		stateRetryDelayMs: [800, 1800],
 		decelerationMs: 1800,
@@ -364,7 +359,7 @@ export function createDefaultBackgroundConfig(): BackgroundConfig {
 		edgePuffOutsidePaddingCells: 1.25,
 		spacingChangeThreshold: 1,
 		spacingOptionMinDelta: 1,
-		maxPuffs: 96,
+		maxPuffs: 32,
 		minGlyphScale: 0.58,
 		maxGlyphScale: 1.72,
 		glyphOpacity: [0.16, 0.46],
