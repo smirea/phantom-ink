@@ -38,7 +38,12 @@
 	const standardVote = $derived(voteSummary('word-mode:standard'));
 	const customVote = $derived(voteSummary('word-mode:custom'));
 	const targetWordMode = $derived<WordMode>(room?.wordMode === 'custom' ? 'standard' : 'custom');
-	const targetWordVote = $derived(targetWordMode === 'custom' ? customVote : standardVote);
+	const selfWordVoteMode = $derived(selfPendingWordMode());
+	const displayedWordMode = $derived(selfWordVoteMode ?? room?.wordMode ?? 'standard');
+	const displayedWordVote = $derived(wordVoteForMode(selfWordVoteMode ?? targetWordMode));
+	const displayedWordVoteLabel = $derived(
+		(selfWordVoteMode ?? targetWordMode) === 'custom' ? 'Custom words' : 'Standard words',
+	);
 	const selfIsReady = $derived(Boolean(self && readyVote?.voterIds.includes(self.id)));
 	const canUseLobbyControls = $derived(
 		Boolean(roomCode && room?.phase === 'lobby' && self && self.role !== 'spectator'),
@@ -92,6 +97,21 @@
 		return Boolean(
 			self && summary && !summary.consensus && summary.currentVotes > 0 && !summary.voterIds.includes(self.id),
 		);
+	}
+
+	function hasOtherPendingWordVote(summary: RoomVoteSummary | null): boolean {
+		return Boolean(!selfWordVoteMode && hasOtherPendingVote(summary));
+	}
+
+	function selfPendingWordMode(): WordMode | null {
+		if (!self) return null;
+		if (customVote && !customVote.consensus && customVote.voterIds.includes(self.id)) return 'custom';
+		if (standardVote && !standardVote.consensus && standardVote.voterIds.includes(self.id)) return 'standard';
+		return null;
+	}
+
+	function wordVoteForMode(mode: WordMode): RoomVoteSummary | null {
+		return mode === 'custom' ? customVote : standardVote;
 	}
 
 	function colorValue(member: RoomMemberView): string {
@@ -167,13 +187,13 @@
 	{:else}
 		<div class="room-settings">
 			<div
-				class:otherVoted={hasOtherPendingVote(targetWordVote)}
-				class:selfVoted={hasSelfPendingVote(targetWordVote)}
+				class:otherVoted={hasOtherPendingWordVote(displayedWordVote)}
+				class:selfVoted={Boolean(selfWordVoteMode)}
 				class="word-toggle-wrap vote-host"
 			>
 				<button
-					aria-checked={room?.wordMode === 'custom'}
-					class:checked={room?.wordMode === 'custom'}
+					aria-checked={displayedWordMode === 'custom'}
+					class:checked={displayedWordMode === 'custom'}
 					class="word-toggle"
 					disabled={!canUseLobbyControls || pendingAction === `word:${targetWordMode}`}
 					onclick={toggleWordMode}
@@ -183,17 +203,13 @@
 					<span class="checkbox-mark">
 						{#if pendingAction === `word:${targetWordMode}`}
 							<LoaderCircle class="spin" size={17} strokeWidth={2.4} />
-						{:else if room?.wordMode === 'custom'}
+						{:else if displayedWordMode === 'custom'}
 							<Check size={18} strokeWidth={2.8} />
 						{/if}
 					</span>
 					<span>Use your own words</span>
 				</button>
-				<VoteBadge
-					summary={targetWordVote}
-					{members}
-					label={targetWordMode === 'custom' ? 'Custom words' : 'Standard words'}
-				/>
+				<VoteBadge summary={displayedWordVote} {members} label={displayedWordVoteLabel} />
 			</div>
 		</div>
 
