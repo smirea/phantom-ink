@@ -16,7 +16,7 @@ Spacing changes tween cell spacing over a few seconds, preserving existing cell 
 
 The content card does not participate in the background logic. Letters pass behind it, and the animation loop avoids layout reads during motion. Per-frame work is limited to time integration for the grid transform and state machines; DOM-heavy changes happen only on cell life ticks, offscreen strip recycling, viewport growth, or explicit debug actions.
 
-`DEBUG.backgroundConfig` enables a fixed top-right tuning panel for the letter grid. It exposes sliders plus numeric inputs for the scalar and range config values, comma-separated spacing options, direction options expressed in degrees, and buttons to immediately trigger direction or spacing changes.
+The tuning panel is disabled by default. Calling `DEBUG.backgroundConfig()` opens a fixed top-right panel and returns the live background config; calling `DEBUG.backgroundConfig(false)` closes it. The panel exposes sliders plus numeric inputs for scalar and range config values, text inputs for glyphs, special glyphs, spacing options, and direction options expressed in degrees, and buttons to immediately trigger direction or spacing changes.
 
 Buttons live in `apps/ui/src/lib/InkButton.svelte`. They support small, medium, and large sizing plus a primary accent state, with hover, press, disabled, and focus motion kept consistent for future screens.
 

@@ -59,31 +59,117 @@
 		transitionId: number;
 	};
 	type BackgroundConfig = {
+		glyphs: string[];
+		specialGlyphs: string[];
+		specialGlyphChance: number;
 		targetAliveRatio: number;
 		initialSpacing: number;
+		minimumGridSpacing: number;
+		gridPaddingCells: number;
 		spacingOptions: number[];
 		spacingChangeDelay: [number, number];
 		spacingTransitionMs: [number, number];
 		directionOptions: number[];
 		directionChangeDelay: [number, number];
 		targetSpeed: number;
+		cellLifeTickMs: number;
+		maxFrameMs: number;
+		spawnBaseChancePerSecond: number;
+		spawnPressureChancePerSecond: number;
+		decayBaseChancePerSecond: number;
+		decayPressureChancePerSecond: number;
+		stateChangeCooldownMs: number;
+		stateRetryDelayMs: [number, number];
 		decelerationMs: number;
 		turnMs: number;
 		accelerationMs: number;
+		velocityRecycleThreshold: number;
+		recycleMarginCells: number;
+		edgePuffViewportMarginCells: number;
+		edgePuffOutsidePaddingCells: number;
+		spacingChangeThreshold: number;
+		spacingOptionMinDelta: number;
 		maxPuffs: number;
+		minGlyphScale: number;
+		maxGlyphScale: number;
+		glyphOpacity: [number, number];
+		spawnMs: [number, number];
+		naturalDecayMs: [number, number];
+		spinDelay: [number, number];
+		naturalPuffCount: number;
+		naturalPuffIntensity: number;
+		naturalPuffTtlScale: number;
+		tapPuffCount: number;
+		tapPuffIntensity: number;
+		tapPuffTtlScale: number;
+		edgePuffCount: number;
+		edgePuffIntensity: number;
+		edgePuffTtlScale: number;
+		smokeDistance: [number, number];
+		smokeScale: [number, number];
+		smokeTtlMs: [number, number];
+		smokeOpacity: [number, number];
+		smokeEndScaleAdd: [number, number];
+		smokeEndRotation: [number, number];
 	};
-	type DebugState = {
-		backgroundConfig: boolean;
+	type DebugApi = {
+		backgroundConfig: (open?: boolean) => BackgroundConfig;
+	};
+	type DebugRoot = typeof globalThis & {
+		DEBUG?: Partial<DebugApi> & Record<string, unknown>;
 	};
 	type NumberConfigKey =
+		| 'specialGlyphChance'
 		| 'targetAliveRatio'
 		| 'initialSpacing'
+		| 'minimumGridSpacing'
+		| 'gridPaddingCells'
 		| 'targetSpeed'
+		| 'cellLifeTickMs'
+		| 'maxFrameMs'
+		| 'spawnBaseChancePerSecond'
+		| 'spawnPressureChancePerSecond'
+		| 'decayBaseChancePerSecond'
+		| 'decayPressureChancePerSecond'
+		| 'stateChangeCooldownMs'
 		| 'decelerationMs'
 		| 'turnMs'
 		| 'accelerationMs'
-		| 'maxPuffs';
-	type RangeConfigKey = 'spacingChangeDelay' | 'spacingTransitionMs' | 'directionChangeDelay';
+		| 'velocityRecycleThreshold'
+		| 'recycleMarginCells'
+		| 'edgePuffViewportMarginCells'
+		| 'edgePuffOutsidePaddingCells'
+		| 'spacingChangeThreshold'
+		| 'spacingOptionMinDelta'
+		| 'maxPuffs'
+		| 'minGlyphScale'
+		| 'maxGlyphScale'
+		| 'naturalPuffCount'
+		| 'naturalPuffIntensity'
+		| 'naturalPuffTtlScale'
+		| 'tapPuffCount'
+		| 'tapPuffIntensity'
+		| 'tapPuffTtlScale'
+		| 'edgePuffCount'
+		| 'edgePuffIntensity'
+		| 'edgePuffTtlScale';
+	type RangeConfigKey =
+		| 'spacingChangeDelay'
+		| 'spacingTransitionMs'
+		| 'directionChangeDelay'
+		| 'stateRetryDelayMs'
+		| 'glyphOpacity'
+		| 'spawnMs'
+		| 'naturalDecayMs'
+		| 'spinDelay'
+		| 'smokeDistance'
+		| 'smokeScale'
+		| 'smokeTtlMs'
+		| 'smokeOpacity'
+		| 'smokeEndScaleAdd'
+		| 'smokeEndRotation';
+	type NumberListConfigKey = 'spacingOptions' | 'directionOptions';
+	type GlyphListConfigKey = 'glyphs' | 'specialGlyphs';
 	type DebugNumberField = {
 		key: NumberConfigKey;
 		label: string;
@@ -99,50 +185,143 @@
 		max: number;
 		step: number;
 	};
+	type DebugNumberListField = {
+		key: NumberListConfigKey;
+		label: string;
+		min: number;
+		max: number;
+		integer?: boolean;
+		convertFromConfig?: (value: number) => number;
+		convertToConfig?: (value: number) => number;
+	};
+	type DebugGlyphListField = {
+		key: GlyphListConfigKey;
+		label: string;
+	};
 
 	const browser = typeof window !== 'undefined';
-	const glyphs = 'PHANTOMINKSILENCIOSEANCEGHOSTWRITERMOONSUNOBJECTCLUE'.split('');
-	const rareGlyphs = ['☺', '☻', '☹'];
-	const rareGlyphChance = 0.02;
-	const minGlyphScale = 0.58;
-	const maxGlyphScale = 1.72;
-	const naturalDecayMs: [number, number] = [120, 220];
-	const minimumGridSpacing = 54;
-	const gridPaddingCells = 4;
-	const cellLifeTickMs = 90;
-	const stateChangeCooldownMs = 10000;
 	const defaultDirectionOptions = Array.from({ length: 24 }, (_, index) => degreesToRadians(index * 15));
 	const spinClasses = ['spin-0', 'spin-1', 'spin-2', 'spin-3', 'spin-4', 'spin-5'] as const;
 	const numberConfigFields = [
+		{ key: 'specialGlyphChance', label: 'specialGlyphChance', min: 0, max: 0.2, step: 0.001 },
 		{ key: 'targetAliveRatio', label: 'targetAliveRatio', min: 0.05, max: 0.95, step: 0.01 },
-		{ key: 'initialSpacing', label: 'initialSpacing', min: minimumGridSpacing, max: 128, step: 1, integer: true },
+		{ key: 'initialSpacing', label: 'initialSpacing', min: 36, max: 160, step: 1, integer: true },
+		{ key: 'minimumGridSpacing', label: 'minimumGridSpacing', min: 36, max: 120, step: 1, integer: true },
+		{ key: 'gridPaddingCells', label: 'gridPaddingCells', min: 2, max: 10, step: 1, integer: true },
 		{ key: 'targetSpeed', label: 'targetSpeed', min: 0, max: 0.08, step: 0.001 },
+		{ key: 'cellLifeTickMs', label: 'cellLifeTickMs', min: 30, max: 600, step: 10, integer: true },
+		{ key: 'maxFrameMs', label: 'maxFrameMs', min: 16, max: 2000, step: 10, integer: true },
+		{ key: 'spawnBaseChancePerSecond', label: 'spawnBaseChancePerSecond', min: 0, max: 1, step: 0.001 },
+		{ key: 'spawnPressureChancePerSecond', label: 'spawnPressureChancePerSecond', min: 0, max: 4, step: 0.01 },
+		{ key: 'decayBaseChancePerSecond', label: 'decayBaseChancePerSecond', min: 0, max: 1, step: 0.001 },
+		{ key: 'decayPressureChancePerSecond', label: 'decayPressureChancePerSecond', min: 0, max: 4, step: 0.01 },
+		{ key: 'stateChangeCooldownMs', label: 'stateChangeCooldownMs', min: 0, max: 60000, step: 1000, integer: true },
 		{ key: 'decelerationMs', label: 'decelerationMs', min: 200, max: 9000, step: 100, integer: true },
 		{ key: 'turnMs', label: 'turnMs', min: 200, max: 9000, step: 100, integer: true },
 		{ key: 'accelerationMs', label: 'accelerationMs', min: 200, max: 9000, step: 100, integer: true },
+		{ key: 'velocityRecycleThreshold', label: 'velocityRecycleThreshold', min: 0, max: 0.01, step: 0.0001 },
+		{ key: 'recycleMarginCells', label: 'recycleMarginCells', min: 0.25, max: 6, step: 0.05 },
+		{ key: 'edgePuffViewportMarginCells', label: 'edgePuffViewportMarginCells', min: 0, max: 3, step: 0.05 },
+		{ key: 'edgePuffOutsidePaddingCells', label: 'edgePuffOutsidePaddingCells', min: 0, max: 4, step: 0.05 },
+		{ key: 'spacingChangeThreshold', label: 'spacingChangeThreshold', min: 0, max: 12, step: 0.1 },
+		{ key: 'spacingOptionMinDelta', label: 'spacingOptionMinDelta', min: 0, max: 24, step: 0.1 },
 		{ key: 'maxPuffs', label: 'maxPuffs', min: 12, max: 240, step: 1, integer: true },
+		{ key: 'minGlyphScale', label: 'minGlyphScale', min: 0.2, max: 2.6, step: 0.01 },
+		{ key: 'maxGlyphScale', label: 'maxGlyphScale', min: 0.2, max: 3, step: 0.01 },
+		{ key: 'naturalPuffCount', label: 'naturalPuffCount', min: 0, max: 24, step: 1, integer: true },
+		{ key: 'naturalPuffIntensity', label: 'naturalPuffIntensity', min: 0, max: 2, step: 0.01 },
+		{ key: 'naturalPuffTtlScale', label: 'naturalPuffTtlScale', min: 0.1, max: 2, step: 0.01 },
+		{ key: 'tapPuffCount', label: 'tapPuffCount', min: 0, max: 48, step: 1, integer: true },
+		{ key: 'tapPuffIntensity', label: 'tapPuffIntensity', min: 0, max: 3, step: 0.01 },
+		{ key: 'tapPuffTtlScale', label: 'tapPuffTtlScale', min: 0.1, max: 2, step: 0.01 },
+		{ key: 'edgePuffCount', label: 'edgePuffCount', min: 0, max: 24, step: 1, integer: true },
+		{ key: 'edgePuffIntensity', label: 'edgePuffIntensity', min: 0, max: 2, step: 0.01 },
+		{ key: 'edgePuffTtlScale', label: 'edgePuffTtlScale', min: 0.1, max: 2, step: 0.01 },
 	] satisfies readonly DebugNumberField[];
 	const rangeConfigFields = [
 		{ key: 'spacingChangeDelay', label: 'spacingChangeDelay', min: 1000, max: 150000, step: 1000 },
 		{ key: 'spacingTransitionMs', label: 'spacingTransitionMs', min: 500, max: 18000, step: 100 },
 		{ key: 'directionChangeDelay', label: 'directionChangeDelay', min: 1000, max: 180000, step: 1000 },
+		{ key: 'stateRetryDelayMs', label: 'stateRetryDelayMs', min: 0, max: 10000, step: 100 },
+		{ key: 'glyphOpacity', label: 'glyphOpacity', min: 0.02, max: 1, step: 0.01 },
+		{ key: 'spawnMs', label: 'spawnMs', min: 50, max: 5000, step: 50 },
+		{ key: 'naturalDecayMs', label: 'naturalDecayMs', min: 30, max: 2000, step: 10 },
+		{ key: 'spinDelay', label: 'spinDelay', min: -60000, max: 0, step: 1000 },
+		{ key: 'smokeDistance', label: 'smokeDistance', min: 0, max: 120, step: 1 },
+		{ key: 'smokeScale', label: 'smokeScale', min: 0.05, max: 3, step: 0.01 },
+		{ key: 'smokeTtlMs', label: 'smokeTtlMs', min: 100, max: 4000, step: 50 },
+		{ key: 'smokeOpacity', label: 'smokeOpacity', min: 0.01, max: 1, step: 0.01 },
+		{ key: 'smokeEndScaleAdd', label: 'smokeEndScaleAdd', min: 0, max: 3, step: 0.01 },
+		{ key: 'smokeEndRotation', label: 'smokeEndRotation', min: -180, max: 180, step: 1 },
 	] satisfies readonly DebugRangeField[];
-	const DEBUG = $state<DebugState>({
-		backgroundConfig: true,
-	});
+	const numberListConfigFields = [
+		{ key: 'spacingOptions', label: 'spacingOptions', min: 36, max: 180, integer: true },
+		{
+			key: 'directionOptions',
+			label: 'directionOptionsDeg',
+			min: 0,
+			max: 359,
+			convertFromConfig: radiansToDegrees,
+			convertToConfig: degreesToRadians,
+		},
+	] satisfies readonly DebugNumberListField[];
+	const glyphListConfigFields = [
+		{ key: 'glyphs', label: 'glyphs' },
+		{ key: 'specialGlyphs', label: 'specialGlyphs' },
+	] satisfies readonly DebugGlyphListField[];
 	const backgroundConfig = $state<BackgroundConfig>({
+		glyphs: 'PHANTOMINKSILENCIOSEANCEGHOSTWRITERMOONSUNOBJECTCLUE'.split(''),
+		specialGlyphs: ['☺', '☻', '☹'],
+		specialGlyphChance: 0.02,
 		targetAliveRatio: 0.7,
 		initialSpacing: 64,
+		minimumGridSpacing: 54,
+		gridPaddingCells: 4,
 		spacingOptions: [54, 64, 76, 88],
 		spacingChangeDelay: [42000, 72000],
 		spacingTransitionMs: [4200, 7200],
 		directionOptions: defaultDirectionOptions,
 		directionChangeDelay: [48000, 90000],
 		targetSpeed: 0.024,
+		cellLifeTickMs: 90,
+		maxFrameMs: 1000,
+		spawnBaseChancePerSecond: 0.04,
+		spawnPressureChancePerSecond: 1.4,
+		decayBaseChancePerSecond: 0.012,
+		decayPressureChancePerSecond: 0.52,
+		stateChangeCooldownMs: 10000,
+		stateRetryDelayMs: [800, 1800],
 		decelerationMs: 1800,
 		turnMs: 1500,
 		accelerationMs: 2200,
+		velocityRecycleThreshold: 0.0001,
+		recycleMarginCells: 1.5,
+		edgePuffViewportMarginCells: 0.7,
+		edgePuffOutsidePaddingCells: 1.25,
+		spacingChangeThreshold: 1,
+		spacingOptionMinDelta: 1,
 		maxPuffs: 96,
+		minGlyphScale: 0.58,
+		maxGlyphScale: 1.72,
+		glyphOpacity: [0.16, 0.46],
+		spawnMs: [900, 1900],
+		naturalDecayMs: [120, 220],
+		spinDelay: [-20000, 0],
+		naturalPuffCount: 6,
+		naturalPuffIntensity: 0.48,
+		naturalPuffTtlScale: 0.7,
+		tapPuffCount: 18,
+		tapPuffIntensity: 1.35,
+		tapPuffTtlScale: 0.46,
+		edgePuffCount: 4,
+		edgePuffIntensity: 0.34,
+		edgePuffTtlScale: 0.78,
+		smokeDistance: [9, 28],
+		smokeScale: [0.42, 1.1],
+		smokeTtlMs: [760, 1500],
+		smokeOpacity: [0.16, 0.5],
+		smokeEndScaleAdd: [0.34, 0.78],
+		smokeEndRotation: [-24, 24],
 	});
 
 	let cells = $state<GridCell[]>([]);
@@ -160,12 +339,29 @@
 	let maxRow = -1;
 	let nextStateChangeAllowedAt = 0;
 	let nextCellLifeTickAt = 0;
+	let debugBackgroundConfigOpen = $state(false);
 	let directionState = $state<DirectionState>(createDirectionState(0));
 	let spacingState = $state<SpacingState>(createSpacingState(0));
-	let spacingOptionsDraft = $state(formatNumberList(backgroundConfig.spacingOptions));
-	let directionOptionsDraft = $state(formatNumberList(backgroundConfig.directionOptions.map(radiansToDegrees)));
+	let numberListDrafts = $state<Record<NumberListConfigKey, string>>({
+		spacingOptions: formatNumberList(backgroundConfig.spacingOptions),
+		directionOptions: formatNumberList(backgroundConfig.directionOptions.map(radiansToDegrees)),
+	});
+	let glyphListDrafts = $state<Record<GlyphListConfigKey, string>>({
+		glyphs: formatGlyphList(backgroundConfig.glyphs),
+		specialGlyphs: formatGlyphList(backgroundConfig.specialGlyphs),
+	});
+	const DEBUG: DebugApi = {
+		backgroundConfig(open = true) {
+			debugBackgroundConfigOpen = open;
+			return backgroundConfig;
+		},
+	};
 
-	if (browser) Object.assign(globalThis, { DEBUG });
+	if (browser) {
+		const root = globalThis as DebugRoot;
+		root.DEBUG ??= {};
+		root.DEBUG.backgroundConfig = DEBUG.backgroundConfig;
+	}
 
 	onMount(() => {
 		const now = performance.now();
@@ -174,13 +370,13 @@
 		ensureCellCapacity(window.innerWidth, window.innerHeight, true);
 		captureOnscreenState();
 		applyGridTransform();
-		nextCellLifeTickAt = now + cellLifeTickMs;
+		nextCellLifeTickAt = now + backgroundConfig.cellLifeTickMs;
 
 		let frame = 0;
 		let lastTime = now;
 
 		const tick = (now: number) => {
-			const elapsedMs = Math.max(0, Math.min(1000, now - lastTime));
+			const elapsedMs = Math.max(0, Math.min(backgroundConfig.maxFrameMs, now - lastTime));
 			lastTime = now;
 
 			updateSpacing(now);
@@ -214,9 +410,9 @@
 	}
 
 	function initializeCells(columns: number, rows: number, seedAlive: boolean): void {
-		minColumn = -gridPaddingCells;
+		minColumn = -backgroundConfig.gridPaddingCells;
 		maxColumn = minColumn + columns - 1;
-		minRow = -gridPaddingCells;
+		minRow = -backgroundConfig.gridPaddingCells;
 		maxRow = minRow + rows - 1;
 		gridColumns = columns;
 		gridRows = rows;
@@ -261,15 +457,15 @@
 			char,
 			column,
 			row,
-			opacity: randomBetween(0.16, 0.46),
+			opacity: randomRange(backgroundConfig.glyphOpacity),
 			scale: glyphScale(char),
 			spinClass: spinClasses[Math.floor(Math.random() * spinClasses.length)],
 			spinReverse: Math.random() < 0.5,
-			spinDelay: randomBetween(-20000, 0),
+			spinDelay: randomRange(backgroundConfig.spinDelay),
 			visibility: seedAlive ? 1 : 0,
 			status: seedAlive ? 'alive' : 'dead',
-			spawnMs: randomBetween(900, 1900),
-			decayMs: randomRange(naturalDecayMs),
+			spawnMs: randomRange(backgroundConfig.spawnMs),
+			decayMs: randomRange(backgroundConfig.naturalDecayMs),
 			spawnDoneAt: 0,
 			deathAt: 0,
 			wasOnscreen: false,
@@ -279,13 +475,13 @@
 
 	function updateCellLife(now: number): void {
 		if (now < nextCellLifeTickAt) return;
-		nextCellLifeTickAt = now + cellLifeTickMs;
+		nextCellLifeTickAt = now + backgroundConfig.cellLifeTickMs;
 		puffs = puffs.filter(puff => now < puff.removeAt);
 
 		const total = Math.max(1, cells.length);
 		const living = cells.filter(cell => cell.status === 'alive' || cell.status === 'spawning').length;
 		const occupancy = living / total;
-		const tickSeconds = cellLifeTickMs / 1000;
+		const tickSeconds = backgroundConfig.cellLifeTickMs / 1000;
 		const spawnPressure = Math.max(
 			0,
 			(backgroundConfig.targetAliveRatio - occupancy) / backgroundConfig.targetAliveRatio,
@@ -301,8 +497,18 @@
 			} else if (cell.status === 'dying') {
 				if (now >= cell.deathAt) killCell(cell);
 			} else if (cell.status === 'dead') {
-				if (Math.random() < (0.04 + spawnPressure * 1.4) * tickSeconds) spawnCell(cell);
-			} else if (Math.random() < (0.012 + decayPressure * 0.52) * tickSeconds) {
+				if (
+					Math.random() <
+					(backgroundConfig.spawnBaseChancePerSecond + spawnPressure * backgroundConfig.spawnPressureChancePerSecond) *
+						tickSeconds
+				) {
+					spawnCell(cell);
+				}
+			} else if (
+				Math.random() <
+				(backgroundConfig.decayBaseChancePerSecond + decayPressure * backgroundConfig.decayPressureChancePerSecond) *
+					tickSeconds
+			) {
 				fadeCell(cell);
 			}
 		}
@@ -310,13 +516,13 @@
 
 	function spawnCell(cell: GridCell): void {
 		cell.char = chooseGlyph();
-		cell.opacity = randomBetween(0.16, 0.46);
+		cell.opacity = randomRange(backgroundConfig.glyphOpacity);
 		cell.scale = glyphScale(cell.char);
 		cell.spinClass = spinClasses[Math.floor(Math.random() * spinClasses.length)];
 		cell.spinReverse = Math.random() < 0.5;
-		cell.spinDelay = randomBetween(-20000, 0);
-		cell.spawnMs = randomBetween(900, 1900);
-		cell.decayMs = randomRange(naturalDecayMs);
+		cell.spinDelay = randomRange(backgroundConfig.spinDelay);
+		cell.spawnMs = randomRange(backgroundConfig.spawnMs);
+		cell.decayMs = randomRange(backgroundConfig.naturalDecayMs);
 		cell.spawnDoneAt = performance.now() + cell.spawnMs;
 		cell.deathAt = 0;
 		cell.visibility = 1;
@@ -327,11 +533,17 @@
 		if (cell.status !== 'alive') return;
 
 		cell.visibility = 0;
-		cell.decayMs = randomRange(naturalDecayMs);
+		cell.decayMs = randomRange(backgroundConfig.naturalDecayMs);
 		cell.deathAt = performance.now() + cell.decayMs;
 		cell.status = 'dying';
 		const point = cellCenter(cell);
-		spawnSmoke(point.x, point.y, 6, 0.48, 0.7);
+		spawnSmoke(
+			point.x,
+			point.y,
+			backgroundConfig.naturalPuffCount,
+			backgroundConfig.naturalPuffIntensity,
+			backgroundConfig.naturalPuffTtlScale,
+		);
 	}
 
 	function popCell(key: string, event: PointerEvent): void {
@@ -341,7 +553,13 @@
 		if (!cell || cell.status === 'dead') return;
 
 		const point = cellCenter(cell);
-		spawnSmoke(point.x, point.y, 18, 1.35, 0.46);
+		spawnSmoke(
+			point.x,
+			point.y,
+			backgroundConfig.tapPuffCount,
+			backgroundConfig.tapPuffIntensity,
+			backgroundConfig.tapPuffTtlScale,
+		);
 		killCell(cell);
 	}
 
@@ -423,25 +641,26 @@
 		if (gridColumns <= 0 || gridRows <= 0) return;
 
 		const spacing = spacingState.current;
-		const margin = spacing * 1.5;
+		const margin = spacing * backgroundConfig.recycleMarginCells;
 		const velocityX = Math.cos(directionState.angle) * directionState.speed;
 		const velocityY = Math.sin(directionState.angle) * directionState.speed;
+		const threshold = backgroundConfig.velocityRecycleThreshold;
 
-		if (velocityX > 0.0001) {
+		if (velocityX > threshold) {
 			while (gridShiftX + maxColumn * spacing > width + margin) {
 				recycleColumn(maxColumn, minColumn - 1);
 			}
-		} else if (velocityX < -0.0001) {
+		} else if (velocityX < -threshold) {
 			while (gridShiftX + (minColumn + 1) * spacing < -margin) {
 				recycleColumn(minColumn, maxColumn + 1);
 			}
 		}
 
-		if (velocityY > 0.0001) {
+		if (velocityY > threshold) {
 			while (gridShiftY + maxRow * spacing > height + margin) {
 				recycleRow(maxRow, minRow - 1);
 			}
-		} else if (velocityY < -0.0001) {
+		} else if (velocityY < -threshold) {
 			while (gridShiftY + (minRow + 1) * spacing < -margin) {
 				recycleRow(minRow, maxRow + 1);
 			}
@@ -488,9 +707,9 @@
 		const now = performance.now();
 		const nextPuffs = Array.from({ length: count }, () => {
 			const angle = Math.random() * Math.PI * 2;
-			const distance = randomBetween(9, 28) * intensity;
-			const scale = randomBetween(0.42, 1.1) * intensity;
-			const ttl = randomBetween(760, 1500) * ttlScale;
+			const distance = randomRange(backgroundConfig.smokeDistance) * intensity;
+			const scale = randomRange(backgroundConfig.smokeScale) * intensity;
+			const ttl = randomRange(backgroundConfig.smokeTtlMs) * ttlScale;
 			return {
 				id: (smokeId += 1),
 				x,
@@ -498,10 +717,10 @@
 				dx: Math.cos(angle) * distance,
 				dy: Math.sin(angle) * distance,
 				rotation: Math.random() * 360,
-				endRotation: randomBetween(-24, 24),
-				opacity: randomBetween(0.16, 0.5) * intensity,
+				endRotation: randomRange(backgroundConfig.smokeEndRotation),
+				opacity: randomRange(backgroundConfig.smokeOpacity) * intensity,
 				scale,
-				endScale: scale + randomBetween(0.34, 0.78) * intensity,
+				endScale: scale + randomRange(backgroundConfig.smokeEndScaleAdd) * intensity,
 				ttl,
 				removeAt: now + ttl,
 			};
@@ -525,7 +744,7 @@
 	}
 
 	function createSpacingState(now: number): SpacingState {
-		const initialSpacing = Math.max(minimumGridSpacing, backgroundConfig.initialSpacing);
+		const initialSpacing = Math.max(backgroundConfig.minimumGridSpacing, backgroundConfig.initialSpacing);
 		return {
 			current: initialSpacing,
 			from: initialSpacing,
@@ -556,16 +775,23 @@
 	}
 
 	function chooseGlyph(): string {
-		if (Math.random() < rareGlyphChance) return rareGlyphs[Math.floor(Math.random() * rareGlyphs.length)];
-		return glyphs[Math.floor(Math.random() * glyphs.length)];
+		const specialGlyphs = backgroundConfig.specialGlyphs;
+		if (specialGlyphs.length > 0 && Math.random() < backgroundConfig.specialGlyphChance) {
+			return specialGlyphs[Math.floor(Math.random() * specialGlyphs.length)];
+		}
+		return backgroundConfig.glyphs[Math.floor(Math.random() * backgroundConfig.glyphs.length)] ?? 'P';
 	}
 
 	function glyphScale(char: string): number {
-		return rareGlyphs.includes(char) ? maxGlyphScale : randomBetween(minGlyphScale, maxGlyphScale);
+		return backgroundConfig.specialGlyphs.includes(char)
+			? backgroundConfig.maxGlyphScale
+			: randomBetween(backgroundConfig.minGlyphScale, backgroundConfig.maxGlyphScale);
 	}
 
 	function chooseSpacing(current: number): number {
-		const options = backgroundConfig.spacingOptions.filter(spacing => Math.abs(spacing - current) > 1);
+		const options = backgroundConfig.spacingOptions.filter(
+			spacing => Math.abs(spacing - current) > backgroundConfig.spacingOptionMinDelta,
+		);
 		return options[Math.floor(Math.random() * options.length)] ?? backgroundConfig.initialSpacing;
 	}
 
@@ -584,8 +810,8 @@
 
 	function getRequiredGridSize(width: number, height: number): { columns: number; rows: number } {
 		return {
-			columns: Math.ceil(width / minimumGridSpacing) + gridPaddingCells * 2,
-			rows: Math.ceil(height / minimumGridSpacing) + gridPaddingCells * 2,
+			columns: Math.ceil(width / backgroundConfig.minimumGridSpacing) + backgroundConfig.gridPaddingCells * 2,
+			rows: Math.ceil(height / backgroundConfig.minimumGridSpacing) + backgroundConfig.gridPaddingCells * 2,
 		};
 	}
 
@@ -613,7 +839,7 @@
 	}
 
 	function isNearViewportPoint(x: number, y: number, width: number, height: number, spacing: number): boolean {
-		const margin = spacing * 0.7;
+		const margin = spacing * backgroundConfig.edgePuffViewportMarginCells;
 		return x > -margin && x < width + margin && y > -margin && y < height + margin;
 	}
 
@@ -644,7 +870,13 @@
 				const edgePoint = outsidePointNearViewport(point.x, point.y, width, height, spacingState.current);
 				const gridPoint = screenToGrid(edgePoint.x, edgePoint.y);
 				cell.edgePuffTransition = spacingState.transitionId;
-				spawnSmoke(gridPoint.x, gridPoint.y, 4, 0.34, 0.78);
+				spawnSmoke(
+					gridPoint.x,
+					gridPoint.y,
+					backgroundConfig.edgePuffCount,
+					backgroundConfig.edgePuffIntensity,
+					backgroundConfig.edgePuffTtlScale,
+				);
 				killCell(cell);
 			}
 			cell.wasOnscreen = onscreen;
@@ -658,7 +890,7 @@
 		height: number,
 		spacing: number,
 	): { x: number; y: number } {
-		const padded = spacing * 1.25;
+		const padded = spacing * backgroundConfig.edgePuffOutsidePaddingCells;
 		const clampedX = Math.min(width, Math.max(0, x));
 		const clampedY = Math.min(height, Math.max(0, y));
 		const edges = [
@@ -698,10 +930,24 @@
 		const nextValue = field.integer ? Math.round(rawValue) : rawValue;
 		backgroundConfig[field.key] = clamp(nextValue, field.min, field.max);
 
-		if (field.key === 'initialSpacing') {
+		if (field.key === 'minimumGridSpacing') {
+			backgroundConfig.initialSpacing = Math.max(backgroundConfig.initialSpacing, backgroundConfig.minimumGridSpacing);
+			backgroundConfig.spacingOptions = backgroundConfig.spacingOptions.filter(
+				spacing => spacing >= backgroundConfig.minimumGridSpacing,
+			);
+			numberListDrafts.spacingOptions = formatNumberList(backgroundConfig.spacingOptions);
+			applyCurrentSpacing(Math.max(spacingState.current, backgroundConfig.minimumGridSpacing));
+		} else if (field.key === 'initialSpacing') {
+			backgroundConfig.initialSpacing = Math.max(backgroundConfig.initialSpacing, backgroundConfig.minimumGridSpacing);
 			applyCurrentSpacing(backgroundConfig.initialSpacing);
 		} else if (field.key === 'maxPuffs') {
 			puffs = puffs.slice(-backgroundConfig.maxPuffs);
+		} else if (field.key === 'cellLifeTickMs' && typeof performance !== 'undefined') {
+			nextCellLifeTickAt = performance.now() + backgroundConfig.cellLifeTickMs;
+		} else if (field.key === 'minGlyphScale') {
+			backgroundConfig.maxGlyphScale = Math.max(backgroundConfig.maxGlyphScale, backgroundConfig.minGlyphScale);
+		} else if (field.key === 'maxGlyphScale') {
+			backgroundConfig.minGlyphScale = Math.min(backgroundConfig.minGlyphScale, backgroundConfig.maxGlyphScale);
 		}
 	}
 
@@ -722,20 +968,34 @@
 		}
 	}
 
-	function updateSpacingOptions(event: Event): void {
-		const input = event.currentTarget as HTMLInputElement;
-		spacingOptionsDraft = input.value;
-		const options = uniqueNumbers(parseNumberList(spacingOptionsDraft))
-			.map(value => Math.round(value))
-			.filter(value => value >= minimumGridSpacing && value <= 180);
-		if (options.length > 0) backgroundConfig.spacingOptions = options;
+	function getNumberListDraft(key: NumberListConfigKey): string {
+		return numberListDrafts[key];
 	}
 
-	function updateDirectionOptions(event: Event): void {
+	function updateNumberListConfig(field: DebugNumberListField, event: Event): void {
 		const input = event.currentTarget as HTMLInputElement;
-		directionOptionsDraft = input.value;
-		const options = parseNumberList(directionOptionsDraft).map(degreesToRadians);
-		if (options.length > 0) backgroundConfig.directionOptions = options;
+		numberListDrafts[field.key] = input.value;
+		const options = uniqueNumbers(parseNumberList(input.value))
+			.map(value => (field.integer ? Math.round(value) : value))
+			.filter(
+				value =>
+					value >=
+					Math.max(field.min, field.key === 'spacingOptions' ? backgroundConfig.minimumGridSpacing : field.min),
+			)
+			.filter(value => value <= field.max)
+			.map(value => field.convertToConfig?.(value) ?? value);
+		if (options.length > 0) backgroundConfig[field.key] = options;
+	}
+
+	function getGlyphListDraft(key: GlyphListConfigKey): string {
+		return glyphListDrafts[key];
+	}
+
+	function updateGlyphListConfig(field: DebugGlyphListField, event: Event): void {
+		const input = event.currentTarget as HTMLInputElement;
+		glyphListDrafts[field.key] = input.value;
+		const glyphs = parseGlyphList(input.value);
+		if (glyphs.length > 0) backgroundConfig[field.key] = glyphs;
 	}
 
 	function triggerSpacingChange(): void {
@@ -753,8 +1013,8 @@
 	}
 
 	function requestSpacingChange(spacing: number, now: number): void {
-		const nextSpacing = Math.max(minimumGridSpacing, Math.round(spacing));
-		if (Math.abs(nextSpacing - spacingState.current) < 1) {
+		const nextSpacing = Math.max(backgroundConfig.minimumGridSpacing, Math.round(spacing));
+		if (Math.abs(nextSpacing - spacingState.current) < backgroundConfig.spacingChangeThreshold) {
 			spacingState.nextChangeAt = now + randomRange(backgroundConfig.spacingChangeDelay);
 			return;
 		}
@@ -815,7 +1075,7 @@
 			return false;
 		}
 
-		nextStateChangeAllowedAt = now + stateChangeCooldownMs;
+		nextStateChangeAllowedAt = now + backgroundConfig.stateChangeCooldownMs;
 		if (kind === 'spacing') {
 			directionState.nextChangeAt = Math.max(directionState.nextChangeAt, nextStateChangeAllowedAt);
 		} else {
@@ -825,7 +1085,7 @@
 	}
 
 	function rescheduleStateChange(kind: 'direction' | 'spacing', earliestAt: number): void {
-		const nextAttemptAt = earliestAt + randomBetween(800, 1800);
+		const nextAttemptAt = earliestAt + randomRange(backgroundConfig.stateRetryDelayMs);
 		if (kind === 'spacing') {
 			spacingState.nextChangeAt = Math.max(spacingState.nextChangeAt, nextAttemptAt);
 		} else if (directionState.phase === 'cruise') {
@@ -846,6 +1106,21 @@
 
 	function formatNumberList(values: number[]): string {
 		return values.map(formatDebugNumber).join(', ');
+	}
+
+	function parseGlyphList(value: string): string[] {
+		const trimmed = value.trim();
+		if (!trimmed) return [];
+		if (trimmed.includes(','))
+			return trimmed
+				.split(',')
+				.map(item => item.trim())
+				.filter(Boolean);
+		return Array.from(trimmed).filter(char => !/\s/.test(char));
+	}
+
+	function formatGlyphList(values: string[]): string {
+		return values.join('');
 	}
 
 	function formatDebugNumber(value: number): string {
@@ -900,10 +1175,13 @@
 	</div>
 </div>
 
-{#if DEBUG.backgroundConfig}
+{#if debugBackgroundConfigOpen}
 	<aside class="debug-config-panel" aria-label="DEBUG backgroundConfig">
 		<header class="debug-config-header">
-			<strong>DEBUG.backgroundConfig</strong>
+			<strong>DEBUG.backgroundConfig()</strong>
+			<button type="button" aria-label="Close background config" onclick={() => DEBUG.backgroundConfig(false)}>
+				Close
+			</button>
 		</header>
 
 		<div class="debug-config-actions">
@@ -981,14 +1259,27 @@
 			{/each}
 		</div>
 
-		<label class="debug-config-list">
-			<span>spacingOptions</span>
-			<input type="text" value={spacingOptionsDraft} oninput={updateSpacingOptions} />
-		</label>
-		<label class="debug-config-list">
-			<span>directionOptionsDeg</span>
-			<input type="text" value={directionOptionsDraft} oninput={updateDirectionOptions} />
-		</label>
+		{#each numberListConfigFields as field}
+			<label class="debug-config-list">
+				<span>{field.label}</span>
+				<input
+					type="text"
+					value={getNumberListDraft(field.key)}
+					oninput={event => updateNumberListConfig(field, event)}
+				/>
+			</label>
+		{/each}
+
+		{#each glyphListConfigFields as field}
+			<label class="debug-config-list">
+				<span>{field.label}</span>
+				<input
+					type="text"
+					value={getGlyphListDraft(field.key)}
+					oninput={event => updateGlyphListConfig(field, event)}
+				/>
+			</label>
+		{/each}
 	</aside>
 {/if}
 
@@ -1199,6 +1490,16 @@
 		color: var(--app-text);
 		font-family: var(--font-mono);
 		font-size: 0.76rem;
+	}
+
+	.debug-config-header button {
+		border: 1px solid color-mix(in oklab, var(--app-border) 82%, transparent);
+		border-radius: 0.375rem;
+		background: var(--app-input);
+		color: var(--app-text);
+		cursor: pointer;
+		font: inherit;
+		padding: 0.2rem 0.45rem;
 	}
 
 	.debug-config-section {
