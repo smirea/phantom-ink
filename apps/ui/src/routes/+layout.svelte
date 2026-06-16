@@ -2,6 +2,7 @@
 	import BackgroundHost from '$lib/BackgroundHost.svelte';
 	import InkButton from '$lib/InkButton.svelte';
 	import PhantomLogo from '$lib/PhantomLogo.svelte';
+	import { onNavigate } from '$app/navigation';
 	import { getStored, setStored, storageKeys } from '$lib/storage';
 	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
 	import { onMount } from 'svelte';
@@ -29,7 +30,26 @@
 
 	let theme = $state<Theme>(getStored(storageKeys.darkMode) ? 'dark' : 'light');
 	let activePath = $state(typeof location === 'undefined' ? '/' : location.pathname);
+	let supportsViewTransitions = $state(false);
+	let isViewTransitioning = $state(false);
 	const isStartScreen = $derived(activePath === '/');
+	const fallbackIn = $derived(
+		supportsViewTransitions ? { y: 0, duration: 0 } : { y: 18, duration: 320, easing: cubicOut },
+	);
+	const fallbackOut = $derived(supportsViewTransitions ? { duration: 0 } : { duration: 140, easing: cubicIn });
+
+	onNavigate(navigation => {
+		if (!browser || !supportsViewTransitions) return;
+
+		isViewTransitioning = true;
+		return new Promise<void>(resolve => {
+			const transition = document.startViewTransition(async () => {
+				resolve();
+				await navigation.complete;
+			});
+			transition.finished.finally(() => (isViewTransitioning = false));
+		});
+	});
 
 	$effect(() => {
 		if (typeof document === 'undefined') return;
@@ -38,6 +58,7 @@
 	});
 
 	onMount(() => {
+		supportsViewTransitions = Boolean(document.startViewTransition) && !prefersReducedMotion();
 		const updatePath = () => (activePath = window.location.pathname);
 		const pushState = history.pushState;
 		const replaceState = history.replaceState;
@@ -62,43 +83,45 @@
 	function isActive(href: string): boolean {
 		return href === '/' ? activePath === '/' : activePath.startsWith(href);
 	}
+
+	function prefersReducedMotion(): boolean {
+		return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+	}
 </script>
 
 <QueryClientProvider client={queryClient}>
-	<div class="app-scene">
+	<div class:view-transitioning={isViewTransitioning} class="app-scene">
 		<BackgroundHost />
 
 		{#if isStartScreen}
 			{@render children()}
 		{:else}
-			<section class="content-card">
-				<header class="app-header">
-					<a class="logo-link" href="/" aria-label="Phantom Ink start">
-						<PhantomLogo compact />
+			<div class="screen-shell" in:fly={fallbackIn} out:fade={fallbackOut}>
+				<header class="screen-top">
+					<a class="top-logo-link" href="/" aria-label="Phantom Ink start">
+						<PhantomLogo compact textOnly />
 					</a>
 					<InkButton size="sm" onclick={() => (theme = theme === 'dark' ? 'light' : 'dark')}>
 						{theme === 'dark' ? 'Light' : 'Dark'}
 					</InkButton>
 				</header>
 
-				<nav class="screen-nav" aria-label="Dummy screens">
-					{#each navItems as item}
-						<a href={item.href} aria-current={isActive(item.href) ? 'page' : undefined}>
-							{item.label}
-						</a>
-					{/each}
-				</nav>
+				<section class="content-card">
+					<nav class="screen-nav" aria-label="Dummy screens">
+						{#each navItems as item}
+							<a href={item.href} aria-current={isActive(item.href) ? 'page' : undefined}>
+								{item.label}
+							</a>
+						{/each}
+					</nav>
 
-				{#key activePath}
-					<div
-						class="route-frame"
-						in:fly={{ y: 18, duration: 340, easing: cubicOut }}
-						out:fade={{ duration: 130, easing: cubicIn }}
-					>
-						{@render children()}
-					</div>
-				{/key}
-			</section>
+					{#key activePath}
+						<div class="route-frame" in:fly={fallbackIn} out:fade={fallbackOut}>
+							{@render children()}
+						</div>
+					{/key}
+				</section>
+			</div>
 		{/if}
 	</div>
 </QueryClientProvider>
