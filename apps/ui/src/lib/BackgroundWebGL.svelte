@@ -51,6 +51,7 @@
 	const smokeInstanceFloats = 12;
 	const smokeInstanceStride = smokeInstanceFloats * Float32Array.BYTES_PER_ELEMENT;
 	const maxSmokeBursts = 32;
+	const blurredTargetFps = 15;
 	const quadData = new Float32Array([
 		-0.5, -0.5, 0, 0, 0.5, -0.5, 1, 0, 0.5, 0.5, 1, 1, -0.5, -0.5, 0, 0, 0.5, 0.5, 1, 1, -0.5, 0.5, 0, 1,
 	]);
@@ -83,7 +84,7 @@
 		let frame = 0;
 		let engineNow = 0;
 		let lastDrawAt = 0;
-		let pausedByBlur = false;
+		let windowFocused = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
 		let instanceUpload: InstanceUploadState = { capacity: 0, count: 0, data: new Float32Array(0) };
 		let atlas: Atlas | undefined;
 		let colors = readThemeColors();
@@ -107,7 +108,9 @@
 			}
 			if (action.type === 'config' && action.key === 'renderPixelRatio') scheduleResize();
 		});
-		const shouldRun = () => document.visibilityState === 'visible' && !pausedByBlur;
+		const shouldRun = () => document.visibilityState === 'visible';
+		const currentTargetFps = () =>
+			windowFocused ? backgroundState.config.targetFps : Math.min(backgroundState.config.targetFps, blurredTargetFps);
 		const startLoop = () => {
 			if (frame || !shouldRun()) return;
 			frame = window.requestAnimationFrame(tick);
@@ -122,11 +125,11 @@
 			else stopLoop();
 		};
 		const handleBlur = () => {
-			pausedByBlur = true;
-			stopLoop();
+			windowFocused = false;
+			startLoop();
 		};
 		const handleFocus = () => {
-			pausedByBlur = false;
+			windowFocused = true;
 			startLoop();
 		};
 
@@ -147,7 +150,7 @@
 				return;
 			}
 
-			const minFrameMs = 1000 / Math.max(1, backgroundState.config.targetFps);
+			const minFrameMs = 1000 / Math.max(1, currentTargetFps());
 			if (lastDrawAt !== 0 && now - lastDrawAt < minFrameMs * 0.95) {
 				startLoop();
 				return;
