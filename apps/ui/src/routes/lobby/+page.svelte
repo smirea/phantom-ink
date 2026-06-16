@@ -14,10 +14,16 @@
 
 	let rooms = $state<RoomDirectoryListing[]>([]);
 	let expandedRooms = $state<Set<string>>(new Set());
+	let collapsibleRooms = $state<Set<string>>(new Set());
 	let isLoading = $state(true);
 	let isCreating = $state(false);
 	let joiningCode = $state<string | null>(null);
 	let error = $state<string | null>(null);
+	const playerListElements = new Map<string, HTMLElement>();
+	let measureFrame: number | undefined;
+	const playerListMeasureKey = $derived(
+		rooms.map(room => `${room.code}:${room.players.map(player => `${player.id}:${player.name}`).join(',')}`).join('|'),
+	);
 
 	onMount(() => {
 		let cancelled = false;
@@ -38,10 +44,18 @@
 
 		void load();
 		const interval = window.setInterval(() => void load(), 2500);
+		const handleResize = () => schedulePlayerListMeasure();
+		window.addEventListener('resize', handleResize);
 		return () => {
 			cancelled = true;
+			if (measureFrame !== undefined) window.cancelAnimationFrame(measureFrame);
 			window.clearInterval(interval);
+			window.removeEventListener('resize', handleResize);
 		};
+	});
+
+	$effect(() => {
+		schedulePlayerListMeasure(playerListMeasureKey);
 	});
 
 	async function startNewSeance() {
@@ -98,6 +112,10 @@
 		return expandedRooms.has(code);
 	}
 
+	function isCollapsible(code: string): boolean {
+		return collapsibleRooms.has(code);
+	}
+
 	function toggleExpanded(event: MouseEvent, code: string) {
 		event.stopPropagation();
 		const next = new Set(expandedRooms);
@@ -110,6 +128,51 @@
 		if (event.key !== 'Enter' && event.key !== ' ') return;
 		event.preventDefault();
 		void joinExistingRoom(code);
+	}
+
+	function trackPlayerList(node: HTMLElement, code: string) {
+		let currentCode = code;
+		playerListElements.set(currentCode, node);
+		schedulePlayerListMeasure();
+
+		return {
+			update(nextCode: string) {
+				if (currentCode === nextCode) return;
+				playerListElements.delete(currentCode);
+				currentCode = nextCode;
+				playerListElements.set(currentCode, node);
+				schedulePlayerListMeasure();
+			},
+			destroy() {
+				playerListElements.delete(currentCode);
+				schedulePlayerListMeasure();
+			},
+		};
+	}
+
+	function schedulePlayerListMeasure(_key?: string) {
+		if (typeof window === 'undefined' || measureFrame !== undefined) return;
+		measureFrame = window.requestAnimationFrame(() => {
+			measureFrame = undefined;
+			measurePlayerLists();
+		});
+	}
+
+	function measurePlayerLists() {
+		const next = new Set<string>();
+		for (const [code, node] of playerListElements) {
+			if (node.scrollHeight > collapsedPlayerListHeight(node) + 1) next.add(code);
+		}
+		collapsibleRooms = next;
+	}
+
+	function collapsedPlayerListHeight(node: HTMLElement): number {
+		const maxHeight = window.getComputedStyle(node).getPropertyValue('--collapsed-player-list-height').trim();
+		if (maxHeight.endsWith('rem')) {
+			const rootSize = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize);
+			return Number.parseFloat(maxHeight) * rootSize;
+		}
+		return Number.parseFloat(maxHeight) || 0;
 	}
 </script>
 
@@ -136,8 +199,10 @@
 		{#if rooms.length}
 			{#each rooms as room (room.code)}
 				{@const expanded = isExpanded(room.code)}
+				{@const collapsible = isCollapsible(room.code)}
 				<div
 					aria-label={`Join séance ${room.code}`}
+					class:collapsible
 					class:joining={joiningCode === room.code}
 					class="lobby-row"
 					onclick={() => joinExistingRoom(room.code)}
@@ -145,15 +210,17 @@
 					role="button"
 					tabindex="0"
 				>
-					<button
-						aria-expanded={expanded}
-						aria-label={`${expanded ? 'Collapse' : 'Expand'} ${room.code} souls`}
-						class="expand-button"
-						onclick={event => toggleExpanded(event, room.code)}
-						type="button"
-					>
-						<ChevronDown size={21} strokeWidth={2.5} />
-					</button>
+					{#if collapsible}
+						<button
+							aria-expanded={expanded}
+							aria-label={`${expanded ? 'Collapse' : 'Expand'} ${room.code} souls`}
+							class="expand-button"
+							onclick={event => toggleExpanded(event, room.code)}
+							type="button"
+						>
+							<ChevronDown size={21} strokeWidth={2.5} />
+						</button>
+					{/if}
 
 					<div class="lobby-row-meta">
 						<div class="room-code">{room.code}</div>
@@ -166,7 +233,7 @@
 						{/if}
 					</div>
 
-					<div class:expanded class="player-list">
+					<div class:expanded class="player-list" use:trackPlayerList={room.code}>
 						{#each room.players as player (player.id)}
 							<span class="player-pill">
 								<PlayerAvatar color={colorValue(player.color)} icon={player.icon} label={`${player.name} avatar`} />
@@ -249,11 +316,15 @@
 		border-radius: 0.5rem;
 		background: color-mix(in oklab, var(--app-input) 68%, transparent);
 		cursor: pointer;
-		padding: 0.82rem 3rem 0.82rem 0.82rem;
+		padding: 0.82rem;
 		transition:
 			background 180ms ease,
 			border-color 180ms ease,
 			transform 180ms ease;
+	}
+
+	.lobby-row.collapsible {
+		padding-right: 3rem;
 	}
 
 	.lobby-row:hover,
@@ -312,12 +383,14 @@
 	}
 
 	.player-list {
+		--collapsed-player-list-height: 4.9rem;
+
 		position: relative;
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.36rem 0.45rem;
 		min-width: 0;
-		max-height: 4.9rem;
+		max-height: var(--collapsed-player-list-height);
 		overflow: hidden;
 	}
 
@@ -423,6 +496,9 @@
 		.lobby-row {
 			grid-template-columns: 1fr;
 			gap: 0.65rem;
+		}
+
+		.lobby-row.collapsible {
 			padding-right: 3.1rem;
 		}
 	}
