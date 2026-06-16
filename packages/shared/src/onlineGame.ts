@@ -7,10 +7,12 @@ import {
 	type Team,
 } from './game';
 
+export type { Team } from './game';
+
 export const ROOM_CODE_LENGTH = 4;
 export const MIN_PLAYER_NAME_LENGTH = 2;
 export const MAX_PLAYER_NAME_LENGTH = 12;
-export const MIN_SEATED_PLAYER_COUNT = 4;
+export const MIN_SEATED_PLAYER_COUNT = 2;
 export const MAX_SEATED_PLAYER_COUNT = 12;
 export const PLAYER_COLOR_PRESETS = [
 	{ id: 'ectoplasm', label: 'Ectoplasm', value: '#9ee6cf' },
@@ -48,6 +50,35 @@ export type RoomPhase = 'lobby' | 'playing';
 export type PlayerRole = 'spirit' | 'medium' | 'spectator';
 export type PlayerColorId = (typeof PLAYER_COLOR_PRESETS)[number]['id'];
 export type PlayerIconId = (typeof PLAYER_ICON_PRESETS)[number]['id'];
+export type WordMode = 'standard' | 'custom';
+
+export interface RoomVote {
+	playerId: PlayerId;
+	action: RoomVoteActionName;
+}
+
+export type RoomVoteActionName = 'ready' | `word-mode:${WordMode}`;
+
+export interface RoomVoteSummary {
+	ns: RoomVoteNamespace;
+	action: RoomVoteActionName;
+	label: string;
+	currentVotes: number;
+	requiredVotes: number;
+	voterIds: PlayerId[];
+	missingPlayerIds: PlayerId[];
+	eligiblePlayerIds: PlayerId[];
+	consensus: boolean;
+}
+
+export type RoomVoteNamespace = 'ready' | 'word-mode';
+
+export type RoomVoteAction =
+	| { type: 'ready' }
+	| {
+			type: 'word-mode';
+			mode: WordMode;
+	  };
 
 export interface RoomMember {
 	id: PlayerId;
@@ -66,10 +97,12 @@ export interface RoomMemberView extends RoomMember {
 export interface OnlineRoomState {
 	v: number;
 	phase: RoomPhase;
+	wordMode: WordMode;
 	gameState: PhantomInkGameState | null;
 	savedState: PhantomInkGameState | null;
 	members: RoomMember[];
 	readyPlayerIds: PlayerId[];
+	votes: RoomVote[];
 }
 
 export type OnlineRoomAction =
@@ -78,6 +111,7 @@ export type OnlineRoomAction =
 	| { type: 'set-name'; actorId: PlayerId; name: string }
 	| { type: 'set-seat'; actorId: PlayerId; team: Team; role: PlayerRole }
 	| { type: 'set-ready'; actorId: PlayerId; ready: boolean }
+	| { type: 'vote'; actorId: PlayerId; vote: RoomVoteAction }
 	| { type: 'start-game'; actorId: PlayerId; object?: string | null }
 	| { type: 'game-action'; actorId: PlayerId; action: PhantomInkGameAction }
 	| { type: 'save-state'; actorId: PlayerId }
@@ -90,7 +124,9 @@ export interface RoomViewState {
 	selfPlayerId: PlayerId | null;
 	snapshotVersion: number;
 	phase: RoomPhase;
+	wordMode: WordMode;
 	members: RoomMemberView[];
+	votes: RoomVoteSummary[];
 	gameState: PhantomInkGameState | null;
 	savedState: PhantomInkGameState | null;
 	canStart: boolean;
@@ -146,10 +182,12 @@ export function createInitialOnlineRoomState(): OnlineRoomState {
 	return {
 		v: 0,
 		phase: 'lobby',
+		wordMode: 'standard',
 		gameState: null,
 		savedState: null,
 		members: [],
 		readyPlayerIds: [],
+		votes: [],
 	};
 }
 
@@ -172,6 +210,10 @@ export function sanitizePlayerColor(value: string | null | undefined): PlayerCol
 export function sanitizePlayerIcon(value: string | null | undefined): PlayerIconId {
 	const icon = PLAYER_ICON_PRESETS.find(preset => preset.id === value);
 	return icon?.id ?? DEFAULT_PLAYER_ICON;
+}
+
+export function sanitizeWordMode(value: string | null | undefined): WordMode {
+	return value === 'custom' ? 'custom' : 'standard';
 }
 
 export function isCompleteUserProfile(user: UserRecord | null | undefined): user is UserRecord {
@@ -231,7 +273,9 @@ export function selectRoomViewState(
 	status: RoomViewState['status'] = state ? 'connected' : 'idle',
 ): RoomViewState {
 	const selfPlayerId = selfUserId === null ? null : playerIdForUser(selfUserId);
-	const members = state ? buildRoomMembers(state.members, state.readyPlayerIds) : [];
+	const votes = state ? selectRoomVoteSummaries(state) : [];
+	const readyVote = votes.find(vote => vote.action === 'ready');
+	const members = state ? buildRoomMembers(state.members, readyVote?.voterIds ?? state.readyPlayerIds) : [];
 	const startProblem = state ? getStartProblem(state) : 'Room is not loaded';
 
 	return {
@@ -240,7 +284,9 @@ export function selectRoomViewState(
 		selfPlayerId,
 		snapshotVersion: state?.v ?? 0,
 		phase: state?.phase ?? 'lobby',
+		wordMode: sanitizeWordMode(state?.wordMode),
 		members,
+		votes,
 		gameState: state?.gameState ?? null,
 		savedState: state?.savedState ?? null,
 		canStart: startProblem === null,
@@ -249,7 +295,7 @@ export function selectRoomViewState(
 }
 
 export function applyOnlineRoomAction(state: OnlineRoomState, action: OnlineRoomAction): boolean {
-	state.readyPlayerIds = uniquePlayerIds(state.readyPlayerIds, state.members);
+	normalizeOnlineRoomState(state);
 
 	if (action.type === 'join') {
 		if (action.actorId !== playerIdForUser(action.userId)) return false;
@@ -273,9 +319,12 @@ export function applyOnlineRoomAction(state: OnlineRoomState, action: OnlineRoom
 			name,
 			color,
 			icon,
-			...defaultSeatFor(state.members),
+			...(state.phase === 'lobby'
+				? defaultSeatFor(state.members)
+				: { team: leastPopulatedTeam(state.members), role: 'spectator' as const }),
 		});
 		clearReady(state);
+		finalizeVotes(state);
 		return true;
 	}
 
@@ -286,7 +335,9 @@ export function applyOnlineRoomAction(state: OnlineRoomState, action: OnlineRoom
 		case 'leave':
 			state.members = state.members.filter(member => member.id !== action.actorId);
 			state.readyPlayerIds = state.readyPlayerIds.filter(id => id !== action.actorId);
+			state.votes = pruneVotes(state);
 			clearReady(state);
+			finalizeVotes(state);
 			return true;
 		case 'set-name': {
 			const name = sanitizePlayerName(action.name);
@@ -298,6 +349,7 @@ export function applyOnlineRoomAction(state: OnlineRoomState, action: OnlineRoom
 		}
 		case 'set-seat':
 			if (state.phase !== 'lobby') return false;
+			if (!isTeam(action.team) || !isPlayerRole(action.role) || action.role === 'spectator') return false;
 			if (actor.team === action.team && actor.role === action.role) return false;
 
 			actor.team = action.team;
@@ -305,16 +357,14 @@ export function applyOnlineRoomAction(state: OnlineRoomState, action: OnlineRoom
 			clearReady(state);
 			return true;
 		case 'set-ready': {
-			if (state.phase !== 'lobby' || actor.role === 'spectator') return false;
-
-			const wasReady = state.readyPlayerIds.includes(action.actorId);
-			if (wasReady === action.ready) return false;
-
-			state.readyPlayerIds = action.ready
-				? uniquePlayerIds([...state.readyPlayerIds, action.actorId], state.members)
-				: state.readyPlayerIds.filter(id => id !== action.actorId);
-			maybeStartRoom(state);
-			return true;
+			const hasReadyVote = state.votes.some(vote => vote.playerId === action.actorId && vote.action === 'ready');
+			if (hasReadyVote === action.ready) return false;
+			return applyVote(state, actor, 'ready');
+		}
+		case 'vote': {
+			const voteAction = roomVoteActionName(action.vote);
+			if (!voteAction) return false;
+			return applyVote(state, actor, voteAction);
 		}
 		case 'start-game':
 			if (state.phase !== 'lobby' || getStartProblem(state) !== null) return false;
@@ -322,6 +372,7 @@ export function applyOnlineRoomAction(state: OnlineRoomState, action: OnlineRoom
 			state.phase = 'playing';
 			state.gameState = createInitialGameState({ object: action.object });
 			state.readyPlayerIds = [];
+			state.votes = [];
 			return true;
 		case 'game-action':
 			if (state.phase !== 'playing' || !state.gameState) return false;
@@ -344,6 +395,7 @@ export function applyOnlineRoomAction(state: OnlineRoomState, action: OnlineRoom
 			state.phase = 'lobby';
 			state.gameState = null;
 			state.readyPlayerIds = [];
+			state.votes = [];
 			return true;
 	}
 }
@@ -360,49 +412,166 @@ function getStartProblem(state: OnlineRoomState): string | null {
 	if (state.phase !== 'lobby') return 'The room has already started';
 
 	const seated = state.members.filter(member => member.role !== 'spectator');
-	if (seated.length < MIN_SEATED_PLAYER_COUNT) return 'Need at least 4 seated players';
+	if (seated.length < MIN_SEATED_PLAYER_COUNT) return 'Need at least 2 players';
 	if (seated.length > MAX_SEATED_PLAYER_COUNT) return 'Too many seated players';
 
-	for (const team of ['sun', 'moon'] as const) {
-		if (!seated.some(member => member.team === team && member.role === 'spirit')) {
-			return `${team === 'sun' ? 'Sun' : 'Moon'} needs a Spirit`;
-		}
-		if (!seated.some(member => member.team === team && member.role === 'medium')) {
-			return `${team === 'sun' ? 'Sun' : 'Moon'} needs a Medium`;
-		}
+	return null;
+}
+
+export function selectRoomVoteSummaries(state: OnlineRoomState): RoomVoteSummary[] {
+	const normalizedState = normalizeOnlineRoomState(structuredClone(state));
+	return [
+		buildVoteSummary(normalizedState, 'ready', 'Ready'),
+		buildVoteSummary(normalizedState, 'word-mode:standard', 'Standard words'),
+		buildVoteSummary(normalizedState, 'word-mode:custom', 'Custom words'),
+	];
+}
+
+function normalizeOnlineRoomState(state: OnlineRoomState): OnlineRoomState {
+	state.wordMode = sanitizeWordMode(state.wordMode);
+	state.readyPlayerIds = uniquePlayerIds(state.readyPlayerIds ?? [], state.members);
+	state.votes = pruneVotes(state);
+	return state;
+}
+
+function applyVote(state: OnlineRoomState, actor: RoomMember, action: RoomVoteActionName): boolean {
+	const behavior = getVoteBehavior(state, action);
+	if (!behavior || !behavior.voterIds.includes(actor.id)) return false;
+
+	const existingVote = state.votes.find(vote => vote.playerId === actor.id && vote.action === action);
+	if (existingVote) {
+		state.votes = state.votes.filter(vote => !(vote.playerId === actor.id && vote.action === action));
+		return true;
+	}
+
+	if (behavior.type === 'choice') {
+		state.votes = state.votes.filter(
+			vote => !(vote.playerId === actor.id && vote.action.startsWith(`${behavior.ns}:`)),
+		);
+	}
+
+	state.votes.push({ playerId: actor.id, action });
+	finalizeVotes(state);
+	return true;
+}
+
+function finalizeVotes(state: OnlineRoomState): void {
+	state.votes = pruneVotes(state);
+
+	const wordMode = winningChoice(state, 'word-mode');
+	if (wordMode) {
+		const nextWordMode = sanitizeWordMode(wordMode.split(':')[1]);
+		const changed = state.wordMode !== nextWordMode;
+		state.wordMode = nextWordMode;
+		state.votes = clearVoteNamespace(state.votes, 'word-mode');
+		if (changed) clearReady(state);
+	}
+
+	const ready = buildVoteSummary(state, 'ready', 'Ready');
+	if (ready.consensus && getStartProblem(state) === null) {
+		state.phase = 'playing';
+		state.gameState = createInitialGameState();
+		state.readyPlayerIds = [];
+		state.votes = [];
+	}
+}
+
+function clearReady(state: OnlineRoomState): void {
+	state.readyPlayerIds = [];
+	state.votes = clearVoteNamespace(state.votes ?? [], 'ready');
+}
+
+function defaultSeatFor(members: readonly RoomMember[]): Pick<RoomMember, 'team' | 'role'> {
+	return { team: leastPopulatedTeam(members), role: 'medium' };
+}
+
+function leastPopulatedTeam(members: readonly RoomMember[]): Team {
+	const sunCount = members.filter(member => member.role !== 'spectator' && member.team === 'sun').length;
+	const moonCount = members.filter(member => member.role !== 'spectator' && member.team === 'moon').length;
+	return sunCount <= moonCount ? 'sun' : 'moon';
+}
+
+type VoteBehavior =
+	| { ns: 'ready'; type: 'single'; voterIds: PlayerId[] }
+	| { ns: 'word-mode'; type: 'choice'; voterIds: PlayerId[] };
+
+function getVoteBehavior(state: OnlineRoomState, action: RoomVoteActionName): VoteBehavior | null {
+	const voterIds = state.members.filter(member => member.role !== 'spectator').map(member => member.id);
+	if (state.phase !== 'lobby' || voterIds.length === 0) return null;
+	if (action === 'ready') return { ns: 'ready', type: 'single', voterIds };
+	if (action.startsWith('word-mode:')) return { ns: 'word-mode', type: 'choice', voterIds };
+	return null;
+}
+
+function buildVoteSummary(state: OnlineRoomState, action: RoomVoteActionName, label: string): RoomVoteSummary {
+	const behavior = getVoteBehavior(state, action);
+	const eligiblePlayerIds = behavior?.voterIds ?? [];
+	const voterIds = state.votes
+		.filter(vote => vote.action === action && eligiblePlayerIds.includes(vote.playerId))
+		.map(vote => vote.playerId);
+	const uniqueVoterIds = [...new Set(voterIds)];
+	return {
+		ns: voteNamespace(action),
+		action,
+		label,
+		currentVotes: uniqueVoterIds.length,
+		requiredVotes: eligiblePlayerIds.length,
+		voterIds: uniqueVoterIds,
+		missingPlayerIds: eligiblePlayerIds.filter(playerId => !uniqueVoterIds.includes(playerId)),
+		eligiblePlayerIds,
+		consensus: eligiblePlayerIds.length > 0 && uniqueVoterIds.length === eligiblePlayerIds.length,
+	};
+}
+
+function winningChoice(state: OnlineRoomState, ns: Extract<RoomVoteNamespace, 'word-mode'>): RoomVoteActionName | null {
+	const eligiblePlayerIds = getVoteBehavior(state, 'word-mode:standard')?.voterIds ?? [];
+	if (!eligiblePlayerIds.length) return null;
+
+	for (const action of [`${ns}:standard`, `${ns}:custom`] as RoomVoteActionName[]) {
+		const votes = state.votes.filter(vote => vote.action === action && eligiblePlayerIds.includes(vote.playerId));
+		if (new Set(votes.map(vote => vote.playerId)).size === eligiblePlayerIds.length) return action;
 	}
 
 	return null;
 }
 
-function maybeStartRoom(state: OnlineRoomState): void {
-	if (getStartProblem(state) !== null) return;
-	const seated = state.members.filter(member => member.role !== 'spectator');
-	if (!seated.every(member => state.readyPlayerIds.includes(member.id))) return;
-
-	state.phase = 'playing';
-	state.gameState = createInitialGameState();
-	state.readyPlayerIds = [];
+function pruneVotes(state: OnlineRoomState): RoomVote[] {
+	const votes = Array.isArray(state.votes) ? state.votes : [];
+	const validPlayers = new Set(state.members.map(member => member.id));
+	const seen = new Set<string>();
+	return votes.filter(vote => {
+		if (!validPlayers.has(vote.playerId) || !isRoomVoteActionName(vote.action)) return false;
+		const key = `${vote.playerId}:${vote.action}`;
+		if (seen.has(key)) return false;
+		seen.add(key);
+		return true;
+	});
 }
 
-function clearReady(state: OnlineRoomState): void {
-	state.readyPlayerIds = [];
+function clearVoteNamespace(votes: readonly RoomVote[], ns: RoomVoteNamespace): RoomVote[] {
+	return votes.filter(vote => voteNamespace(vote.action) !== ns);
 }
 
-function defaultSeatFor(members: readonly RoomMember[]): Pick<RoomMember, 'team' | 'role'> {
-	const seats: Array<Pick<RoomMember, 'team' | 'role'>> = [
-		{ team: 'sun', role: 'spirit' },
-		{ team: 'moon', role: 'spirit' },
-		{ team: 'sun', role: 'medium' },
-		{ team: 'moon', role: 'medium' },
-	];
+function voteNamespace(action: RoomVoteActionName): RoomVoteNamespace {
+	return action === 'ready' ? 'ready' : 'word-mode';
+}
 
-	return (
-		seats[members.length] ?? {
-			team: members.length % 2 === 0 ? 'sun' : 'moon',
-			role: 'medium',
-		}
-	);
+function roomVoteActionName(vote: RoomVoteAction): RoomVoteActionName | null {
+	if (vote.type === 'ready') return 'ready';
+	if (vote.type === 'word-mode') return `word-mode:${sanitizeWordMode(vote.mode)}`;
+	return null;
+}
+
+function isRoomVoteActionName(value: unknown): value is RoomVoteActionName {
+	return value === 'ready' || value === 'word-mode:standard' || value === 'word-mode:custom';
+}
+
+function isTeam(value: unknown): value is Team {
+	return value === 'sun' || value === 'moon';
+}
+
+function isPlayerRole(value: unknown): value is PlayerRole {
+	return value === 'spirit' || value === 'medium' || value === 'spectator';
 }
 
 function uniquePlayerIds(ids: readonly PlayerId[], members: readonly Pick<RoomMember, 'id'>[]): PlayerId[] {

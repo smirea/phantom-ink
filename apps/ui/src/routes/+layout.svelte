@@ -296,9 +296,9 @@
 					{#if activeRoomCode}
 						<div class="room-code-mark" aria-label={`Room ${activeRoomCode}`}>{activeRoomCode}</div>
 					{:else}
-						<a class="top-logo-link" href={setupHref} aria-label="Edit profile">
+						<div class="top-logo-link">
 							<PhantomLogo compact textOnly />
-						</a>
+						</div>
 					{/if}
 					<div class="screen-actions">
 						<div class="settings-menu-wrap">
@@ -362,9 +362,9 @@
 				</section>
 
 				{#if activeRoomCode}
-					<a class="room-bottom-logo" href={setupHref} aria-label="Edit profile">
+					<div class="room-bottom-logo">
 						<PhantomLogo compact textOnly />
-					</a>
+					</div>
 				{/if}
 			</div>
 		{/if}

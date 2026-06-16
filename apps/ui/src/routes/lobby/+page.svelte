@@ -162,6 +162,9 @@
 							<UsersRound size={16} strokeWidth={2.2} />
 							<span>{room.playerCount} {room.playerCount === 1 ? 'player' : 'players'}</span>
 						</div>
+						{#if room.phase === 'playing'}
+							<div class="phase-pill">Started</div>
+						{/if}
 					</div>
 
 					<div class:expanded class:truncated={!expanded && room.players.length > 4} class="player-list">
@@ -316,6 +319,20 @@
 		font-size: 0.78rem;
 		font-weight: 850;
 		line-height: 1;
+	}
+
+	.phase-pill {
+		display: inline-flex;
+		width: fit-content;
+		border: 1px solid color-mix(in oklab, var(--app-accent) 38%, var(--app-border));
+		border-radius: 999px;
+		background: color-mix(in oklab, var(--app-accent) 12%, transparent);
+		color: var(--app-accent);
+		font-size: 0.68rem;
+		font-weight: 950;
+		line-height: 1;
+		padding: 0.18rem 0.42rem;
+		text-transform: uppercase;
 	}
 
 	.player-list {
