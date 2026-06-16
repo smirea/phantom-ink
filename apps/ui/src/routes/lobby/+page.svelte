@@ -3,7 +3,7 @@
 </script>
 
 <svelte:head>
-	<title>Pad | Phantom Ink</title>
+	<title>Lobby | Phantom Ink</title>
 </svelte:head>
 
-<DummyScreen size="medium" />
+<DummyScreen size="small" />

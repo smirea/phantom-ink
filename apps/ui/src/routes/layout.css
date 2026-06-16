@@ -71,7 +71,7 @@ button {
 	display: grid;
 	grid-template-rows: auto auto minmax(0, 1fr);
 	gap: 0.85rem;
-	width: min(100%, 31rem);
+	width: min(100%, 34rem);
 	max-height: calc(100dvh - 1.7rem);
 	border: 1px solid color-mix(in oklab, var(--app-border) 82%, transparent);
 	border-radius: 0.5rem;
@@ -99,7 +99,7 @@ button {
 
 .screen-nav {
 	display: grid;
-	grid-template-columns: repeat(3, minmax(0, 1fr));
+	grid-template-columns: repeat(4, minmax(0, 1fr));
 	gap: 0.35rem;
 	border: 1px solid var(--app-border);
 	border-radius: 0.5rem;
@@ -145,5 +145,9 @@ button {
 	.content-card {
 		width: 100%;
 		max-height: calc(100dvh - 1.1rem);
+	}
+
+	.screen-nav {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 }

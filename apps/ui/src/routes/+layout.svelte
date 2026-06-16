@@ -14,7 +14,8 @@
 	type Theme = 'dark' | 'light';
 
 	const navItems = [
-		{ href: '/', label: 'Lobby' },
+		{ href: '/', label: 'Start' },
+		{ href: '/lobby', label: 'Lobby' },
 		{ href: '/pad', label: 'Pad' },
 		{ href: '/whispers', label: 'Whispers' },
 	];
@@ -28,6 +29,7 @@
 
 	let theme = $state<Theme>(getStored(storageKeys.darkMode) ? 'dark' : 'light');
 	let activePath = $state(typeof location === 'undefined' ? '/' : location.pathname);
+	const isStartScreen = $derived(activePath === '/');
 
 	$effect(() => {
 		if (typeof document === 'undefined') return;
@@ -66,33 +68,37 @@
 	<div class="app-scene">
 		<BackgroundHost />
 
-		<section class="content-card">
-			<header class="app-header">
-				<a class="logo-link" href="/" aria-label="Phantom Ink lobby">
-					<PhantomLogo compact />
-				</a>
-				<InkButton size="sm" onclick={() => (theme = theme === 'dark' ? 'light' : 'dark')}>
-					{theme === 'dark' ? 'Light' : 'Dark'}
-				</InkButton>
-			</header>
-
-			<nav class="screen-nav" aria-label="Mock screens">
-				{#each navItems as item}
-					<a href={item.href} aria-current={isActive(item.href) ? 'page' : undefined}>
-						{item.label}
+		{#if isStartScreen}
+			{@render children()}
+		{:else}
+			<section class="content-card">
+				<header class="app-header">
+					<a class="logo-link" href="/" aria-label="Phantom Ink start">
+						<PhantomLogo compact />
 					</a>
-				{/each}
-			</nav>
+					<InkButton size="sm" onclick={() => (theme = theme === 'dark' ? 'light' : 'dark')}>
+						{theme === 'dark' ? 'Light' : 'Dark'}
+					</InkButton>
+				</header>
 
-			{#key activePath}
-				<div
-					class="route-frame"
-					in:fly={{ y: 18, duration: 340, easing: cubicOut }}
-					out:fade={{ duration: 130, easing: cubicIn }}
-				>
-					{@render children()}
-				</div>
-			{/key}
-		</section>
+				<nav class="screen-nav" aria-label="Dummy screens">
+					{#each navItems as item}
+						<a href={item.href} aria-current={isActive(item.href) ? 'page' : undefined}>
+							{item.label}
+						</a>
+					{/each}
+				</nav>
+
+				{#key activePath}
+					<div
+						class="route-frame"
+						in:fly={{ y: 18, duration: 340, easing: cubicOut }}
+						out:fade={{ duration: 130, easing: cubicIn }}
+					>
+						{@render children()}
+					</div>
+				{/key}
+			</section>
+		{/if}
 	</div>
 </QueryClientProvider>

@@ -20,11 +20,18 @@ html[data-theme='dark'] {
 	--app-error: #efaaa1;
 	--app-error-bg: #321d23;
 	--background-glyph: #b6aab7;
-	--logo-ink: #f2e8f5;
-	--logo-smoke: #4e3e5a;
-	--logo-veil: #201725;
-	--logo-stroke: #a887b7;
-	--logo-drop: #b998c8;
+	--logo-word: #f0dca7;
+	--logo-word-stroke: #30223a;
+	--logo-word-shadow: #7d657f;
+	--logo-rays: #d7c3dc;
+	--logo-metal-light: #f4e3ae;
+	--logo-metal: #b89d68;
+	--logo-metal-deep: #7c6847;
+	--logo-engraving: #2f2630;
+	--logo-diamond: #17111c;
+	--logo-eye: #efe6d4;
+	--logo-iris: #a887b7;
+	--logo-pupil: #201426;
 	--logo-shadow: #050307;
 }
 
@@ -49,10 +56,17 @@ html[data-theme='light'] {
 	--app-error: #a13d43;
 	--app-error-bg: #fff0ee;
 	--background-glyph: #251f28;
-	--logo-ink: #251f28;
-	--logo-smoke: #d9ccd8;
-	--logo-veil: #fffaf7;
-	--logo-stroke: #735985;
-	--logo-drop: #735985;
+	--logo-word: #6b4e23;
+	--logo-word-stroke: #fff7e8;
+	--logo-word-shadow: #bcae96;
+	--logo-rays: #6b6070;
+	--logo-metal-light: #8c682b;
+	--logo-metal: #c7a96b;
+	--logo-metal-deep: #ead6a2;
+	--logo-engraving: #3a303a;
+	--logo-diamond: #fffaf7;
+	--logo-eye: #fff3d9;
+	--logo-iris: #735985;
+	--logo-pupil: #251f28;
 	--logo-shadow: #5d4a60;
 }
