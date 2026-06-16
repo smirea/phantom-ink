@@ -474,15 +474,46 @@
 	.team-icon {
 		position: absolute;
 		top: 0.7rem;
-		color: color-mix(in oklab, var(--team-color) 54%, transparent);
-		filter: drop-shadow(0 0 0.5rem color-mix(in oklab, var(--team-color) 22%, transparent));
-		opacity: 0.42;
+		display: grid;
+		width: 5.4rem;
+		height: 5.4rem;
+		color: color-mix(in oklab, var(--team-color) 68%, transparent);
+		filter: drop-shadow(0 0 0.45rem color-mix(in oklab, var(--team-color) 30%, transparent))
+			drop-shadow(0 0 1.2rem color-mix(in oklab, var(--team-color) 14%, transparent));
+		opacity: 0.56;
 		pointer-events: none;
+		place-items: center;
+	}
+
+	.team-icon::before {
+		position: absolute;
+		inset: -0.4rem;
+		border-radius: 999px;
+		background: radial-gradient(
+			circle,
+			color-mix(in oklab, var(--team-color) 32%, transparent) 0%,
+			color-mix(in oklab, var(--team-color) 14%, transparent) 38%,
+			transparent 72%
+		);
+		content: '';
+		opacity: 0.42;
+		transform: scale(0.9);
+	}
+
+	.team-icon :global(svg) {
+		position: relative;
+		z-index: 1;
 	}
 
 	.team-column[aria-pressed='true'] .team-icon {
-		animation: team-icon-pulse 4s ease-in-out infinite;
-		opacity: 0.88;
+		animation: team-icon-pulse 3.8s ease-in-out infinite;
+		color: var(--team-color);
+		opacity: 0.96;
+	}
+
+	.team-column[aria-pressed='true'] .team-icon::before {
+		animation: team-aura-pulse 3.8s ease-in-out infinite;
+		opacity: 0.72;
 	}
 
 	.team-column.sun .team-icon {
@@ -671,12 +702,26 @@
 	@keyframes team-icon-pulse {
 		0%,
 		100% {
-			filter: drop-shadow(0 0 0.6rem color-mix(in oklab, var(--team-color) 32%, transparent));
+			filter: drop-shadow(0 0 0.55rem color-mix(in oklab, var(--team-color) 42%, transparent))
+				drop-shadow(0 0 1.35rem color-mix(in oklab, var(--team-color) 24%, transparent));
 		}
 
 		50% {
-			filter: drop-shadow(0 0 0.85rem color-mix(in oklab, var(--team-color) 56%, transparent))
-				drop-shadow(0 0 1.65rem color-mix(in oklab, var(--team-color) 28%, transparent));
+			filter: drop-shadow(0 0 0.85rem color-mix(in oklab, var(--team-color) 66%, transparent))
+				drop-shadow(0 0 1.85rem color-mix(in oklab, var(--team-color) 36%, transparent));
+		}
+	}
+
+	@keyframes team-aura-pulse {
+		0%,
+		100% {
+			opacity: 0.52;
+			transform: scale(0.92);
+		}
+
+		50% {
+			opacity: 0.9;
+			transform: scale(1.06);
 		}
 	}
 
