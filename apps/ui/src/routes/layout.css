@@ -66,6 +66,8 @@ button {
 }
 
 .letter-field {
+	--grid-angle: 0rad;
+	--grid-spacing: 64px;
 	position: fixed;
 	inset: 0;
 	z-index: 0;
@@ -73,11 +75,26 @@ button {
 	pointer-events: none;
 }
 
-.drift-letter {
+.letter-grid {
 	position: absolute;
 	left: 0;
 	top: 0;
+	display: grid;
+	width: 100vw;
+	height: 100vh;
+	pointer-events: none;
+	transform: translate3d(0, 0, 0);
+	transform-origin: 0 0;
+	will-change: transform;
+	contain: layout style paint;
+}
+
+.drift-letter {
 	z-index: 1;
+	display: grid;
+	width: var(--grid-spacing);
+	height: var(--grid-spacing);
+	place-items: center;
 	border: 0;
 	background: transparent;
 	color: var(--app-muted);
@@ -90,9 +107,60 @@ button {
 	padding: 0;
 	pointer-events: auto;
 	text-shadow: 0 0 1rem color-mix(in oklab, var(--app-accent) 40%, transparent);
-	transform: translate3d(var(--x), var(--y), 0) rotate(var(--r)) scale(calc(var(--s) * (0.58 + var(--b) * 0.42)));
+	transform: rotate(var(--grid-angle)) scale(calc(var(--s) * (0.58 + var(--b) * 0.42)));
+	transform-origin: center;
+	transition:
+		opacity 160ms linear,
+		transform 220ms ease;
 	user-select: none;
-	will-change: transform, opacity;
+}
+
+.letter-glyph {
+	display: inline-block;
+	animation: letter-spin 24s linear infinite;
+	animation-delay: var(--spin-delay);
+	transform-origin: center;
+}
+
+.letter-field[data-spin='paused'] .letter-glyph {
+	animation-play-state: paused;
+}
+
+.spin-reverse .letter-glyph {
+	animation-direction: reverse;
+}
+
+.spin-0 .letter-glyph {
+	animation-duration: 18s;
+}
+
+.spin-1 .letter-glyph {
+	animation-duration: 22s;
+}
+
+.spin-2 .letter-glyph {
+	animation-duration: 26s;
+}
+
+.spin-3 .letter-glyph {
+	animation-duration: 31s;
+}
+
+.spin-4 .letter-glyph {
+	animation-duration: 37s;
+}
+
+.spin-5 .letter-glyph {
+	animation-duration: 44s;
+}
+
+.drift-letter.is-spawning {
+	animation: letter-spawn var(--spawn-ms) ease-out both;
+}
+
+.drift-letter.is-dying {
+	pointer-events: none;
+	animation: letter-decay var(--decay-ms) ease-out forwards;
 }
 
 .drift-letter:hover {
@@ -114,10 +182,57 @@ button {
 		radial-gradient(circle, color-mix(in oklab, var(--app-accent-strong) 52%, transparent) 0 18%, transparent 64%),
 		radial-gradient(circle, color-mix(in oklab, var(--app-muted) 42%, transparent) 0 42%, transparent 72%);
 	filter: blur(0.38rem);
-	opacity: var(--o);
+	opacity: 0;
 	pointer-events: none;
 	transform: translate3d(var(--x), var(--y), 0) translate(-50%, -50%) rotate(var(--r)) scale(var(--s));
+	animation: smoke-puff var(--ttl) ease-out forwards;
 	will-change: transform, opacity;
+}
+
+@keyframes letter-spin {
+	to {
+		transform: rotate(1turn);
+	}
+}
+
+@keyframes letter-spawn {
+	0% {
+		opacity: 0;
+		transform: rotate(var(--grid-angle)) scale(calc(var(--s) * 0.28));
+	}
+
+	72% {
+		opacity: calc(var(--o) * 0.86);
+	}
+
+	100% {
+		opacity: calc(var(--o) * var(--b));
+		transform: rotate(var(--grid-angle)) scale(calc(var(--s) * (0.58 + var(--b) * 0.42)));
+	}
+}
+
+@keyframes letter-decay {
+	to {
+		opacity: 0;
+		transform: rotate(var(--grid-angle)) scale(calc(var(--s) * 0.24));
+	}
+}
+
+@keyframes smoke-puff {
+	0% {
+		opacity: 0;
+		transform: translate3d(var(--x), var(--y), 0) translate(-50%, -50%) rotate(var(--r)) scale(calc(var(--s) * 0.65));
+	}
+
+	18% {
+		opacity: var(--o);
+	}
+
+	100% {
+		opacity: 0;
+		transform: translate3d(calc(var(--x) + var(--dx)), calc(var(--y) + var(--dy)), 0) translate(-50%, -50%)
+			rotate(calc(var(--r) + var(--er))) scale(var(--es));
+	}
 }
 
 .content-card {

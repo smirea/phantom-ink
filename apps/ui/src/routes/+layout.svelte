@@ -15,17 +15,19 @@
 	type GridCell = {
 		key: string;
 		char: string;
-		x: number;
-		y: number;
-		rotation: number;
+		column: number;
+		row: number;
 		opacity: number;
 		scale: number;
-		spinPhase: number;
-		spinSpeed: number;
+		spinClass: string;
+		spinReverse: boolean;
+		spinDelay: number;
 		visibility: number;
 		status: CellStatus;
 		spawnMs: number;
 		decayMs: number;
+		spawnDoneAt: number;
+		deathAt: number;
 		wasOnscreen: boolean;
 		edgePuffTransition: number;
 	};
@@ -33,17 +35,15 @@
 		id: number;
 		x: number;
 		y: number;
-		vx: number;
-		vy: number;
+		dx: number;
+		dy: number;
 		rotation: number;
-		spin: number;
+		endRotation: number;
 		opacity: number;
-		baseOpacity: number;
 		scale: number;
-		growth: number;
-		age: number;
+		endScale: number;
 		ttl: number;
-		flowFollow: number;
+		removeAt: number;
 	};
 	type DirectionPhase = 'cruise' | 'decelerating' | 'turning' | 'accelerating';
 	type DirectionState = {
@@ -120,11 +120,13 @@
 	const rareGlyphChance = 0.02;
 	const minGlyphScale = 0.58;
 	const maxGlyphScale = 1.72;
-	const naturalDecayVisibility = 0.18;
 	const naturalDecayMs: [number, number] = [120, 220];
 	const minimumGridSpacing = 54;
+	const gridPaddingCells = 4;
+	const cellLifeTickMs = 90;
 	const stateChangeCooldownMs = 10000;
 	const defaultDirectionOptions = Array.from({ length: 24 }, (_, index) => degreesToRadians(index * 15));
+	const spinClasses = ['spin-0', 'spin-1', 'spin-2', 'spin-3', 'spin-4', 'spin-5'] as const;
 	const numberConfigFields = [
 		{ key: 'targetAliveRatio', label: 'targetAliveRatio', min: 0.05, max: 0.95, step: 0.01 },
 		{ key: 'initialSpacing', label: 'initialSpacing', min: minimumGridSpacing, max: 128, step: 1, integer: true },
@@ -169,14 +171,16 @@
 	let cells = $state<GridCell[]>([]);
 	let puffs = $state<SmokePuff[]>([]);
 	let activePath = $state(typeof location === 'undefined' ? '/' : location.pathname);
+	let letterGridElement: HTMLDivElement | undefined = undefined;
 	let smokeId = 0;
-	let flowPhaseX = 0;
-	let flowPhaseY = 0;
-	let gridColumns = 0;
-	let gridRows = 0;
+	let gridShiftX = 0;
+	let gridShiftY = 0;
+	let gridColumns = $state(0);
+	let gridRows = $state(0);
 	let nextStateChangeAllowedAt = 0;
-	let directionState: DirectionState = createDirectionState(0);
-	let spacingState: SpacingState = createSpacingState(0);
+	let nextCellLifeTickAt = 0;
+	let directionState = $state<DirectionState>(createDirectionState(0));
+	let spacingState = $state<SpacingState>(createSpacingState(0));
 	let spacingOptionsDraft = $state(formatNumberList(backgroundConfig.spacingOptions));
 	let directionOptionsDraft = $state(formatNumberList(backgroundConfig.directionOptions.map(radiansToDegrees)));
 
@@ -192,7 +196,10 @@
 		const now = performance.now();
 		directionState = createDirectionState(now);
 		spacingState = createSpacingState(now);
-		syncGridCells(window.innerWidth, window.innerHeight, true);
+		ensureGridCells(window.innerWidth, window.innerHeight, true);
+		captureOnscreenState();
+		applyGridStyle();
+		nextCellLifeTickAt = now + cellLifeTickMs;
 
 		let frame = 0;
 		let lastTime = now;
@@ -202,10 +209,12 @@
 			lastTime = now;
 
 			updateSpacing(now);
-			updateDirection(now, elapsedMs, window.innerWidth, window.innerHeight);
-			syncGridCells(window.innerWidth, window.innerHeight, false);
-			updateCells(elapsedMs);
-			updatePuffs(elapsedMs);
+			updateDirection(now);
+			updateGridMotion(elapsedMs);
+			ensureGridCells(window.innerWidth, window.innerHeight, false);
+			checkSpacingExpansionEdges();
+			updateCellLife(now);
+			applyGridStyle();
 			frame = window.requestAnimationFrame(tick);
 		};
 
@@ -232,71 +241,58 @@
 		};
 	});
 
-	function syncGridCells(width: number, height: number, seedAlive: boolean): void {
-		const spacing = spacingState.current;
+	function ensureGridCells(width: number, height: number, seedAlive: boolean): void {
+		const metrics = getGridMetrics(width, height);
+		if (metrics.columns === gridColumns && metrics.rows === gridRows && cells.length > 0) return;
+
 		const existing = new Map(cells.map(cell => [cell.key, cell]));
 		const nextCells: GridCell[] = [];
-		const metrics = getGridMetrics(width, height, spacing);
-		const spacingIsExpanding = spacingState.active && spacingState.target > spacingState.from;
-
+		gridColumns = metrics.columns;
+		gridRows = metrics.rows;
 		for (let row = 0; row < metrics.rows; row += 1) {
 			for (let column = 0; column < metrics.columns; column += 1) {
 				const key = `${column}:${row}`;
-				const existingCell = existing.get(key);
-				const cell =
-					existingCell ?? createGridCell(key, seedAlive && Math.random() < backgroundConfig.targetAliveRatio);
-				const wasOnscreen = cell.wasOnscreen;
-				cell.x = gridX(column, metrics);
-				cell.y = gridY(row, metrics);
-				const isOnscreen = isNearViewport(cell.x, cell.y, width, height, metrics.spacing);
-				if (
-					spacingIsExpanding &&
-					wasOnscreen &&
-					!isOnscreen &&
-					cell.edgePuffTransition !== spacingState.transitionId &&
-					cell.status !== 'dead' &&
-					cell.visibility > 0
-				) {
-					const edge = outsidePointNear(cell.x, cell.y, width, height, metrics.spacing);
-					spawnSmoke(Math.min(width, Math.max(0, edge.x)), Math.min(height, Math.max(0, edge.y)), 4, 0.3, 0.76, 1);
-					cell.visibility = 0;
-					cell.status = 'dead';
-					cell.edgePuffTransition = spacingState.transitionId;
-				}
-				cell.wasOnscreen = isOnscreen;
-				cell.rotation = directionState.displayAngle + cell.spinPhase * spinWeight();
-				nextCells.push(cell);
+				nextCells.push(
+					existing.get(key) ??
+						createGridCell(column, row, seedAlive && Math.random() < backgroundConfig.targetAliveRatio),
+				);
 			}
 		}
-
 		cells = nextCells;
 	}
 
-	function createGridCell(key: string, seedAlive: boolean): GridCell {
+	function createGridCell(column: number, row: number, seedAlive: boolean): GridCell {
 		const char = chooseGlyph();
 		return {
-			key,
+			key: `${column}:${row}`,
 			char,
-			x: 0,
-			y: 0,
-			rotation: 0,
+			column,
+			row,
 			opacity: randomBetween(0.16, 0.46),
 			scale: glyphScale(char),
-			spinPhase: randomBetween(0, Math.PI * 2),
-			spinSpeed: randomSigned(0.00022, 0.0009),
+			spinClass: spinClasses[Math.floor(Math.random() * spinClasses.length)],
+			spinReverse: Math.random() < 0.5,
+			spinDelay: randomBetween(-20000, 0),
 			visibility: seedAlive ? 1 : 0,
 			status: seedAlive ? 'alive' : 'dead',
 			spawnMs: randomBetween(900, 1900),
 			decayMs: randomRange(naturalDecayMs),
+			spawnDoneAt: 0,
+			deathAt: 0,
 			wasOnscreen: false,
 			edgePuffTransition: 0,
 		};
 	}
 
-	function updateCells(elapsedMs: number): void {
+	function updateCellLife(now: number): void {
+		if (now < nextCellLifeTickAt) return;
+		nextCellLifeTickAt = now + cellLifeTickMs;
+		puffs = puffs.filter(puff => now < puff.removeAt);
+
 		const total = Math.max(1, cells.length);
 		const living = cells.filter(cell => cell.status === 'alive' || cell.status === 'spawning').length;
 		const occupancy = living / total;
+		const tickSeconds = cellLifeTickMs / 1000;
 		const spawnPressure = Math.max(
 			0,
 			(backgroundConfig.targetAliveRatio - occupancy) / backgroundConfig.targetAliveRatio,
@@ -307,23 +303,15 @@
 		);
 
 		for (const cell of cells) {
-			if (cell.status === 'alive' && directionState.phase === 'cruise') {
-				cell.spinPhase += cell.spinSpeed * elapsedMs;
-			}
-
 			if (cell.status === 'spawning') {
-				cell.visibility = Math.min(1, cell.visibility + elapsedMs / cell.spawnMs);
-				if (cell.visibility >= 1) cell.status = 'alive';
+				if (now >= cell.spawnDoneAt) cell.status = 'alive';
 			} else if (cell.status === 'dying') {
-				cell.visibility = Math.max(0, cell.visibility - elapsedMs / cell.decayMs);
-				if (cell.visibility <= 0) cell.status = 'dead';
+				if (now >= cell.deathAt) killCell(cell);
 			} else if (cell.status === 'dead') {
-				if (Math.random() < (0.04 + spawnPressure * 1.4) * (elapsedMs / 1000)) spawnCell(cell);
-			} else if (Math.random() < (0.012 + decayPressure * 0.52) * (elapsedMs / 1000)) {
+				if (Math.random() < (0.04 + spawnPressure * 1.4) * tickSeconds) spawnCell(cell);
+			} else if (Math.random() < (0.012 + decayPressure * 0.52) * tickSeconds) {
 				fadeCell(cell);
 			}
-
-			cell.rotation = directionState.displayAngle + cell.spinPhase * spinWeight();
 		}
 	}
 
@@ -331,20 +319,26 @@
 		cell.char = chooseGlyph();
 		cell.opacity = randomBetween(0.16, 0.46);
 		cell.scale = glyphScale(cell.char);
-		cell.spinPhase = 0;
-		cell.spinSpeed = randomSigned(0.00022, 0.0009);
+		cell.spinClass = spinClasses[Math.floor(Math.random() * spinClasses.length)];
+		cell.spinReverse = Math.random() < 0.5;
+		cell.spinDelay = randomBetween(-20000, 0);
 		cell.spawnMs = randomBetween(900, 1900);
-		cell.visibility = 0;
+		cell.decayMs = randomRange(naturalDecayMs);
+		cell.spawnDoneAt = performance.now() + cell.spawnMs;
+		cell.deathAt = 0;
+		cell.visibility = 1;
 		cell.status = 'spawning';
 	}
 
 	function fadeCell(cell: GridCell): void {
 		if (cell.status !== 'alive') return;
 
-		cell.visibility = Math.min(cell.visibility, naturalDecayVisibility);
+		cell.visibility = 0;
 		cell.decayMs = randomRange(naturalDecayMs);
+		cell.deathAt = performance.now() + cell.decayMs;
 		cell.status = 'dying';
-		spawnSmoke(cell.x, cell.y, 6, 0.48, 0.7, 1);
+		const point = cellCenter(cell);
+		spawnSmoke(point.x, point.y, 6, 0.48, 0.7);
 	}
 
 	function popCell(key: string, event: PointerEvent): void {
@@ -353,9 +347,16 @@
 		const cell = cells.find(item => item.key === key);
 		if (!cell || cell.status === 'dead') return;
 
-		spawnSmoke(cell.x, cell.y, 18, 1.35, 0.46, 1);
+		const point = cellCenter(cell);
+		spawnSmoke(point.x, point.y, 18, 1.35, 0.46);
+		killCell(cell);
+	}
+
+	function killCell(cell: GridCell): void {
 		cell.visibility = 0;
 		cell.status = 'dead';
+		cell.spawnDoneAt = 0;
+		cell.deathAt = 0;
 	}
 
 	function updateSpacing(now: number): void {
@@ -367,6 +368,7 @@
 
 		const progress = smoothProgress((now - spacingState.startedAt) / spacingState.duration);
 		spacingState.current = spacingState.from + (spacingState.target - spacingState.from) * progress;
+		wrapGridShift();
 		if (progress >= 1) {
 			spacingState.current = spacingState.target;
 			spacingState.active = false;
@@ -374,7 +376,7 @@
 		}
 	}
 
-	function updateDirection(now: number, elapsedMs: number, width: number, height: number): void {
+	function updateDirection(now: number): void {
 		if (directionState.phase === 'cruise' && now >= directionState.nextChangeAt) {
 			startDirectionChange(now);
 		}
@@ -412,56 +414,113 @@
 			directionState.displayAngle = directionState.angle;
 			directionState.speed = backgroundConfig.targetSpeed;
 		}
+	}
 
+	function updateGridMotion(elapsedMs: number): void {
 		if (directionState.phase !== 'turning') {
-			const metrics = getGridMetrics(width, height, spacingState.current);
-			flowPhaseX = wrapUnit(
-				flowPhaseX + (Math.cos(directionState.angle) * directionState.speed * elapsedMs) / metrics.spanX,
-			);
-			flowPhaseY = wrapUnit(
-				flowPhaseY + (Math.sin(directionState.angle) * directionState.speed * elapsedMs) / metrics.spanY,
-			);
+			gridShiftX += Math.cos(directionState.angle) * directionState.speed * elapsedMs;
+			gridShiftY += Math.sin(directionState.angle) * directionState.speed * elapsedMs;
+			wrapGridShift();
 		}
 	}
 
-	function spawnSmoke(x: number, y: number, count: number, intensity: number, ttlScale: number, flowFollow = 1): void {
+	function applyGridStyle(): void {
+		if (!letterGridElement) return;
+		letterGridElement.style.width = `${gridColumns * spacingState.current}px`;
+		letterGridElement.style.height = `${gridRows * spacingState.current}px`;
+		letterGridElement.style.gridTemplateColumns = `repeat(${gridColumns}, var(--grid-spacing))`;
+		letterGridElement.style.gridTemplateRows = `repeat(${gridRows}, var(--grid-spacing))`;
+		letterGridElement.style.transform = `translate3d(${gridOffsetX()}px, ${gridOffsetY()}px, 0)`;
+	}
+
+	function wrapGridShift(): void {
+		const spacing = spacingState.current;
+		let columnShift = 0;
+		let rowShift = 0;
+
+		while (gridShiftX >= spacing) {
+			gridShiftX -= spacing;
+			columnShift += 1;
+		}
+		while (gridShiftX < 0) {
+			gridShiftX += spacing;
+			columnShift -= 1;
+		}
+		while (gridShiftY >= spacing) {
+			gridShiftY -= spacing;
+			rowShift += 1;
+		}
+		while (gridShiftY < 0) {
+			gridShiftY += spacing;
+			rowShift -= 1;
+		}
+
+		if (columnShift || rowShift) {
+			shiftCells(columnShift, rowShift);
+			shiftPuffs(columnShift * spacing, rowShift * spacing);
+		}
+	}
+
+	function shiftCells(columnShift: number, rowShift: number): void {
+		if (!cells.length || gridColumns <= 0 || gridRows <= 0) return;
+
+		const previous = new Map(cells.map(cell => [cell.key, cell]));
+		cells = cells.map(slot => {
+			const sourceColumn = wrapIndex(slot.column - columnShift, gridColumns);
+			const sourceRow = wrapIndex(slot.row - rowShift, gridRows);
+			const source = previous.get(`${sourceColumn}:${sourceRow}`) ?? slot;
+			return {
+				...slot,
+				char: source.char,
+				opacity: source.opacity,
+				scale: source.scale,
+				spinClass: source.spinClass,
+				spinReverse: source.spinReverse,
+				spinDelay: source.spinDelay,
+				visibility: source.visibility,
+				status: source.status,
+				spawnMs: source.spawnMs,
+				decayMs: source.decayMs,
+				spawnDoneAt: source.spawnDoneAt,
+				deathAt: source.deathAt,
+				wasOnscreen: source.wasOnscreen,
+				edgePuffTransition: source.edgePuffTransition,
+			};
+		});
+	}
+
+	function shiftPuffs(dx: number, dy: number): void {
+		if (puffs.length === 0) return;
+		puffs = puffs.map(puff => ({
+			...puff,
+			x: puff.x + dx,
+			y: puff.y + dy,
+		}));
+	}
+
+	function spawnSmoke(x: number, y: number, count: number, intensity: number, ttlScale: number): void {
+		const now = performance.now();
 		const nextPuffs = Array.from({ length: count }, () => {
 			const angle = Math.random() * Math.PI * 2;
-			const speed = randomBetween(0.22, 0.78) * intensity;
+			const distance = randomBetween(9, 28) * intensity;
+			const scale = randomBetween(0.42, 1.1) * intensity;
+			const ttl = randomBetween(760, 1500) * ttlScale;
 			return {
 				id: (smokeId += 1),
 				x,
 				y,
-				vx: Math.cos(angle) * speed,
-				vy: Math.sin(angle) * speed,
+				dx: Math.cos(angle) * distance,
+				dy: Math.sin(angle) * distance,
 				rotation: Math.random() * 360,
-				spin: randomBetween(-0.28, 0.28),
-				opacity: 0,
-				baseOpacity: randomBetween(0.16, 0.5) * intensity,
-				scale: randomBetween(0.42, 1.1) * intensity,
-				growth: randomBetween(0.008, 0.024) * intensity,
-				age: 0,
-				ttl: randomBetween(760, 1500) * ttlScale,
-				flowFollow: flowFollow * randomBetween(0.72, 1.18),
+				endRotation: randomBetween(-24, 24),
+				opacity: randomBetween(0.16, 0.5) * intensity,
+				scale,
+				endScale: scale + randomBetween(0.34, 0.78) * intensity,
+				ttl,
+				removeAt: now + ttl,
 			};
 		});
 		puffs = [...puffs, ...nextPuffs].slice(-backgroundConfig.maxPuffs);
-	}
-
-	function updatePuffs(elapsedMs: number): void {
-		const dt = elapsedMs / 16.67;
-		const flowX = Math.cos(directionState.angle) * directionState.speed * elapsedMs;
-		const flowY = Math.sin(directionState.angle) * directionState.speed * elapsedMs;
-		for (const puff of puffs) {
-			puff.age += elapsedMs;
-			const progress = Math.min(1, puff.age / puff.ttl);
-			puff.x += puff.vx * dt + flowX * puff.flowFollow;
-			puff.y += puff.vy * dt + flowY * puff.flowFollow;
-			puff.rotation += puff.spin * dt;
-			puff.scale += puff.growth * dt;
-			puff.opacity = puff.baseOpacity * Math.sin(progress * Math.PI) * (1 - progress * 0.34);
-		}
-		puffs = puffs.filter(puff => puff.age < puff.ttl);
 	}
 
 	function createDirectionState(now: number): DirectionState {
@@ -524,14 +583,6 @@
 		return options[Math.floor(Math.random() * options.length)] ?? backgroundConfig.initialSpacing;
 	}
 
-	function spinWeight(): number {
-		if (directionState.phase === 'cruise') return 1;
-		if (directionState.phase === 'decelerating' || directionState.phase === 'accelerating') {
-			return clamp(directionState.speed / Math.max(0.0001, backgroundConfig.targetSpeed), 0, 1);
-		}
-		return 0;
-	}
-
 	function smoothProgress(value: number): number {
 		const progress = Math.min(1, Math.max(0, value));
 		return progress * progress * (3 - 2 * progress);
@@ -545,45 +596,90 @@
 		return Math.atan2(Math.sin(to - from), Math.cos(to - from));
 	}
 
-	function wrapCoordinate(value: number, max: number): number {
+	function wrapIndex(value: number, max: number): number {
 		return ((value % max) + max) % max;
 	}
 
-	function wrapUnit(value: number): number {
-		return wrapCoordinate(value, 1);
-	}
-
-	function getGridMetrics(
-		width: number,
-		height: number,
-		spacing: number,
-	): { columns: number; rows: number; spacing: number; spanX: number; spanY: number } {
-		const safeSpacing = Math.max(minimumGridSpacing, spacing);
-		gridColumns = Math.max(gridColumns, Math.ceil(width / minimumGridSpacing) + 4);
-		gridRows = Math.max(gridRows, Math.ceil(height / minimumGridSpacing) + 4);
+	function getGridMetrics(width: number, height: number): { columns: number; rows: number } {
+		const columns = Math.max(gridColumns, Math.ceil(width / minimumGridSpacing) + gridPaddingCells * 2);
+		const rows = Math.max(gridRows, Math.ceil(height / minimumGridSpacing) + gridPaddingCells * 2);
 		return {
-			columns: gridColumns,
-			rows: gridRows,
-			spacing: safeSpacing,
-			spanX: gridColumns * safeSpacing,
-			spanY: gridRows * safeSpacing,
+			columns,
+			rows,
 		};
 	}
 
-	function gridX(column: number, metrics: ReturnType<typeof getGridMetrics>): number {
-		return wrapCoordinate(column * metrics.spacing + flowPhaseX * metrics.spanX, metrics.spanX) - metrics.spacing * 2;
+	function gridOffsetX(): number {
+		return -spacingState.current * gridPaddingCells + gridShiftX;
 	}
 
-	function gridY(row: number, metrics: ReturnType<typeof getGridMetrics>): number {
-		return wrapCoordinate(row * metrics.spacing + flowPhaseY * metrics.spanY, metrics.spanY) - metrics.spacing * 2;
+	function gridOffsetY(): number {
+		return -spacingState.current * gridPaddingCells + gridShiftY;
 	}
 
-	function isNearViewport(x: number, y: number, width: number, height: number, spacing: number): boolean {
+	function cellCenter(cell: GridCell): { x: number; y: number } {
+		const spacing = spacingState.current;
+		return {
+			x: (cell.column + 0.5) * spacing,
+			y: (cell.row + 0.5) * spacing,
+		};
+	}
+
+	function cellScreenPoint(cell: GridCell): { x: number; y: number } {
+		const point = cellCenter(cell);
+		return {
+			x: gridOffsetX() + point.x,
+			y: gridOffsetY() + point.y,
+		};
+	}
+
+	function screenToGrid(x: number, y: number): { x: number; y: number } {
+		return {
+			x: x - gridOffsetX(),
+			y: y - gridOffsetY(),
+		};
+	}
+
+	function isNearViewportPoint(x: number, y: number, width: number, height: number, spacing: number): boolean {
 		const margin = spacing * 0.7;
 		return x > -margin && x < width + margin && y > -margin && y < height + margin;
 	}
 
-	function outsidePointNear(
+	function cellIsNearViewport(cell: GridCell): boolean {
+		if (typeof window === 'undefined') return true;
+		const point = cellScreenPoint(cell);
+		return isNearViewportPoint(point.x, point.y, window.innerWidth, window.innerHeight, spacingState.current);
+	}
+
+	function captureOnscreenState(): void {
+		for (const cell of cells) {
+			cell.wasOnscreen = cellIsNearViewport(cell);
+			cell.edgePuffTransition = 0;
+		}
+	}
+
+	function checkSpacingExpansionEdges(): void {
+		if (!spacingState.active || spacingState.target <= spacingState.from || typeof window === 'undefined') return;
+
+		const width = window.innerWidth;
+		const height = window.innerHeight;
+		for (const cell of cells) {
+			if (cell.status === 'dead') continue;
+
+			const point = cellScreenPoint(cell);
+			const onscreen = isNearViewportPoint(point.x, point.y, width, height, spacingState.current);
+			if (cell.wasOnscreen && !onscreen && cell.edgePuffTransition !== spacingState.transitionId) {
+				const edgePoint = outsidePointNearViewport(point.x, point.y, width, height, spacingState.current);
+				const gridPoint = screenToGrid(edgePoint.x, edgePoint.y);
+				cell.edgePuffTransition = spacingState.transitionId;
+				spawnSmoke(gridPoint.x, gridPoint.y, 4, 0.34, 0.78);
+				killCell(cell);
+			}
+			cell.wasOnscreen = onscreen;
+		}
+	}
+
+	function outsidePointNearViewport(
 		x: number,
 		y: number,
 		width: number,
@@ -608,10 +704,6 @@
 
 	function randomRange(range: readonly [number, number]): number {
 		return randomBetween(range[0], range[1]);
-	}
-
-	function randomSigned(min: number, max: number): number {
-		return randomBetween(min, max) * (Math.random() < 0.5 ? -1 : 1);
 	}
 
 	function randomInt(min: number, max: number): number {
@@ -696,6 +788,7 @@
 		}
 		if (!reserveStateChange(now, 'spacing')) return;
 
+		captureOnscreenState();
 		spacingState.from = spacingState.current;
 		spacingState.target = nextSpacing;
 		spacingState.startedAt = now;
@@ -807,25 +900,33 @@
 
 <QueryClientProvider client={queryClient}>
 	<div class="app-scene">
-		<div class="letter-field" aria-hidden="true">
-			{#each cells as cell (cell.key)}
-				{#if cell.visibility > 0}
+		<div
+			class="letter-field"
+			data-spin={directionState.phase === 'cruise' ? 'running' : 'paused'}
+			aria-hidden="true"
+			style={`--grid-spacing:${spacingState.current}px; --grid-angle:${directionState.displayAngle}rad;`}
+		>
+			<div bind:this={letterGridElement} class="letter-grid">
+				{#each cells as cell (cell.key)}
+					{#if cell.status !== 'dead'}
+						<span
+							class={`drift-letter is-${cell.status} ${cell.spinClass} ${cell.spinReverse ? 'spin-reverse' : ''}`}
+							data-cell={cell.key}
+							onpointerdown={event => popCell(cell.key, event)}
+							style={`grid-column:${cell.column + 1}; grid-row:${cell.row + 1}; --o:${cell.opacity}; --s:${cell.scale}; --b:${cell.visibility}; --spawn-ms:${cell.spawnMs}ms; --decay-ms:${cell.decayMs}ms; --spin-delay:${cell.spinDelay}ms;`}
+						>
+							<span class="letter-glyph">{cell.char}</span>
+						</span>
+					{/if}
+				{/each}
+
+				{#each puffs as puff (puff.id)}
 					<span
-						class="drift-letter"
-						data-cell={cell.key}
-						onpointerdown={event => popCell(cell.key, event)}
-						style={`--x:${cell.x}px; --y:${cell.y}px; --r:${cell.rotation}rad; --o:${cell.opacity}; --s:${cell.scale}; --b:${cell.visibility};`}
-					>
-						{cell.char}
-					</span>
-				{/if}
-			{/each}
-			{#each puffs as puff (puff.id)}
-				<span
-					class="smoke-puff"
-					style={`--x:${puff.x}px; --y:${puff.y}px; --r:${puff.rotation}deg; --o:${puff.opacity}; --s:${puff.scale};`}
-				></span>
-			{/each}
+						class="smoke-puff"
+						style={`--x:${puff.x}px; --y:${puff.y}px; --dx:${puff.dx}px; --dy:${puff.dy}px; --r:${puff.rotation}deg; --er:${puff.endRotation}deg; --o:${puff.opacity}; --s:${puff.scale}; --es:${puff.endScale}; --ttl:${puff.ttl}ms;`}
+					></span>
+				{/each}
+			</div>
 		</div>
 
 		<section class="content-card">
