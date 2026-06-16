@@ -201,6 +201,8 @@ async function handleApi(request: Request, url: URL): Promise<Response> {
 				actorId: playerIdForUser(user.id),
 				userId: user.id,
 				name: user.name,
+				color: user.color,
+				icon: user.icon,
 			});
 			return json(roomResponse(code, user.id, state));
 		}

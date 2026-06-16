@@ -4,9 +4,14 @@
 	import PlayerAvatar from '$lib/PlayerAvatar.svelte';
 	import { goto, onNavigate } from '$app/navigation';
 	import { page } from '$app/state';
-	import { loadStoredUser } from '$lib/api';
+	import { leaveRoomForStoredUser, loadStoredUser } from '$lib/api';
+	import { parseRoomCode } from '$lib/roomCodes';
 	import { LS, storageKeys } from '$lib/storage';
 	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
+	import DoorOpen from '@lucide/svelte/icons/door-open';
+	import Moon from '@lucide/svelte/icons/moon';
+	import Sun from '@lucide/svelte/icons/sun';
+	import UserRound from '@lucide/svelte/icons/user-round';
 	import {
 		DEFAULT_PLAYER_COLOR,
 		DEFAULT_PLAYER_ICON,
@@ -42,12 +47,15 @@
 	let playerIcon = $state<PlayerIconId>(LS.get(storageKeys.playerIcon, DEFAULT_PLAYER_ICON));
 	let supportsViewTransitions = $state(false);
 	let isViewTransitioning = $state(false);
-	let isSettingsOpen = $state(false);
+	let settingsMenuState = $state<'closed' | 'open' | 'closing'>('closed');
+	let settingsCloseTimer: ReturnType<typeof setTimeout> | undefined;
 	let manualViewTransition = false;
 	let profileCheckId = 0;
 	const activePath = $derived(page.url.pathname);
 	const activeRoute = $derived(`${page.url.pathname}${page.url.search}${page.url.hash}`);
+	const activeRoomCode = $derived(roomCodeFromPath(activePath));
 	const isBareScreen = $derived(activePath === '/' || activePath === '/setup');
+	const isRoomScreen = $derived(Boolean(activeRoomCode));
 	const setupHref = $derived(`/setup?returnTo=${encodeURIComponent(activeRoute)}`);
 	const displayedPlayerName = $derived(playerName.trim() || 'Unknown');
 	const displayedPlayerColor = $derived(
@@ -88,12 +96,12 @@
 			void navigateWithViewTransition(anchor.href);
 		};
 		const handleOutsidePointer = (event: PointerEvent) => {
-			if (!isSettingsOpen || !(event.target instanceof Element)) return;
+			if (settingsMenuState === 'closed' || !(event.target instanceof Element)) return;
 			if (event.target.closest('.settings-menu-wrap')) return;
-			isSettingsOpen = false;
+			closeSettings();
 		};
 		const handleEscape = (event: KeyboardEvent) => {
-			if (event.key === 'Escape') isSettingsOpen = false;
+			if (event.key === 'Escape') closeSettings();
 		};
 
 		document.addEventListener('click', handleLinkClick, true);
@@ -102,6 +110,7 @@
 
 		return () => {
 			stopStorage();
+			if (settingsCloseTimer) clearTimeout(settingsCloseTimer);
 			document.removeEventListener('click', handleLinkClick, true);
 			document.removeEventListener('pointerdown', handleOutsidePointer, true);
 			document.removeEventListener('keydown', handleEscape);
@@ -155,7 +164,43 @@
 
 	function toggleTheme() {
 		theme = theme === 'dark' ? 'light' : 'dark';
-		isSettingsOpen = false;
+		closeSettings();
+	}
+
+	function openSettings() {
+		if (settingsCloseTimer) clearTimeout(settingsCloseTimer);
+		settingsMenuState = 'open';
+	}
+
+	function closeSettings() {
+		if (settingsMenuState === 'closed') return;
+		if (settingsCloseTimer) clearTimeout(settingsCloseTimer);
+		settingsMenuState = 'closing';
+		settingsCloseTimer = setTimeout(() => {
+			settingsMenuState = 'closed';
+		}, 240);
+	}
+
+	function toggleSettings() {
+		if (settingsMenuState === 'open') closeSettings();
+		else openSettings();
+	}
+
+	async function abandonSeance() {
+		const roomCode = activeRoomCode;
+		if (!roomCode) return;
+
+		closeSettings();
+		try {
+			await leaveRoomForStoredUser(roomCode);
+		} catch {}
+		LS.set({ [storageKeys.currentRoom]: null });
+		await goto(`/lobby${page.url.search}${page.url.hash}`, { noScroll: true });
+	}
+
+	function roomCodeFromPath(path: string): string | null {
+		const match = /^\/room\/([A-Za-z]{4})$/.exec(path);
+		return parseRoomCode(match?.[1]);
 	}
 
 	function getAnchor(target: EventTarget | null): HTMLAnchorElement | null {
@@ -216,10 +261,21 @@
 	}
 
 	function beginViewTransition(fromPath?: string, toPath?: string) {
-		if (fromPath === '/' || toPath === '/' || fromPath === '/setup' || toPath === '/setup') {
+		if (
+			fromPath === '/' ||
+			toPath === '/' ||
+			fromPath === '/setup' ||
+			toPath === '/setup' ||
+			isRoomPath(fromPath) ||
+			isRoomPath(toPath)
+		) {
 			document.documentElement.dataset.logoTransition = 'letters';
 		}
 		isViewTransitioning = true;
+	}
+
+	function isRoomPath(path: string | undefined): boolean {
+		return Boolean(path && roomCodeFromPath(path));
 	}
 
 	function endViewTransition() {
@@ -235,18 +291,22 @@
 		{#if isBareScreen}
 			{@render children()}
 		{:else}
-			<div class="screen-shell">
+			<div class:room-shell={isRoomScreen} class="screen-shell">
 				<header class="screen-top">
-					<a class="top-logo-link" href={setupHref} aria-label="Edit profile">
-						<PhantomLogo compact textOnly />
-					</a>
+					{#if activeRoomCode}
+						<div class="room-code-mark" aria-label={`Room ${activeRoomCode}`}>{activeRoomCode}</div>
+					{:else}
+						<a class="top-logo-link" href={setupHref} aria-label="Edit profile">
+							<PhantomLogo compact textOnly />
+						</a>
+					{/if}
 					<div class="screen-actions">
 						<div class="settings-menu-wrap">
 							<button
-								aria-expanded={isSettingsOpen}
+								aria-expanded={settingsMenuState === 'open'}
 								aria-haspopup="menu"
 								class="user-profile-trigger"
-								onclick={() => (isSettingsOpen = !isSettingsOpen)}
+								onclick={toggleSettings}
 								type="button"
 							>
 								<span class="user-name">{displayedPlayerName}</span>
@@ -257,26 +317,42 @@
 								/>
 							</button>
 
-							{#if isSettingsOpen}
-								<div class="settings-menu" role="menu">
+							{#if settingsMenuState !== 'closed'}
+								<div class:closing={settingsMenuState === 'closing'} class="settings-menu" role="menu">
 									<button onclick={toggleTheme} role="menuitem" type="button">
-										Toggle {theme === 'dark' ? 'Light' : 'Dark'} mode
+										{#if theme === 'dark'}
+											<Sun size={17} strokeWidth={2.25} />
+										{:else}
+											<Moon size={17} strokeWidth={2.25} />
+										{/if}
+										<span>Toggle {theme === 'dark' ? 'Light' : 'Dark'} mode</span>
 									</button>
-									<a href={setupHref} role="menuitem">Change Yourself</a>
+									<a href={setupHref} onclick={closeSettings} role="menuitem">
+										<UserRound size={17} strokeWidth={2.25} />
+										<span>Change Yourself</span>
+									</a>
+									{#if activeRoomCode}
+										<button onclick={abandonSeance} role="menuitem" type="button">
+											<DoorOpen size={17} strokeWidth={2.25} />
+											<span>Abandon séance</span>
+										</button>
+									{/if}
 								</div>
 							{/if}
 						</div>
 					</div>
 				</header>
 
-				<section class="content-card">
-					<nav class="screen-nav" aria-label="Dummy screens">
-						{#each navItems as item}
-							<a href={item.href} aria-current={isActive(item.href) ? 'page' : undefined}>
-								{item.label}
-							</a>
-						{/each}
-					</nav>
+				<section class:room-card={isRoomScreen} class="content-card">
+					{#if !isRoomScreen}
+						<nav class="screen-nav" aria-label="Screens">
+							{#each navItems as item}
+								<a href={item.href} aria-current={isActive(item.href) ? 'page' : undefined}>
+									{item.label}
+								</a>
+							{/each}
+						</nav>
+					{/if}
 
 					{#key activePath}
 						<div class="route-frame">
@@ -284,6 +360,12 @@
 						</div>
 					{/key}
 				</section>
+
+				{#if activeRoomCode}
+					<a class="room-bottom-logo" href={setupHref} aria-label="Edit profile">
+						<PhantomLogo compact textOnly />
+					</a>
+				{/if}
 			</div>
 		{/if}
 	</div>

@@ -53,6 +53,8 @@ export interface RoomMember {
 	id: PlayerId;
 	userId: number;
 	name: string;
+	color: PlayerColorId;
+	icon: PlayerIconId;
 	team: Team;
 	role: PlayerRole;
 }
@@ -71,7 +73,7 @@ export interface OnlineRoomState {
 }
 
 export type OnlineRoomAction =
-	| { type: 'join'; actorId: PlayerId; userId: number; name: string }
+	| { type: 'join'; actorId: PlayerId; userId: number; name: string; color?: string | null; icon?: string | null }
 	| { type: 'leave'; actorId: PlayerId }
 	| { type: 'set-name'; actorId: PlayerId; name: string }
 	| { type: 'set-seat'; actorId: PlayerId; team: Team; role: PlayerRole }
@@ -97,8 +99,16 @@ export interface RoomViewState {
 
 export interface RoomDirectoryListing {
 	code: string;
-	players: string[];
+	playerCount: number;
+	players: RoomDirectoryPlayer[];
 	phase: RoomPhase;
+}
+
+export interface RoomDirectoryPlayer {
+	id: PlayerId;
+	name: string;
+	color: PlayerColorId;
+	icon: PlayerIconId;
 }
 
 export interface RoomResponse {
@@ -184,6 +194,8 @@ export function buildRoomMembers(
 			return {
 				...member,
 				name,
+				color: sanitizePlayerColor(member.color),
+				icon: sanitizePlayerIcon(member.icon),
 				isReady: ready.has(member.id),
 			};
 		});
@@ -193,13 +205,23 @@ export function selectRoomDirectoryListings(
 	rooms: ReadonlyArray<{ code: string; state: OnlineRoomState }>,
 ): RoomDirectoryListing[] {
 	return rooms
-		.map(room => ({
-			code: room.code,
-			players: buildRoomMembers(room.state.members, room.state.readyPlayerIds)
+		.map(room => {
+			const players = buildRoomMembers(room.state.members, room.state.readyPlayerIds)
 				.filter(member => member.role !== 'spectator')
-				.map(member => member.name),
-			phase: room.state.phase,
-		}))
+				.map(member => ({
+					id: member.id,
+					name: member.name,
+					color: member.color,
+					icon: member.icon,
+				}));
+
+			return {
+				code: room.code,
+				playerCount: players.length,
+				players,
+				phase: room.state.phase,
+			};
+		})
 		.sort((a, b) => a.code.localeCompare(b.code));
 }
 
@@ -233,10 +255,14 @@ export function applyOnlineRoomAction(state: OnlineRoomState, action: OnlineRoom
 		if (action.actorId !== playerIdForUser(action.userId)) return false;
 
 		const name = sanitizePlayerName(action.name) ?? `Player ${action.userId}`;
+		const color = sanitizePlayerColor(action.color);
+		const icon = sanitizePlayerIcon(action.icon);
 		const existing = state.members.find(member => member.userId === action.userId);
 		if (existing) {
-			if (existing.name === name) return false;
+			if (existing.name === name && existing.color === color && existing.icon === icon) return false;
 			existing.name = name;
+			existing.color = color;
+			existing.icon = icon;
 			clearReady(state);
 			return true;
 		}
@@ -245,6 +271,8 @@ export function applyOnlineRoomAction(state: OnlineRoomState, action: OnlineRoom
 			id: action.actorId,
 			userId: action.userId,
 			name,
+			color,
+			icon,
 			...defaultSeatFor(state.members),
 		});
 		clearReady(state);
