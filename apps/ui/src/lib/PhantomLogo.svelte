@@ -4,17 +4,19 @@
 	const letters = Array.from('Phantom Ink').map((char, index) => ({
 		char,
 		index,
-		style:
-			char === ' '
-				? `--letter-index: ${index}`
-				: `--letter-index: ${index}; view-transition-name: phantom-logo-letter-${index}`,
+		style: `--letter-index: ${index}`,
 	}));
 </script>
 
 <div class:compact class:text-only={textOnly} class="phantom-logo" role="img" aria-label="Phantom Ink">
 	<span class="logo-text" aria-hidden="true">
 		{#each letters as letter}
-			<span class:logo-space={letter.char === ' '} class="logo-letter" style={letter.style}>
+			<span
+				class:logo-space={letter.char === ' '}
+				class="logo-letter"
+				data-letter-index={letter.index}
+				style={letter.style}
+			>
 				{letter.char === ' ' ? '\u00a0' : letter.char}
 			</span>
 		{/each}
@@ -127,6 +129,46 @@
 	.logo-space {
 		width: 0.34em;
 		-webkit-text-stroke: 0;
+	}
+
+	:global(html[data-logo-transition='letters']) .logo-letter[data-letter-index='0'] {
+		view-transition-name: phantom-logo-letter-0;
+	}
+
+	:global(html[data-logo-transition='letters']) .logo-letter[data-letter-index='1'] {
+		view-transition-name: phantom-logo-letter-1;
+	}
+
+	:global(html[data-logo-transition='letters']) .logo-letter[data-letter-index='2'] {
+		view-transition-name: phantom-logo-letter-2;
+	}
+
+	:global(html[data-logo-transition='letters']) .logo-letter[data-letter-index='3'] {
+		view-transition-name: phantom-logo-letter-3;
+	}
+
+	:global(html[data-logo-transition='letters']) .logo-letter[data-letter-index='4'] {
+		view-transition-name: phantom-logo-letter-4;
+	}
+
+	:global(html[data-logo-transition='letters']) .logo-letter[data-letter-index='5'] {
+		view-transition-name: phantom-logo-letter-5;
+	}
+
+	:global(html[data-logo-transition='letters']) .logo-letter[data-letter-index='6'] {
+		view-transition-name: phantom-logo-letter-6;
+	}
+
+	:global(html[data-logo-transition='letters']) .logo-letter[data-letter-index='8'] {
+		view-transition-name: phantom-logo-letter-8;
+	}
+
+	:global(html[data-logo-transition='letters']) .logo-letter[data-letter-index='9'] {
+		view-transition-name: phantom-logo-letter-9;
+	}
+
+	:global(html[data-logo-transition='letters']) .logo-letter[data-letter-index='10'] {
+		view-transition-name: phantom-logo-letter-10;
 	}
 
 	.text-only .logo-text {

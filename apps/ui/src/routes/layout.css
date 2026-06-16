@@ -157,8 +157,13 @@ button {
 }
 
 ::view-transition-group(root) {
-	animation-duration: 360ms;
-	animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+	animation-duration: 1ms;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+	animation: none;
+	mix-blend-mode: normal;
 }
 
 ::view-transition-group(phantom-logo-art) {
@@ -177,16 +182,16 @@ button {
 
 ::view-transition-group(content-card) {
 	z-index: 2;
-	animation-duration: 540ms;
+	animation-duration: 420ms;
 	animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 ::view-transition-old(content-card) {
-	animation: card-out 260ms ease both;
+	animation: card-out 140ms ease both;
 }
 
 ::view-transition-new(content-card) {
-	animation: card-in 440ms 70ms cubic-bezier(0.22, 1, 0.36, 1) both;
+	animation: card-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 html[data-logo-transition='letters']::view-transition-group(phantom-logo-letter-0),
@@ -307,9 +312,9 @@ html[data-logo-transition='letters']::view-transition-image-pair(phantom-logo-le
 
 @keyframes card-out {
 	to {
-		opacity: 0.35;
-		filter: blur(0.12rem);
-		transform: translateY(0.5rem) scale(0.985);
+		opacity: 0;
+		filter: blur(0.08rem);
+		transform: translateY(0.25rem) scale(0.99);
 	}
 }
 

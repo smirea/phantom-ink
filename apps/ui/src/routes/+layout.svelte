@@ -2,12 +2,10 @@
 	import BackgroundHost from '$lib/BackgroundHost.svelte';
 	import InkButton from '$lib/InkButton.svelte';
 	import PhantomLogo from '$lib/PhantomLogo.svelte';
-	import { onNavigate } from '$app/navigation';
+	import { goto, onNavigate } from '$app/navigation';
 	import { getStored, setStored, storageKeys } from '$lib/storage';
 	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
 	import { onMount } from 'svelte';
-	import { cubicIn, cubicOut } from 'svelte/easing';
-	import { fade, fly } from 'svelte/transition';
 	import './layout.css';
 
 	let { children } = $props();
@@ -32,31 +30,22 @@
 	let activePath = $state(typeof location === 'undefined' ? '/' : location.pathname);
 	let supportsViewTransitions = $state(false);
 	let isViewTransitioning = $state(false);
+	let manualViewTransition = false;
 	const isStartScreen = $derived(activePath === '/');
-	const fallbackIn = $derived(
-		supportsViewTransitions ? { y: 0, duration: 0 } : { y: 18, duration: 320, easing: cubicOut },
-	);
-	const fallbackOut = $derived(supportsViewTransitions ? { duration: 0 } : { duration: 140, easing: cubicIn });
 
 	onNavigate(navigation => {
-		if (!browser || !supportsViewTransitions) return;
+		if (!browser || !supportsViewTransitions || manualViewTransition) return;
 
 		const fromPath = navigation.from?.url.pathname;
 		const toPath = navigation.to?.url.pathname;
-		if (fromPath === '/' || toPath === '/') {
-			document.documentElement.dataset.logoTransition = 'letters';
-		}
 
-		isViewTransitioning = true;
+		beginViewTransition(fromPath, toPath);
 		return new Promise<void>(resolve => {
 			const transition = document.startViewTransition(async () => {
 				resolve();
 				await navigation.complete;
 			});
-			transition.finished.finally(() => {
-				isViewTransitioning = false;
-				delete document.documentElement.dataset.logoTransition;
-			});
+			transition.finished.finally(endViewTransition);
 		});
 	});
 
@@ -71,6 +60,13 @@
 		const updatePath = () => (activePath = window.location.pathname);
 		const pushState = history.pushState;
 		const replaceState = history.replaceState;
+		const handleLinkClick = (event: MouseEvent) => {
+			const anchor = getAnchor(event.target);
+			if (!anchor || !shouldHandleLink(event, anchor)) return;
+
+			event.preventDefault();
+			void navigateWithViewTransition(anchor.href);
+		};
 
 		history.pushState = function pushStateAndUpdate(...args) {
 			pushState.apply(this, args);
@@ -80,11 +76,13 @@
 			replaceState.apply(this, args);
 			updatePath();
 		};
+		document.addEventListener('click', handleLinkClick, true);
 		window.addEventListener('popstate', updatePath);
 
 		return () => {
 			history.pushState = pushState;
 			history.replaceState = replaceState;
+			document.removeEventListener('click', handleLinkClick, true);
 			window.removeEventListener('popstate', updatePath);
 		};
 	});
@@ -96,6 +94,55 @@
 	function prefersReducedMotion(): boolean {
 		return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 	}
+
+	function getAnchor(target: EventTarget | null): HTMLAnchorElement | null {
+		if (!(target instanceof Element)) return null;
+		return target.closest('a[href]');
+	}
+
+	function shouldHandleLink(event: MouseEvent, anchor: HTMLAnchorElement): boolean {
+		if (!supportsViewTransitions || event.defaultPrevented || event.button !== 0) return false;
+		if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
+		if (anchor.target && anchor.target !== '_self') return false;
+		if (anchor.hasAttribute('download') || anchor.hasAttribute('data-sveltekit-reload')) return false;
+
+		const url = new URL(anchor.href);
+		if (url.origin !== window.location.origin) return false;
+
+		const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+		const next = `${url.pathname}${url.search}${url.hash}`;
+		return current !== next;
+	}
+
+	async function navigateWithViewTransition(href: string) {
+		const url = new URL(href);
+		const next = `${url.pathname}${url.search}${url.hash}`;
+
+		manualViewTransition = true;
+		beginViewTransition(window.location.pathname, url.pathname);
+		const transition = document.startViewTransition(async () => {
+			await goto(next, { noScroll: true });
+		});
+
+		try {
+			await transition.finished;
+		} finally {
+			manualViewTransition = false;
+			endViewTransition();
+		}
+	}
+
+	function beginViewTransition(fromPath?: string, toPath?: string) {
+		if (fromPath === '/' || toPath === '/') {
+			document.documentElement.dataset.logoTransition = 'letters';
+		}
+		isViewTransitioning = true;
+	}
+
+	function endViewTransition() {
+		isViewTransitioning = false;
+		delete document.documentElement.dataset.logoTransition;
+	}
 </script>
 
 <QueryClientProvider client={queryClient}>
@@ -105,7 +152,7 @@
 		{#if isStartScreen}
 			{@render children()}
 		{:else}
-			<div class="screen-shell" in:fly={fallbackIn} out:fade={fallbackOut}>
+			<div class="screen-shell">
 				<header class="screen-top">
 					<a class="top-logo-link" href="/" aria-label="Phantom Ink start">
 						<PhantomLogo compact textOnly />
@@ -125,7 +172,7 @@
 					</nav>
 
 					{#key activePath}
-						<div class="route-frame" in:fly={fallbackIn} out:fade={fallbackOut}>
+						<div class="route-frame">
 							{@render children()}
 						</div>
 					{/key}
