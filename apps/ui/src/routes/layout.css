@@ -73,18 +73,48 @@ button {
 	pointer-events: none;
 }
 
-.letter-field span {
+.drift-letter {
 	position: absolute;
 	left: 0;
 	top: 0;
+	border: 0;
+	background: transparent;
 	color: var(--app-muted);
+	cursor: pointer;
 	font-family: var(--font-mono);
 	font-size: 1.15rem;
 	font-weight: 800;
+	line-height: 1;
 	opacity: var(--o);
+	padding: 0;
+	pointer-events: auto;
 	text-shadow: 0 0 1rem color-mix(in oklab, var(--app-accent) 40%, transparent);
 	transform: translate3d(var(--x), var(--y), 0) rotate(var(--r)) scale(var(--s));
-	transition: opacity 700ms ease;
+	user-select: none;
+	will-change: transform, opacity;
+}
+
+.drift-letter:hover {
+	color: var(--app-accent-strong);
+	text-shadow:
+		0 0 0.75rem color-mix(in oklab, var(--app-accent) 52%, transparent),
+		0 0 1.6rem color-mix(in oklab, var(--app-accent) 24%, transparent);
+}
+
+.smoke-puff {
+	position: absolute;
+	left: 0;
+	top: 0;
+	width: 2.1rem;
+	aspect-ratio: 1;
+	border-radius: 999px;
+	background:
+		radial-gradient(circle, color-mix(in oklab, var(--app-accent-strong) 52%, transparent) 0 18%, transparent 64%),
+		radial-gradient(circle, color-mix(in oklab, var(--app-muted) 42%, transparent) 0 42%, transparent 72%);
+	filter: blur(0.38rem);
+	opacity: var(--o);
+	pointer-events: none;
+	transform: translate3d(var(--x), var(--y), 0) translate(-50%, -50%) rotate(var(--r)) scale(var(--s));
 	will-change: transform, opacity;
 }
 
