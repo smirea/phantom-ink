@@ -327,7 +327,7 @@ export class BackgroundState {
 		document.documentElement.dataset.backgroundDebug = 'ready';
 		window.addEventListener('phantom-ink:background-config', openFromEvent);
 		window.addEventListener('message', openFromMessage);
-		if (new URLSearchParams(window.location.search).has('backgroundConfig')) this.backgroundConfig(true);
+		if (new URLSearchParams(window.location.search).get('debugBackground') === 'true') this.backgroundConfig(true);
 		return () => {
 			if (!root.DEBUG || root.DEBUG.backgroundConfig !== backgroundConfig) return;
 			if (previous) root.DEBUG.backgroundConfig = previous;
