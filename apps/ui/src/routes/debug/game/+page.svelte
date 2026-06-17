@@ -8,6 +8,25 @@
 	import { assign, createActor, setup } from 'xstate';
 
 	type Team = 'sun' | 'moon';
+	type ViewMode = 'act' | 'watch' | 'wait';
+	type RelativeActor = 'currentSpirit' | 'otherSpirit' | 'currentMediums' | 'otherMediums';
+
+	const gameStates = [
+		'start',
+		'setupWord',
+		'mediumsTurn',
+		'eyeHint',
+		'mediumsAsk',
+		'spiritAnswers',
+		'mediumsGetClues',
+		'guessing',
+		'nextTurn',
+		'win',
+		'lose',
+	] as const;
+
+	type GameState = (typeof gameStates)[number];
+	type ActorKey = 'sunSpirit' | 'moonSpirit' | 'sunMediums' | 'moonMediums';
 
 	type BoardEntry = {
 		id: string;
@@ -35,6 +54,7 @@
 		currentTeam: Team;
 		wordCard: WordCard;
 		word: string;
+		debugHold: boolean;
 		discardedQuestionsDeck: Array<QuestionCard['id']>;
 		teams: Record<Team, TeamState>;
 		votes: Array<Record<string, never>>;
@@ -51,10 +71,44 @@
 		| { type: 'pickQuestions'; questionIds: [QuestionCard['id'], QuestionCard['id']] }
 		| { type: 'answer'; questionId: QuestionCard['id']; clue: string }
 		| { type: 'silencio' }
-		| { type: 'getClue' };
+		| { type: 'getClue' }
+		| { type: 'debugSetState'; state: GameState; team: Team }
+		| { type: 'debugSetTeam'; state: GameState; team: Team };
 
 	const teams = ['sun', 'moon'] as const;
+	const actors = ['sunSpirit', 'moonSpirit', 'sunMediums', 'moonMediums'] as const;
 	const turns = range(board.turns);
+	const roleRows: Array<Record<RelativeActor, ViewMode> & { state: GameState }> = [
+		{ state: 'start', currentSpirit: 'wait', otherSpirit: 'wait', currentMediums: 'wait', otherMediums: 'wait' },
+		{ state: 'setupWord', currentSpirit: 'act', otherSpirit: 'act', currentMediums: 'watch', otherMediums: 'watch' },
+		{
+			state: 'mediumsTurn',
+			currentSpirit: 'watch',
+			otherSpirit: 'watch',
+			currentMediums: 'act',
+			otherMediums: 'watch',
+		},
+		{ state: 'eyeHint', currentSpirit: 'watch', otherSpirit: 'watch', currentMediums: 'act', otherMediums: 'watch' },
+		{ state: 'mediumsAsk', currentSpirit: 'watch', otherSpirit: 'watch', currentMediums: 'act', otherMediums: 'watch' },
+		{
+			state: 'spiritAnswers',
+			currentSpirit: 'act',
+			otherSpirit: 'watch',
+			currentMediums: 'watch',
+			otherMediums: 'watch',
+		},
+		{
+			state: 'mediumsGetClues',
+			currentSpirit: 'watch',
+			otherSpirit: 'watch',
+			currentMediums: 'act',
+			otherMediums: 'watch',
+		},
+		{ state: 'guessing', currentSpirit: 'watch', otherSpirit: 'watch', currentMediums: 'act', otherMediums: 'watch' },
+		{ state: 'nextTurn', currentSpirit: 'wait', otherSpirit: 'wait', currentMediums: 'wait', otherMediums: 'wait' },
+		{ state: 'win', currentSpirit: 'wait', otherSpirit: 'wait', currentMediums: 'wait', otherMediums: 'wait' },
+		{ state: 'lose', currentSpirit: 'wait', otherSpirit: 'wait', currentMediums: 'wait', otherMediums: 'wait' },
+	];
 	const config = {
 		questionsInHand: 7,
 		questionsGivenToSpirit: 2,
@@ -158,8 +212,16 @@
 				return updateLastGuess(context, event.letter, true);
 			}),
 			setupNextTurn: assign(({ context }) => ({
-				currentTeam: context.currentTeam === 'sun' ? 'moon' : 'sun',
+				currentTeam: context.debugHold ? context.currentTeam : otherTeam(context.currentTeam),
 			})),
+			debugSetStateContext: assign(({ context, event }) => {
+				if (event.type !== 'debugSetState') return {};
+				return createDebugContext(event.state, event.team || context.currentTeam);
+			}),
+			debugSetTeam: assign(({ event }) => {
+				if (event.type !== 'debugSetTeam') return {};
+				return createDebugContext(event.state, event.team);
+			}),
 		},
 		guards: {
 			hasEyeHint: ({ context }) => hasEyeHint(context),
@@ -176,6 +238,21 @@
 			},
 			gameNotOver: ({ context }) =>
 				context.teams.sun.board.length < board.turns || context.teams.moon.board.length < board.turns,
+			shouldContinueAfterNextTurn: ({ context }) =>
+				!context.debugHold &&
+				(context.teams.sun.board.length < board.turns || context.teams.moon.board.length < board.turns),
+			shouldLoseAfterNextTurn: ({ context }) => !context.debugHold,
+			debugStateStart: ({ event }) => event.type === 'debugSetState' && event.state === 'start',
+			debugStateSetupWord: ({ event }) => event.type === 'debugSetState' && event.state === 'setupWord',
+			debugStateMediumsTurn: ({ event }) => event.type === 'debugSetState' && event.state === 'mediumsTurn',
+			debugStateEyeHint: ({ event }) => event.type === 'debugSetState' && event.state === 'eyeHint',
+			debugStateMediumsAsk: ({ event }) => event.type === 'debugSetState' && event.state === 'mediumsAsk',
+			debugStateSpiritAnswers: ({ event }) => event.type === 'debugSetState' && event.state === 'spiritAnswers',
+			debugStateMediumsGetClues: ({ event }) => event.type === 'debugSetState' && event.state === 'mediumsGetClues',
+			debugStateGuessing: ({ event }) => event.type === 'debugSetState' && event.state === 'guessing',
+			debugStateNextTurn: ({ event }) => event.type === 'debugSetState' && event.state === 'nextTurn',
+			debugStateWin: ({ event }) => event.type === 'debugSetState' && event.state === 'win',
+			debugStateLose: ({ event }) => event.type === 'debugSetState' && event.state === 'lose',
 		},
 	}).createMachine({
 		id: 'phantomInk',
@@ -183,6 +260,20 @@
 		initial: 'start',
 		on: {
 			start: { target: '.setupWord', actions: 'setupGame' },
+			debugSetTeam: { actions: 'debugSetTeam' },
+			debugSetState: [
+				{ guard: 'debugStateStart', target: '.start', actions: 'debugSetStateContext' },
+				{ guard: 'debugStateSetupWord', target: '.setupWord', actions: 'debugSetStateContext' },
+				{ guard: 'debugStateMediumsTurn', target: '.mediumsTurn', actions: 'debugSetStateContext' },
+				{ guard: 'debugStateEyeHint', target: '.eyeHint', actions: 'debugSetStateContext' },
+				{ guard: 'debugStateMediumsAsk', target: '.mediumsAsk', actions: 'debugSetStateContext' },
+				{ guard: 'debugStateSpiritAnswers', target: '.spiritAnswers', actions: 'debugSetStateContext' },
+				{ guard: 'debugStateMediumsGetClues', target: '.mediumsGetClues', actions: 'debugSetStateContext' },
+				{ guard: 'debugStateGuessing', target: '.guessing', actions: 'debugSetStateContext' },
+				{ guard: 'debugStateNextTurn', target: '.nextTurn', actions: 'debugSetStateContext' },
+				{ guard: 'debugStateWin', target: '.win', actions: 'debugSetStateContext' },
+				{ guard: 'debugStateLose', target: '.lose', actions: 'debugSetStateContext' },
+			],
 		},
 		states: {
 			start: {},
@@ -234,7 +325,10 @@
 			},
 			nextTurn: {
 				entry: 'setupNextTurn',
-				always: [{ guard: 'gameNotOver', target: 'mediumsTurn' }, { target: 'lose' }],
+				always: [
+					{ guard: 'shouldContinueAfterNextTurn', target: 'mediumsTurn' },
+					{ guard: 'shouldLoseAfterNextTurn', target: 'lose' },
+				],
 			},
 			win: {},
 			lose: {},
@@ -257,8 +351,10 @@
 	let answerQuestionId = $state<QuestionCard['id']>('');
 	let clueText = $state('');
 	let guessLetter = $state('');
+	let activeActor = $state<ActorKey>('sunMediums');
 
 	let game = $derived(snapshot.context);
+	let currentState = $derived(stateValue(snapshot.value));
 	let currentTeam = $derived(game.currentTeam);
 	let currentTeamState = $derived(game.teams[currentTeam]);
 	let currentQuestions = $derived(currentTeamState.questions.map(question).filter(isQuestion));
@@ -268,12 +364,15 @@
 	let currentGuess = $derived(getCurrentGuess(game));
 	let canUseEye = $derived(hasEyeHint(game));
 	let canTakeTurn = $derived(currentTeamState.board.length < board.turns);
+	let activeView = $derived(actorView(currentState, activeActor, currentTeam));
+	let activeActorLabel = $derived(actorLabel(activeActor));
 
 	function createInitialContext(): GameContext {
 		return {
 			currentTeam: 'sun',
 			wordCard: pickOne(words),
 			word: '',
+			debugHold: false,
 			discardedQuestionsDeck: [],
 			teams: {
 				sun: createTeamState([0, 1, 2]),
@@ -294,6 +393,44 @@
 			eyeUsedRows: [],
 			board: [],
 		};
+	}
+
+	function createDebugContext(state: GameState, team: Team): GameContext {
+		let context = {
+			...createInitialContext(),
+			currentTeam: team,
+			debugHold: state === 'nextTurn',
+		};
+
+		if (state !== 'start' && state !== 'setupWord') {
+			context = { ...context, word: firstWord(context.wordCard) };
+		}
+
+		if (state === 'mediumsTurn' || state === 'mediumsAsk') {
+			context = drawQuestionHand(context);
+		}
+
+		if (state === 'eyeHint') {
+			context = seedBoardLength(seedHint(context, otherTeam(team), 'ASH'), team, board[team].hints[0] ?? 0);
+		}
+
+		if (state === 'spiritAnswers') {
+			context = seedSpiritQuestions(context, team);
+		}
+
+		if (state === 'mediumsGetClues') {
+			context = seedHint(context, team, 'DOG');
+		}
+
+		if (state === 'win') {
+			context = seedWin(context, team);
+		}
+
+		if (state === 'lose') {
+			context = seedLose(context);
+		}
+
+		return context;
 	}
 
 	function drawQuestionHand(context: GameContext): GameContext {
@@ -333,6 +470,60 @@
 				[team]: update(context.teams[team]),
 			},
 		};
+	}
+
+	function seedBoardLength(context: GameContext, team: Team, length: number): GameContext {
+		return updateTeam(context, team, current => ({
+			...current,
+			board: range(length).map(index => ({
+				id: `${team}-${index}`,
+				type: 'guess',
+				value: 'X',
+				invalid: true,
+			})),
+		}));
+	}
+
+	function seedHint(context: GameContext, team: Team, clue: string): GameContext {
+		return updateTeam(context, team, current => ({
+			...current,
+			board: [
+				...current.board,
+				{
+					id: `${team}-${current.board.length}`,
+					type: 'hint',
+					value: '',
+					fullValue: clue,
+					revealed: 0,
+					questionId: questionIdAt(0),
+				},
+			],
+		}));
+	}
+
+	function seedSpiritQuestions(context: GameContext, team: Team): GameContext {
+		return updateTeam(drawQuestionHand(context), team, current => ({
+			...current,
+			spiritQuestionPicks: [questionIdAt(0), questionIdAt(1)],
+		}));
+	}
+
+	function seedWin(context: GameContext, team: Team): GameContext {
+		return updateTeam(context, team, current => ({
+			...current,
+			board: [
+				{
+					id: `${team}-0`,
+					type: 'guess',
+					value: context.word,
+					done: true,
+				},
+			],
+		}));
+	}
+
+	function seedLose(context: GameContext): GameContext {
+		return teams.reduce((next, team) => seedBoardLength(next, team, board.turns), context);
 	}
 
 	function revealClue(context: GameContext, clueId: string): GameContext {
@@ -432,10 +623,69 @@
 		return playerData.find(player => player.id === id) ?? playerData[0];
 	}
 
+	function questionIdAt(index: number): QuestionCard['id'] {
+		const id = questions[index]?.id;
+		if (!id) throw new Error('Missing question card');
+		return id;
+	}
+
 	function pickOne<T>(items: readonly T[]): T {
 		const item = sample(items);
 		if (item === undefined) throw new Error('Cannot pick from an empty list');
 		return item;
+	}
+
+	function firstWord(card: WordCard): string {
+		const word = card.words[0];
+		if (!word) throw new Error('Missing word card word');
+		return sanitizeObject(word);
+	}
+
+	function otherTeam(team: Team): Team {
+		return team === 'sun' ? 'moon' : 'sun';
+	}
+
+	function stateValue(value: unknown): GameState {
+		return gameStates.includes(value as GameState) ? (value as GameState) : 'start';
+	}
+
+	function actorTeam(actor: ActorKey): Team {
+		return actor.startsWith('sun') ? 'sun' : 'moon';
+	}
+
+	function actorRelativeRole(actor: ActorKey, team: Team): RelativeActor {
+		const isSpirit = actor.endsWith('Spirit');
+		const isCurrent = actorTeam(actor) === team;
+		if (isSpirit) return isCurrent ? 'currentSpirit' : 'otherSpirit';
+		return isCurrent ? 'currentMediums' : 'otherMediums';
+	}
+
+	function actorView(state: GameState, actor: ActorKey, team: Team): ViewMode {
+		return roleRows.find(row => row.state === state)?.[actorRelativeRole(actor, team)] ?? 'wait';
+	}
+
+	function actorLabel(actor: ActorKey): string {
+		return actor === 'sunSpirit'
+			? 'sun spirit'
+			: actor === 'moonSpirit'
+				? 'moon spirit'
+				: actor === 'sunMediums'
+					? 'sun mediums'
+					: 'moon mediums';
+	}
+
+	function setDebugState(state: GameState): void {
+		actor.send({ type: 'debugSetState', state, team: currentTeam });
+	}
+
+	function setDebugTeam(team: Team): void {
+		actor.send({ type: 'debugSetTeam', state: currentState, team });
+	}
+
+	function waitMessage(state: GameState): string {
+		if (state === 'win') return `${currentTeam} wins`;
+		if (state === 'lose') return 'both teams lose';
+		return 'wait';
 	}
 
 	function sanitizeObject(value: string): string {
@@ -501,17 +751,118 @@
 
 <div class="debug-game">
 	<header class="top-bar">
-		<div>
-			<div class="eyebrow">state: {String(snapshot.value)}</div>
-			<h1>Phantom Ink Debug</h1>
+		<div class="debug-controls">
+			<select
+				aria-label="Machine state"
+				value={currentState}
+				onchange={event => setDebugState((event.currentTarget as HTMLSelectElement).value as GameState)}
+			>
+				{#each gameStates as state}
+					<option value={state}>{state}</option>
+				{/each}
+			</select>
+
+			<div class="team-toggle" aria-label="Active team">
+				{#each teams as team}
+					<button class:active-toggle={team === currentTeam} onclick={() => setDebugTeam(team)} type="button">
+						{team}
+					</button>
+				{/each}
+			</div>
 		</div>
 		<button onclick={() => actor.send({ type: 'start' })}>{snapshot.matches('start') ? 'Start' : 'Reset'}</button>
 	</header>
 
-	<section class="status">
-		<div><strong>Object:</strong> {game.word || 'not picked'}</div>
-		<div><strong>Turn:</strong> {currentTeam}</div>
-		<div><strong>Row:</strong> {Math.min(currentTeamState.board.length + 1, board.turns)}</div>
+	<nav class="actor-tabs" aria-label="Actor views">
+		{#each actors as actorKey}
+			<button class:active-tab={actorKey === activeActor} onclick={() => (activeActor = actorKey)} type="button">
+				{actorLabel(actorKey)} ({actorView(currentState, actorKey, currentTeam)})
+			</button>
+		{/each}
+	</nav>
+
+	<section class="actor-view">
+		<div class="view-header">
+			<strong>{activeActorLabel}</strong>
+			<span>{activeView}</span>
+		</div>
+
+		{#if activeView === 'act'}
+			{#if snapshot.matches('setupWord')}
+				<h2>Pick Word</h2>
+				<div class="word-card">
+					{#each game.wordCard.words as word}
+						<button onclick={() => actor.send({ type: 'pickWord', word })}>{word}</button>
+					{/each}
+				</div>
+			{:else if snapshot.matches('mediumsTurn')}
+				<h2>{currentTeam} Mediums</h2>
+				<div class="actions">
+					<button disabled={!canUseEye} onclick={() => actor.send({ type: 'eyeHint' })}>Use Eye</button>
+					<button disabled={!canTakeTurn} onclick={() => actor.send({ type: 'ask' })}>Ask</button>
+					<button disabled={!canTakeTurn} onclick={() => actor.send({ type: 'guess' })}>Guess</button>
+				</div>
+			{:else if snapshot.matches('eyeHint')}
+				<h2>Pick Eye Clue</h2>
+				<div class="list">
+					{#each revealableClues as clue}
+						<button onclick={() => actor.send({ type: 'pickHint', clueId: clue.id })}>
+							{clue.team}: {clue.value || 'blank'} ({clue.revealed ?? 0}/{clue.fullValue?.length ?? 0})
+						</button>
+					{/each}
+				</div>
+			{:else if snapshot.matches('mediumsAsk')}
+				<h2>Pick Two Questions</h2>
+				<div class="question-grid">
+					{#each currentQuestions as q}
+						<label class:chosen={pickedQuestionIds.includes(q.id)}>
+							<input type="checkbox" checked={pickedQuestionIds.includes(q.id)} onchange={() => toggleQuestion(q.id)} />
+							<span>{q.title}</span>
+							<small>{q.question}</small>
+						</label>
+					{/each}
+				</div>
+				<button disabled={pickedQuestionIds.length !== config.questionsGivenToSpirit} onclick={submitQuestions}>
+					Give to Spirit
+				</button>
+			{:else if snapshot.matches('spiritAnswers')}
+				<h2>Spirit Answers</h2>
+				<select bind:value={answerQuestionId}>
+					<option value="">Choose question</option>
+					{#each spiritQuestions as q}
+						<option value={q.id}>{q.title}: {q.question}</option>
+					{/each}
+				</select>
+				<input bind:value={clueText} placeholder="Full clue" />
+				<button disabled={!clueText.trim()} onclick={submitAnswer}>Submit Clue</button>
+			{:else if snapshot.matches('mediumsGetClues')}
+				<h2>Reveal Clue</h2>
+				<p class="mono">
+					{currentClue?.value || 'blank'} ({currentClue?.revealed ?? 0}/{currentClue?.fullValue?.length ?? 0})
+				</p>
+				<div class="actions">
+					<button onclick={() => actor.send({ type: 'getClue' })}>Get Letter</button>
+					<button onclick={() => actor.send({ type: 'silencio' })}>Silencio</button>
+				</div>
+			{:else if snapshot.matches('guessing')}
+				<h2>Guess Word</h2>
+				<p class="mono">{currentGuess?.value || 'blank'}</p>
+				<input
+					bind:value={guessLetter}
+					maxlength="1"
+					placeholder="Letter"
+					onkeydown={event => event.key === 'Enter' && submitGuessLetter()}
+				/>
+				<button disabled={!guessLetter.trim()} onclick={submitGuessLetter}>Submit Letter</button>
+			{:else}
+				<p>{waitMessage(currentState)}</p>
+			{/if}
+		{:else if activeView === 'watch'}
+			<pre class="placeholder-snippet">watch placeholder
+hidden information UX later</pre>
+		{:else}
+			<p>{waitMessage(currentState)}</p>
+		{/if}
 	</section>
 
 	<section class="board">
@@ -552,83 +903,29 @@
 		{/each}
 	</section>
 
-	<section class="panel">
-		{#if snapshot.matches('start')}
-			<p>Start a fresh scratch game.</p>
-			<button onclick={() => actor.send({ type: 'start' })}>Start</button>
-		{:else if snapshot.matches('setupWord')}
-			<h2>Pick Object</h2>
-			<div class="word-card">
-				{#each game.wordCard.words as word}
-					<button onclick={() => actor.send({ type: 'pickWord', word })}>{word}</button>
+	<section class="role-table">
+		<table>
+			<thead>
+				<tr>
+					<th>state</th>
+					<th>current spirit</th>
+					<th>other spirit</th>
+					<th>current mediums</th>
+					<th>other mediums</th>
+				</tr>
+			</thead>
+			<tbody>
+				{#each roleRows as row}
+					<tr class:active-row={row.state === currentState}>
+						<td>{row.state}</td>
+						<td>{row.currentSpirit}</td>
+						<td>{row.otherSpirit}</td>
+						<td>{row.currentMediums}</td>
+						<td>{row.otherMediums}</td>
+					</tr>
 				{/each}
-			</div>
-		{:else if snapshot.matches('mediumsTurn')}
-			<h2>{currentTeam} Medium</h2>
-			<div class="actions">
-				<button disabled={!canUseEye} onclick={() => actor.send({ type: 'eyeHint' })}>Use Eye</button>
-				<button disabled={!canTakeTurn} onclick={() => actor.send({ type: 'ask' })}>Ask</button>
-				<button disabled={!canTakeTurn} onclick={() => actor.send({ type: 'guess' })}>Guess</button>
-			</div>
-		{:else if snapshot.matches('eyeHint')}
-			<h2>Pick Eye Clue</h2>
-			<div class="list">
-				{#each revealableClues as clue}
-					<button onclick={() => actor.send({ type: 'pickHint', clueId: clue.id })}>
-						{clue.team}: {clue.value || 'blank'} ({clue.revealed ?? 0}/{clue.fullValue?.length ?? 0})
-					</button>
-				{/each}
-			</div>
-		{:else if snapshot.matches('mediumsAsk')}
-			<h2>Pick Two Questions</h2>
-			<div class="question-grid">
-				{#each currentQuestions as q}
-					<label class:chosen={pickedQuestionIds.includes(q.id)}>
-						<input type="checkbox" checked={pickedQuestionIds.includes(q.id)} onchange={() => toggleQuestion(q.id)} />
-						<span>{q.title}</span>
-						<small>{q.question}</small>
-					</label>
-				{/each}
-			</div>
-			<button disabled={pickedQuestionIds.length !== config.questionsGivenToSpirit} onclick={submitQuestions}>
-				Give to Spirit
-			</button>
-		{:else if snapshot.matches('spiritAnswers')}
-			<h2>Spirit Answers</h2>
-			<select bind:value={answerQuestionId}>
-				<option value="">Choose question</option>
-				{#each spiritQuestions as q}
-					<option value={q.id}>{q.title}: {q.question}</option>
-				{/each}
-			</select>
-			<input bind:value={clueText} placeholder="Full clue" />
-			<button disabled={!clueText.trim()} onclick={submitAnswer}>Submit Clue</button>
-		{:else if snapshot.matches('mediumsGetClues')}
-			<h2>Reveal Clue</h2>
-			<p class="mono">
-				{currentClue?.value || 'blank'} ({currentClue?.revealed ?? 0}/{currentClue?.fullValue?.length ?? 0})
-			</p>
-			<div class="actions">
-				<button onclick={() => actor.send({ type: 'getClue' })}>Get Letter</button>
-				<button onclick={() => actor.send({ type: 'silencio' })}>Silencio</button>
-			</div>
-		{:else if snapshot.matches('guessing')}
-			<h2>Guess Object</h2>
-			<p class="mono">{currentGuess?.value || 'blank'}</p>
-			<input
-				bind:value={guessLetter}
-				maxlength="1"
-				placeholder="Letter"
-				onkeydown={event => event.key === 'Enter' && submitGuessLetter()}
-			/>
-			<button disabled={!guessLetter.trim()} onclick={submitGuessLetter}>Submit Letter</button>
-		{:else if snapshot.matches('win')}
-			<h2>{currentTeam} wins</h2>
-			<p>Object: {game.word}</p>
-		{:else if snapshot.matches('lose')}
-			<h2>Both teams lose</h2>
-			<p>Object: {game.word}</p>
-		{/if}
+			</tbody>
+		</table>
 	</section>
 </div>
 
@@ -655,7 +952,7 @@
 	}
 
 	.top-bar,
-	.status,
+	.debug-controls,
 	.actions {
 		display: flex;
 		gap: 0.75rem;
@@ -667,23 +964,57 @@
 		justify-content: space-between;
 	}
 
-	h1,
 	h2,
 	p {
 		margin: 0;
 	}
 
-	.eyebrow,
 	small {
 		color: var(--app-muted);
 		font-size: 0.8rem;
 	}
 
+	.team-toggle,
+	.actor-tabs {
+		display: flex;
+		gap: 0.4rem;
+		flex-wrap: wrap;
+	}
+
+	.team-toggle button,
+	.actor-tabs button {
+		background: transparent;
+	}
+
+	.active-toggle,
+	.active-tab {
+		background: color-mix(in srgb, var(--app-accent) 16%, transparent) !important;
+	}
+
 	.board,
-	.panel {
+	.actor-view,
+	.role-table {
 		border: 1px solid var(--app-border);
 		border-radius: 6px;
 		background: var(--app-panel);
+	}
+
+	.actor-view {
+		display: grid;
+		gap: 0.75rem;
+		padding: 1rem;
+	}
+
+	.view-header {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+		justify-content: space-between;
+		text-transform: lowercase;
+	}
+
+	.view-header span {
+		color: var(--app-muted);
 	}
 
 	.table-row {
@@ -753,12 +1084,6 @@
 		font-weight: 700;
 	}
 
-	.panel {
-		display: grid;
-		gap: 0.75rem;
-		padding: 1rem;
-	}
-
 	.word-card,
 	.list {
 		display: flex;
@@ -791,5 +1116,45 @@
 	.mono {
 		font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 		text-transform: uppercase;
+	}
+
+	.placeholder-snippet {
+		margin: 0;
+		border: 1px dashed var(--app-border);
+		border-radius: 4px;
+		padding: 0.75rem;
+		color: var(--app-muted);
+		white-space: pre-wrap;
+	}
+
+	.role-table {
+		overflow-x: auto;
+	}
+
+	table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.88rem;
+	}
+
+	th,
+	td {
+		padding: 0.5rem;
+		border-bottom: 1px solid var(--app-border);
+		text-align: left;
+		white-space: nowrap;
+	}
+
+	th {
+		color: var(--app-muted);
+		font-weight: 600;
+	}
+
+	tr:last-child td {
+		border-bottom: 0;
+	}
+
+	.active-row td {
+		background: color-mix(in srgb, var(--app-accent) 12%, transparent);
 	}
 </style>
