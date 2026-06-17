@@ -69,6 +69,7 @@ type DirectionState = {
 	speed: number;
 	speedFrom: number;
 	spinStartedAt: number;
+	spinFrozenAt: number;
 	phase: DirectionPhase;
 	phaseStartedAt: number;
 	phaseDuration: number;
@@ -267,7 +268,7 @@ export class LetterGridEngine {
 			y: this.gridShiftY + point.y,
 			alpha,
 			scale,
-			spin: this.direction.displayAngle + this.cellSpin(cell, now),
+			spin: this.cellRotation(cell, now),
 			pointSize: this.spacing.current * Math.max(0.8, scale),
 		};
 	}
@@ -779,6 +780,7 @@ export class LetterGridEngine {
 			speed: this.config.targetSpeed,
 			speedFrom: this.config.targetSpeed,
 			spinStartedAt: now,
+			spinFrozenAt: now,
 			phase: 'cruise',
 			phaseStartedAt: now,
 			phaseDuration: 0,
@@ -835,6 +837,7 @@ export class LetterGridEngine {
 		this.direction.targetAngle = targetAngle ?? this.chooseDirection(this.direction.displayAngle);
 		if (Math.abs(shortestAngle(this.direction.displayAngle, this.direction.targetAngle)) < 0.0001) return false;
 		this.direction.speedFrom = this.direction.speed;
+		this.direction.spinFrozenAt = now;
 		this.direction.phaseStartedAt = now;
 		this.nextAutoEventAt = Number.POSITIVE_INFINITY;
 
@@ -1091,11 +1094,23 @@ export class LetterGridEngine {
 		return x > -margin && x < width + margin && y > -margin && y < height + margin;
 	}
 
+	private cellRotation(cell: EngineCell, now: number): number {
+		if (this.direction.phase === 'cruise') return this.direction.displayAngle + this.cellSpin(cell, now);
+
+		const frozenRotation = this.direction.fromAngle + this.cellSpin(cell, this.direction.spinFrozenAt);
+		if (this.direction.phase === 'decelerating') return frozenRotation;
+		if (this.direction.phase === 'turning') {
+			const progress = smoothProgress((now - this.direction.phaseStartedAt) / this.direction.phaseDuration);
+			return lerpAngle(frozenRotation, this.direction.targetAngle, progress);
+		}
+		return this.direction.targetAngle;
+	}
+
 	private cellSpin(cell: EngineCell, now: number): number {
-		if (this.direction.phase !== 'cruise') return 0;
-		return (
-			(((now - this.direction.spinStartedAt) / cell.spinDuration) * Math.PI * 2 * cell.spinDirection) % (Math.PI * 2)
-		);
+		const spin =
+			((Math.max(0, now - this.direction.spinStartedAt) / cell.spinDuration) * Math.PI * 2 * cell.spinDirection) %
+			(Math.PI * 2);
+		return spin * this.config.spinSpeedMultiplier;
 	}
 }
 

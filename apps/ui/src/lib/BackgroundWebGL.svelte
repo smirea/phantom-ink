@@ -17,8 +17,13 @@
 		glyphSize: WebGLUniformLocation | null;
 		time: WebGLUniformLocation | null;
 		displayAngle: WebGLUniformLocation | null;
+		fromAngle: WebGLUniformLocation | null;
+		targetAngle: WebGLUniformLocation | null;
 		spinStartedAt: WebGLUniformLocation | null;
-		spinEnabled: WebGLUniformLocation | null;
+		spinFrozenAt: WebGLUniformLocation | null;
+		phaseStartedAt: WebGLUniformLocation | null;
+		phaseDuration: WebGLUniformLocation | null;
+		rotationPhase: WebGLUniformLocation | null;
 		spinMultiplier: WebGLUniformLocation | null;
 		color: WebGLUniformLocation | null;
 	};
@@ -408,8 +413,13 @@
 		gl.uniform1f(glyphProgram.glyphSize, backgroundState.config.glyphBaseSize);
 		gl.uniform1f(glyphProgram.time, now);
 		gl.uniform1f(glyphProgram.displayAngle, engine.direction.displayAngle);
+		gl.uniform1f(glyphProgram.fromAngle, engine.direction.fromAngle);
+		gl.uniform1f(glyphProgram.targetAngle, engine.direction.targetAngle);
 		gl.uniform1f(glyphProgram.spinStartedAt, engine.direction.spinStartedAt);
-		gl.uniform1f(glyphProgram.spinEnabled, engine.direction.phase === 'cruise' ? 1 : 0);
+		gl.uniform1f(glyphProgram.spinFrozenAt, engine.direction.spinFrozenAt);
+		gl.uniform1f(glyphProgram.phaseStartedAt, engine.direction.phaseStartedAt);
+		gl.uniform1f(glyphProgram.phaseDuration, engine.direction.phaseDuration);
+		gl.uniform1f(glyphProgram.rotationPhase, directionPhaseCode());
 		gl.uniform1f(glyphProgram.spinMultiplier, backgroundState.config.spinSpeedMultiplier);
 		gl.uniform4f(glyphProgram.color, color[0], color[1], color[2], color[3]);
 		instanced.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 6, instanceCount);
@@ -527,8 +537,13 @@
 				uniform float u_glyphSize;
 				uniform float u_time;
 				uniform float u_displayAngle;
+				uniform float u_fromAngle;
+				uniform float u_targetAngle;
 				uniform float u_spinStartedAt;
-				uniform float u_spinEnabled;
+				uniform float u_spinFrozenAt;
+				uniform float u_phaseStartedAt;
+				uniform float u_phaseDuration;
+				uniform float u_rotationPhase;
 				uniform float u_spinMultiplier;
 				varying vec2 v_uv;
 				varying float v_alpha;
@@ -536,6 +551,14 @@
 				float smooth01(float value) {
 					float progress = clamp(value, 0.0, 1.0);
 					return progress * progress * (3.0 - 2.0 * progress);
+				}
+
+				float shortestAngle(float from, float to) {
+					return atan(sin(to - from), cos(to - from));
+				}
+
+				float lerpAngle(float from, float to, float progress) {
+					return from + shortestAngle(from, to) * progress;
 				}
 
 				void main() {
@@ -555,9 +578,19 @@
 					}
 
 					float size = u_glyphSize * max(0.8, scale) * u_pixelRatio * step(0.001, alpha);
-					float rotation =
-						u_displayAngle +
-						u_spinEnabled * u_spinMultiplier * (max(0.0, u_time - u_spinStartedAt) * a_style.y + a_style.z);
+					float cruiseSpin = u_spinMultiplier * (max(0.0, u_time - u_spinStartedAt) * a_style.y + a_style.z);
+					float frozenSpin =
+						u_spinMultiplier * (max(0.0, u_spinFrozenAt - u_spinStartedAt) * a_style.y + a_style.z);
+					float frozenRotation = u_fromAngle + frozenSpin;
+					float turnProgress = smooth01((u_time - u_phaseStartedAt) / max(1.0, u_phaseDuration));
+					float rotation = u_displayAngle + cruiseSpin;
+					if (u_rotationPhase > 0.5 && u_rotationPhase < 1.5) {
+						rotation = frozenRotation;
+					} else if (u_rotationPhase > 1.5 && u_rotationPhase < 2.5) {
+						rotation = lerpAngle(frozenRotation, u_targetAngle, turnProgress);
+					} else if (u_rotationPhase > 2.5) {
+						rotation = u_targetAngle;
+					}
 					float cosRotation = cos(rotation);
 					float sinRotation = sin(rotation);
 					vec2 corner = vec2(
@@ -595,11 +628,23 @@
 			glyphSize: gl.getUniformLocation(program, 'u_glyphSize'),
 			time: gl.getUniformLocation(program, 'u_time'),
 			displayAngle: gl.getUniformLocation(program, 'u_displayAngle'),
+			fromAngle: gl.getUniformLocation(program, 'u_fromAngle'),
+			targetAngle: gl.getUniformLocation(program, 'u_targetAngle'),
 			spinStartedAt: gl.getUniformLocation(program, 'u_spinStartedAt'),
-			spinEnabled: gl.getUniformLocation(program, 'u_spinEnabled'),
+			spinFrozenAt: gl.getUniformLocation(program, 'u_spinFrozenAt'),
+			phaseStartedAt: gl.getUniformLocation(program, 'u_phaseStartedAt'),
+			phaseDuration: gl.getUniformLocation(program, 'u_phaseDuration'),
+			rotationPhase: gl.getUniformLocation(program, 'u_rotationPhase'),
 			spinMultiplier: gl.getUniformLocation(program, 'u_spinMultiplier'),
 			color: gl.getUniformLocation(program, 'u_color'),
 		};
+	}
+
+	function directionPhaseCode(): number {
+		if (engine.direction.phase === 'decelerating') return 1;
+		if (engine.direction.phase === 'turning') return 2;
+		if (engine.direction.phase === 'accelerating') return 3;
+		return 0;
 	}
 
 	function createSmokeProgram(gl: WebGLRenderingContext): SmokeProgram {
