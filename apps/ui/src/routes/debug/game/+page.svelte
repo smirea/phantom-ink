@@ -10,6 +10,7 @@
 	type Team = 'sun' | 'moon';
 	type ViewMode = 'act' | 'watch' | 'wait';
 	type RelativeActor = 'currentSpirit' | 'otherSpirit' | 'currentMediums' | 'otherMediums';
+	type NoteRow = { id: string; topic: string; note: string };
 
 	const gameStates = [
 		'start',
@@ -352,13 +353,27 @@
 	let clueText = $state('');
 	let guessLetter = $state('');
 	let activeActor = $state<ActorKey>('sunMediums');
+	let drawerOpen = $state(false);
+	let notes = $state<NoteRow[]>([
+		{ id: 'word', topic: 'word ideas', note: '' },
+		{ id: 'questions', topic: 'questions', note: '' },
+		{ id: 'team', topic: 'team read', note: '' },
+	]);
 
 	let game = $derived(snapshot.context);
 	let currentState = $derived(stateValue(snapshot.value));
 	let currentTeam = $derived(game.currentTeam);
 	let currentTeamState = $derived(game.teams[currentTeam]);
+	let activeActorTeam = $derived(actorTeam(activeActor));
+	let otherActorTeam = $derived(otherTeam(activeActorTeam));
+	let activeActorTeamState = $derived(game.teams[activeActorTeam]);
 	let currentQuestions = $derived(currentTeamState.questions.map(question).filter(isQuestion));
 	let spiritQuestions = $derived(currentTeamState.spiritQuestionPicks.map(question).filter(isQuestion));
+	let actorQuestions = $derived(activeActorTeamState.questions.map(question).filter(isQuestion));
+	let ownSpiritDiscards = $derived(activeActorTeamState.spiritQuestionDiscards.map(question).filter(isQuestion));
+	let otherSpiritDiscards = $derived(
+		game.teams[otherActorTeam].spiritQuestionDiscards.map(question).filter(isQuestion),
+	);
 	let revealableClues = $derived(getRevealableClues(game));
 	let currentClue = $derived(getCurrentClue(game));
 	let currentGuess = $derived(getCurrentGuess(game));
@@ -682,6 +697,10 @@
 		actor.send({ type: 'debugSetTeam', state: currentState, team });
 	}
 
+	function updateNote(id: string, field: 'topic' | 'note', value: string): void {
+		notes = notes.map(note => (note.id === id ? { ...note, [field]: value } : note));
+	}
+
 	function waitMessage(state: GameState): string {
 		if (state === 'win') return `${currentTeam} wins`;
 		if (state === 'lose') return 'both teams lose';
@@ -790,25 +809,17 @@
 		{#if activeView === 'act'}
 			{#if snapshot.matches('setupWord')}
 				<h2>Pick Word</h2>
-				<div class="word-card">
-					{#each game.wordCard.words as word}
-						<button onclick={() => actor.send({ type: 'pickWord', word })}>{word}</button>
-					{/each}
-				</div>
+				<p class="muted-line">{game.wordCard.words.join(' / ')}</p>
 			{:else if snapshot.matches('mediumsTurn')}
 				<h2>{currentTeam} Mediums</h2>
-				<div class="actions">
-					<button disabled={!canUseEye} onclick={() => actor.send({ type: 'eyeHint' })}>Use Eye</button>
-					<button disabled={!canTakeTurn} onclick={() => actor.send({ type: 'ask' })}>Ask</button>
-					<button disabled={!canTakeTurn} onclick={() => actor.send({ type: 'guess' })}>Guess</button>
-				</div>
+				<p class="muted-line">choose an action</p>
 			{:else if snapshot.matches('eyeHint')}
 				<h2>Pick Eye Clue</h2>
 				<div class="list">
 					{#each revealableClues as clue}
-						<button onclick={() => actor.send({ type: 'pickHint', clueId: clue.id })}>
+						<span class="choice-preview">
 							{clue.team}: {clue.value || 'blank'} ({clue.revealed ?? 0}/{clue.fullValue?.length ?? 0})
-						</button>
+						</span>
 					{/each}
 				</div>
 			{:else if snapshot.matches('mediumsAsk')}
@@ -822,9 +833,6 @@
 						</label>
 					{/each}
 				</div>
-				<button disabled={pickedQuestionIds.length !== config.questionsGivenToSpirit} onclick={submitQuestions}>
-					Give to Spirit
-				</button>
 			{:else if snapshot.matches('spiritAnswers')}
 				<h2>Spirit Answers</h2>
 				<select bind:value={answerQuestionId}>
@@ -834,16 +842,11 @@
 					{/each}
 				</select>
 				<input bind:value={clueText} placeholder="Full clue" />
-				<button disabled={!clueText.trim()} onclick={submitAnswer}>Submit Clue</button>
 			{:else if snapshot.matches('mediumsGetClues')}
 				<h2>Reveal Clue</h2>
 				<p class="mono">
 					{currentClue?.value || 'blank'} ({currentClue?.revealed ?? 0}/{currentClue?.fullValue?.length ?? 0})
 				</p>
-				<div class="actions">
-					<button onclick={() => actor.send({ type: 'getClue' })}>Get Letter</button>
-					<button onclick={() => actor.send({ type: 'silencio' })}>Silencio</button>
-				</div>
 			{:else if snapshot.matches('guessing')}
 				<h2>Guess Word</h2>
 				<p class="mono">{currentGuess?.value || 'blank'}</p>
@@ -853,7 +856,6 @@
 					placeholder="Letter"
 					onkeydown={event => event.key === 'Enter' && submitGuessLetter()}
 				/>
-				<button disabled={!guessLetter.trim()} onclick={submitGuessLetter}>Submit Letter</button>
 			{:else}
 				<p>{waitMessage(currentState)}</p>
 			{/if}
@@ -863,44 +865,6 @@ hidden information UX later</pre>
 		{:else}
 			<p>{waitMessage(currentState)}</p>
 		{/if}
-	</section>
-
-	<section class="board">
-		<div class="table-row labels">
-			{#each teams as team}
-				<div class:active-team={team === currentTeam}>{team}</div>
-			{/each}
-		</div>
-
-		<div class="table-row players">
-			{#each teams as team}
-				<div>
-					{#each game.teams[team].players as id}
-						<span class="player" class:spirit={game.teams[team].spirit === id}>
-							<Avatar user={player(id)} />
-						</span>
-					{/each}
-				</div>
-			{/each}
-		</div>
-
-		{#each turns as turn}
-			<div class="table-row words">
-				{#each teams as team}
-					{@const entry = game.teams[team].board[turn]}
-					<div class="cell" class:moon-cell={team === 'moon'}>
-						<span class="eye-slot">
-							{#if board[team].hints.includes(turn)}
-								<Eye size={16} />
-							{/if}
-						</span>
-						<span class:invalid={entry?.invalid} class:done={entry?.done}>
-							{entry?.value || '\u00a0'}
-						</span>
-					</div>
-				{/each}
-			</div>
-		{/each}
 	</section>
 
 	<section class="role-table">
@@ -927,10 +891,196 @@ hidden information UX later</pre>
 			</tbody>
 		</table>
 	</section>
+
+	{#if drawerOpen}
+		<aside class="info-drawer" aria-label="Table drawer">
+			<header class="drawer-header">
+				<strong>{activeActorLabel}</strong>
+				<button onclick={() => (drawerOpen = false)} type="button">Close</button>
+			</header>
+
+			<div class="drawer-sections">
+				<details class="drawer-section" open>
+					<summary>current table board</summary>
+					<section class="board drawer-board">
+						<div class="table-row labels">
+							{#each teams as team}
+								<div class:active-team={team === currentTeam}>{team}</div>
+							{/each}
+						</div>
+
+						<div class="table-row players">
+							{#each teams as team}
+								<div>
+									{#each game.teams[team].players as id}
+										<span class="player" class:spirit={game.teams[team].spirit === id}>
+											<Avatar user={player(id)} />
+										</span>
+									{/each}
+								</div>
+							{/each}
+						</div>
+
+						{#each turns as turn}
+							<div class="table-row words">
+								{#each teams as team}
+									{@const entry = game.teams[team].board[turn]}
+									<div class="cell" class:moon-cell={team === 'moon'}>
+										<span class="eye-slot">
+											{#if board[team].hints.includes(turn)}
+												<Eye size={16} />
+											{/if}
+										</span>
+										<span class:invalid={entry?.invalid} class:done={entry?.done}>
+											{entry?.value || '\u00a0'}
+										</span>
+									</div>
+								{/each}
+							</div>
+						{/each}
+					</section>
+				</details>
+
+				<details class="drawer-section" open>
+					<summary>your questions</summary>
+					<div class="question-list">
+						{#if actorQuestions.length}
+							{#each actorQuestions as q}
+								<div class="question-row">
+									<strong>{q.title}</strong>
+									<span>{q.question}</span>
+								</div>
+							{/each}
+						{:else}
+							<p class="empty-line">none</p>
+						{/if}
+					</div>
+				</details>
+
+				<details class="drawer-section">
+					<summary>discarded questions by your spirit</summary>
+					<div class="question-list">
+						{#if ownSpiritDiscards.length}
+							{#each ownSpiritDiscards as q}
+								<div class="question-row">
+									<strong>{q.title}</strong>
+									<span>{q.question}</span>
+								</div>
+							{/each}
+						{:else}
+							<p class="empty-line">none</p>
+						{/if}
+					</div>
+				</details>
+
+				<details class="drawer-section">
+					<summary>discarded questions by the other spirit</summary>
+					<div class="question-list">
+						{#if otherSpiritDiscards.length}
+							{#each otherSpiritDiscards as q}
+								<div class="question-row">
+									<strong>{q.title}</strong>
+									<span>{q.question}</span>
+								</div>
+							{/each}
+						{:else}
+							<p class="empty-line">none</p>
+						{/if}
+					</div>
+				</details>
+
+				<details class="drawer-section" open>
+					<summary>notes table</summary>
+					<table class="notes-table">
+						<thead>
+							<tr>
+								<th>topic</th>
+								<th>note</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each notes as note}
+								<tr>
+									<td>
+										<input
+											value={note.topic}
+											oninput={event => updateNote(note.id, 'topic', event.currentTarget.value)}
+										/>
+									</td>
+									<td>
+										<textarea
+											value={note.note}
+											placeholder="note"
+											oninput={event => updateNote(note.id, 'note', event.currentTarget.value)}
+										></textarea>
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</details>
+			</div>
+		</aside>
+	{/if}
+
+	<div class="action-dock">
+		<button
+			class="drawer-trigger"
+			aria-expanded={drawerOpen}
+			aria-label="Open table drawer"
+			onclick={() => (drawerOpen = !drawerOpen)}
+			type="button"
+		>
+			Table
+		</button>
+		<div class="action-bar">
+			<div class="action-context">
+				<strong>{activeActorLabel}</strong>
+				<span>{activeView}</span>
+			</div>
+			<div class="action-buttons">
+				{#if snapshot.matches('start')}
+					<button onclick={() => actor.send({ type: 'start' })}>Start</button>
+				{:else if activeView === 'act'}
+					{#if snapshot.matches('setupWord')}
+						{#each game.wordCard.words as word}
+							<button onclick={() => actor.send({ type: 'pickWord', word })}>{word}</button>
+						{/each}
+					{:else if snapshot.matches('mediumsTurn')}
+						<button disabled={!canUseEye} onclick={() => actor.send({ type: 'eyeHint' })}>Use Eye</button>
+						<button disabled={!canTakeTurn} onclick={() => actor.send({ type: 'ask' })}>Ask</button>
+						<button disabled={!canTakeTurn} onclick={() => actor.send({ type: 'guess' })}>Guess</button>
+					{:else if snapshot.matches('eyeHint')}
+						{#each revealableClues as clue}
+							<button onclick={() => actor.send({ type: 'pickHint', clueId: clue.id })}>
+								{clue.team}: {clue.value || 'blank'}
+							</button>
+						{/each}
+					{:else if snapshot.matches('mediumsAsk')}
+						<button disabled={pickedQuestionIds.length !== config.questionsGivenToSpirit} onclick={submitQuestions}>
+							Give to Spirit
+						</button>
+					{:else if snapshot.matches('spiritAnswers')}
+						<button disabled={!clueText.trim()} onclick={submitAnswer}>Submit Clue</button>
+					{:else if snapshot.matches('mediumsGetClues')}
+						<button onclick={() => actor.send({ type: 'getClue' })}>Get Letter</button>
+						<button onclick={() => actor.send({ type: 'silencio' })}>Silencio</button>
+					{:else if snapshot.matches('guessing')}
+						<button disabled={!guessLetter.trim()} onclick={submitGuessLetter}>Submit Letter</button>
+					{:else}
+						<span class="empty-actions">no actions</span>
+					{/if}
+				{:else}
+					<span class="empty-actions">no actions</span>
+				{/if}
+			</div>
+		</div>
+	</div>
 </div>
 
 <style>
 	.debug-game {
+		position: relative;
 		display: grid;
 		gap: 1rem;
 		padding: 1rem;
@@ -939,7 +1089,8 @@ hidden information UX later</pre>
 
 	button,
 	input,
-	select {
+	select,
+	textarea {
 		border: 1px solid var(--app-border);
 		border-radius: 4px;
 		padding: 0.45rem 0.6rem;
@@ -952,8 +1103,7 @@ hidden information UX later</pre>
 	}
 
 	.top-bar,
-	.debug-controls,
-	.actions {
+	.debug-controls {
 		display: flex;
 		gap: 0.75rem;
 		align-items: center;
@@ -972,6 +1122,20 @@ hidden information UX later</pre>
 	small {
 		color: var(--app-muted);
 		font-size: 0.8rem;
+	}
+
+	.muted-line,
+	.empty-line,
+	.empty-actions {
+		color: var(--app-muted);
+	}
+
+	.choice-preview {
+		display: inline-flex;
+		border: 1px solid var(--app-border);
+		border-radius: 4px;
+		padding: 0.45rem 0.6rem;
+		background: var(--app-input);
 	}
 
 	.team-toggle,
@@ -1084,7 +1248,6 @@ hidden information UX later</pre>
 		font-weight: 700;
 	}
 
-	.word-card,
 	.list {
 		display: flex;
 		gap: 0.5rem;
@@ -1131,6 +1294,148 @@ hidden information UX later</pre>
 		overflow-x: auto;
 	}
 
+	.info-drawer {
+		position: sticky;
+		bottom: 5.75rem;
+		z-index: 35;
+		display: grid;
+		gap: 0.75rem;
+		width: 100%;
+		max-height: min(64dvh, 36rem);
+		border: 1px solid var(--app-border);
+		border-radius: 8px;
+		background: var(--app-panel);
+		box-shadow: 0 1.5rem 4rem color-mix(in srgb, black 54%, transparent);
+		padding: 0.75rem;
+		overflow: auto;
+	}
+
+	.drawer-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+	}
+
+	.drawer-sections {
+		display: grid;
+		gap: 0.6rem;
+	}
+
+	.drawer-section {
+		border: 1px solid var(--app-border);
+		border-radius: 6px;
+		background: color-mix(in srgb, var(--app-input) 62%, transparent);
+		overflow: hidden;
+	}
+
+	.drawer-section summary {
+		cursor: pointer;
+		padding: 0.65rem 0.75rem;
+		font-weight: 700;
+	}
+
+	.drawer-section[open] summary {
+		border-bottom: 1px solid var(--app-border);
+	}
+
+	.drawer-board {
+		border: 0;
+		border-radius: 0;
+		background: transparent;
+	}
+
+	.question-list {
+		display: grid;
+		gap: 0.4rem;
+		padding: 0.65rem;
+	}
+
+	.question-row {
+		display: grid;
+		gap: 0.15rem;
+		border: 1px solid var(--app-border);
+		border-radius: 4px;
+		padding: 0.5rem;
+		background: var(--app-panel);
+	}
+
+	.notes-table input,
+	.notes-table textarea {
+		width: 100%;
+		min-width: 12rem;
+	}
+
+	.notes-table textarea {
+		min-height: 3rem;
+		resize: vertical;
+	}
+
+	.action-dock {
+		position: sticky;
+		bottom: 0;
+		z-index: 40;
+		display: grid;
+		justify-items: center;
+		margin-top: 1rem;
+		padding-top: 1.65rem;
+		background: linear-gradient(180deg, transparent, var(--app-bg) 28%);
+		pointer-events: none;
+	}
+
+	.drawer-trigger,
+	.action-bar {
+		pointer-events: auto;
+	}
+
+	.drawer-trigger {
+		position: absolute;
+		top: 0;
+		left: 50%;
+		transform: translate(-50%, -42%);
+		border-radius: 999px;
+		background: var(--app-accent);
+		color: var(--app-accent-ink);
+		font-weight: 700;
+		box-shadow: 0 0.6rem 1.6rem color-mix(in srgb, black 42%, transparent);
+	}
+
+	.action-bar {
+		display: grid;
+		grid-template-columns: minmax(8rem, auto) minmax(0, 1fr);
+		gap: 0.75rem;
+		align-items: center;
+		width: 100%;
+		border: 1px solid var(--app-border);
+		border-radius: 8px;
+		background: color-mix(in srgb, var(--app-panel) 94%, black);
+		box-shadow: 0 0.8rem 3rem color-mix(in srgb, black 50%, transparent);
+		padding: 0.7rem;
+	}
+
+	.action-context {
+		display: grid;
+		gap: 0.15rem;
+		text-transform: lowercase;
+	}
+
+	.action-context span {
+		color: var(--app-muted);
+		font-size: 0.8rem;
+	}
+
+	.action-buttons {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+		justify-content: flex-end;
+		overflow-x: auto;
+	}
+
+	.action-buttons button {
+		white-space: nowrap;
+	}
+
 	table {
 		width: 100%;
 		border-collapse: collapse;
@@ -1156,5 +1461,15 @@ hidden information UX later</pre>
 
 	.active-row td {
 		background: color-mix(in srgb, var(--app-accent) 12%, transparent);
+	}
+
+	@media (max-width: 640px) {
+		.action-bar {
+			grid-template-columns: 1fr;
+		}
+
+		.action-buttons {
+			justify-content: flex-start;
+		}
 	}
 </style>
