@@ -28,6 +28,7 @@
 	const playerListElements = new Map<string, HTMLElement>();
 	let nearbyListElement = $state<HTMLElement | undefined>();
 	let measureFrame: number | undefined;
+	let delayedMeasureTimer: number | undefined;
 	const playerListMeasureKey = $derived(
 		rooms.map(room => `${room.code}:${room.players.map(player => `${player.id}:${player.name}`).join(',')}`).join('|'),
 	);
@@ -58,6 +59,7 @@
 		return () => {
 			cancelled = true;
 			if (measureFrame !== undefined) window.cancelAnimationFrame(measureFrame);
+			if (delayedMeasureTimer) window.clearTimeout(delayedMeasureTimer);
 			window.clearInterval(interval);
 			window.removeEventListener('resize', handleResize);
 		};
@@ -69,6 +71,7 @@
 
 	$effect(() => {
 		scheduleListMeasure(nearbyMeasureKey);
+		scheduleDelayedListMeasure(nearbyMeasureKey);
 	});
 
 	async function startNewSeance() {
@@ -171,35 +174,38 @@
 		});
 	}
 
+	function scheduleDelayedListMeasure(_key?: string) {
+		if (typeof window === 'undefined') return;
+		if (delayedMeasureTimer) window.clearTimeout(delayedMeasureTimer);
+		delayedMeasureTimer = window.setTimeout(() => {
+			delayedMeasureTimer = undefined;
+			scheduleListMeasure();
+		}, 720);
+	}
+
 	function measureLists() {
 		const next = new Set<string>();
 		for (const [code, node] of playerListElements) {
-			if (node.scrollHeight > collapsedPlayerListHeight(node) + 1) next.add(code);
+			if (hasMoreWrappedLines(node, 2)) next.add(code);
 		}
 		collapsibleRooms = next;
 		expandedRooms = new Set([...expandedRooms].filter(code => next.has(code)));
 
-		nearbyCollapsible = Boolean(
-			nearbyListElement && nearbyListElement.scrollHeight > collapsedNearbyListHeight(nearbyListElement) + 1,
-		);
+		nearbyCollapsible = Boolean(nearbyListElement && hasMoreWrappedLines(nearbyListElement, 1));
 		if (!nearbyCollapsible) nearbyExpanded = false;
 	}
 
-	function collapsedPlayerListHeight(node: HTMLElement): number {
-		return cssSize(node, '--collapsed-player-list-height');
-	}
+	function hasMoreWrappedLines(node: HTMLElement, visibleLines: number): boolean {
+		const lineCenters: number[] = [];
+		for (const child of node.children) {
+			if (!(child instanceof HTMLElement) || (!child.offsetWidth && !child.offsetHeight)) continue;
 
-	function collapsedNearbyListHeight(node: HTMLElement): number {
-		return cssSize(node, '--collapsed-nearby-list-height');
-	}
-
-	function cssSize(node: HTMLElement, property: string): number {
-		const maxHeight = window.getComputedStyle(node).getPropertyValue(property).trim();
-		if (maxHeight.endsWith('rem')) {
-			const rootSize = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize);
-			return Number.parseFloat(maxHeight) * rootSize;
+			const center = Math.round(child.offsetTop + child.offsetHeight / 2);
+			if (!lineCenters.some(lineCenter => Math.abs(lineCenter - center) <= 4)) lineCenters.push(center);
+			if (lineCenters.length > visibleLines) return true;
 		}
-		return Number.parseFloat(maxHeight) || 0;
+
+		return false;
 	}
 
 	function soulRise(_node: Element): TransitionConfig {
