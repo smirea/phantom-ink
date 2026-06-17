@@ -25,7 +25,7 @@ bun install
 bun run dev
 ```
 
-Local UI host: http://phantom-ink.localhost:6080
+Local UI host: http://phantom-ink.localhost (via localias)
 
 Useful checks:
 

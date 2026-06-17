@@ -18,9 +18,11 @@ export default defineConfig({
 	},
 	server: {
 		allowedHosts: [uiHost],
-		clearScreen: false,
 		port: uiPort,
 		strictPort: true,
+		hmr: {
+			overlay: true,
+		},
 		proxy: {
 			'/api': {
 				target: env.SERVER_URL,
