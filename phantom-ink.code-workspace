@@ -1,4 +1,9 @@
 {
 	"folders": [{ "path": "." }],
-	"settings": {},
+	"settings": {
+		"files.exclude": {
+			"**/.data": true,
+			"**/.svelte-kit": true,
+		},
+	},
 }
