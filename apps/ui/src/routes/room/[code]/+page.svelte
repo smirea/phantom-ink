@@ -1,10 +1,9 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import PlayerAvatar from '$lib/PlayerAvatar.svelte';
+	import Avatar from '$lib/Avatar.svelte';
 	import VoteBadge from '$lib/VoteBadge.svelte';
 	import { joinRoom, openRoomEvents, sendRoomAction } from '$lib/api';
-	import { playerColorValue } from '$lib/playerPresentation';
 	import { parseRoomCode } from '$lib/roomCodes';
 	import { LS, storageKeys } from '$lib/storage';
 	import {
@@ -309,7 +308,7 @@
 
 {#snippet PlayerPill({ member, isSelf = false }: { member: RoomMemberView; isSelf?: boolean })}
 	<div class:self={isSelf} class="player-pill">
-		<PlayerAvatar color={playerColorValue(member.color)} icon={member.icon} label={`${member.name} avatar`} />
+		<Avatar user={member} name={false} />
 		<span>{member.name}</span>
 	</div>
 {/snippet}
@@ -578,12 +577,15 @@
 		filter: drop-shadow(0 0 0.45rem color-mix(in oklab, var(--team-color, var(--app-accent)) 28%, transparent));
 	}
 
-	.player-pill :global(.player-avatar) {
+	.player-pill :global(.avatar) {
+		display: inline-grid;
+		place-items: center;
 		width: 1.7rem;
 		height: 1.7rem;
+		flex: 0 0 auto;
 	}
 
-	.player-pill :global(.player-avatar svg) {
+	.player-pill :global(.avatar svg) {
 		width: 1.32rem;
 		height: 1.32rem;
 	}

@@ -2,6 +2,8 @@
 	import type { PlayerIconId } from '@repo/shared/onlineGame';
 	import { playerIconComponents } from '$lib/playerPresentation';
 
+	// NOTE: deprecated in favor of <Avatar />
+
 	let { color, icon, label = 'Soul avatar' }: { color: string; icon: PlayerIconId; label?: string } = $props();
 	const Icon = $derived(playerIconComponents[icon]);
 </script>

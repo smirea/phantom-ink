@@ -202,6 +202,19 @@ button {
 	outline-offset: 4px;
 }
 
+.user-profile-trigger .avatar.avatar {
+	display: inline-grid;
+	place-items: center;
+	width: 2rem;
+	height: 2rem;
+	flex: 0 0 auto;
+}
+
+.user-profile-trigger .avatar svg.icon {
+	width: 1.875rem;
+	height: 1.875rem;
+}
+
 .user-name {
 	display: block;
 	min-width: 0;

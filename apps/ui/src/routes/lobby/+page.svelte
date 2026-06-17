@@ -1,7 +1,6 @@
 <script lang="ts">
-	import PlayerAvatar from '$lib/PlayerAvatar.svelte';
+	import Avatar from '$lib/Avatar.svelte';
 	import { getOnlineUsers, getRoomDirectory, joinRoom } from '$lib/api';
-	import { playerColorValue } from '$lib/playerPresentation';
 	import { createRoomCode } from '$lib/roomCodes';
 	import { LS, storageKeys } from '$lib/storage';
 	import { goto } from '$app/navigation';
@@ -280,7 +279,7 @@
 				</span>
 				{#each nearbySouls as soul (soul.id)}
 					<span class="nearby-pill" in:soulRise|local out:soulEvaporate|local>
-						<PlayerAvatar color={playerColorValue(soul.color)} icon={soul.icon} label={`${soul.name} avatar`} />
+						<Avatar user={soul} name={false} />
 						<span>{soul.name}</span>
 					</span>
 				{/each}
@@ -329,11 +328,7 @@
 					<div class:expanded class="player-list" use:trackPlayerList={room.code}>
 						{#each room.players as player (player.id)}
 							<span class="player-pill">
-								<PlayerAvatar
-									color={playerColorValue(player.color)}
-									icon={player.icon}
-									label={`${player.name} avatar`}
-								/>
+								<Avatar user={player} name={false} />
 								<span>{player.name}</span>
 							</span>
 						{/each}
@@ -452,12 +447,15 @@
 		will-change: transform, filter, opacity;
 	}
 
-	.nearby-pill :global(.player-avatar) {
+	.nearby-pill :global(.avatar) {
+		display: inline-grid;
+		place-items: center;
 		width: 1.55rem;
 		height: 1.55rem;
+		flex: 0 0 auto;
 	}
 
-	.nearby-pill :global(svg) {
+	.nearby-pill :global(.avatar svg) {
 		width: 1.24rem;
 		height: 1.24rem;
 	}
@@ -578,12 +576,15 @@
 		padding: 0.12rem 0.48rem 0.12rem 0.18rem;
 	}
 
-	.player-pill :global(.player-avatar) {
+	.player-pill :global(.avatar) {
+		display: inline-grid;
+		place-items: center;
 		width: 1.55rem;
 		height: 1.55rem;
+		flex: 0 0 auto;
 	}
 
-	.player-pill :global(svg) {
+	.player-pill :global(.avatar svg) {
 		width: 1.25rem;
 		height: 1.25rem;
 	}

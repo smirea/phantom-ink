@@ -1,11 +1,10 @@
 <script lang="ts">
 	import BackgroundHost from '$lib/BackgroundHost.svelte';
+	import Avatar from '$lib/Avatar.svelte';
 	import PhantomLogo from '$lib/PhantomLogo.svelte';
-	import PlayerAvatar from '$lib/PlayerAvatar.svelte';
 	import { beforeNavigate, goto, onNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { leaveRoomForStoredUser, loadStoredUser, pingPresence } from '$lib/api';
-	import { playerColorPreset } from '$lib/playerPresentation';
 	import { parseRoomCode } from '$lib/roomCodes';
 	import { LS, storageKeys } from '$lib/storage';
 	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
@@ -54,7 +53,7 @@
 	const isRoomScreen = $derived(Boolean(activeRoomCode));
 	const setupHref = $derived(`/setup?returnTo=${encodeURIComponent(activeRoute)}`);
 	const displayedPlayerName = $derived(playerName.trim() || 'Unknown');
-	const displayedPlayerColor = $derived(playerColorPreset(playerColor));
+	const displayedPlayer = $derived({ name: displayedPlayerName, color: playerColor, icon: playerIcon });
 
 	beforeNavigate(navigation => {
 		if (!browser || navigation.type === 'popstate' || navigation.willUnload || !navigation.to) return;
@@ -347,11 +346,7 @@
 								type="button"
 							>
 								<span class="user-name">{displayedPlayerName}</span>
-								<PlayerAvatar
-									color={displayedPlayerColor.value}
-									icon={playerIcon}
-									label={`${displayedPlayerName} avatar`}
-								/>
+								<Avatar user={displayedPlayer} name={false} />
 							</button>
 
 							{#if settingsMenuState !== 'closed'}

@@ -1,6 +1,5 @@
 <script lang="ts">
-	import PlayerAvatar from '$lib/PlayerAvatar.svelte';
-	import { playerColorValue } from '$lib/playerPresentation';
+	import Avatar from '$lib/Avatar.svelte';
 	import { type RoomMemberView, type RoomVoteSummary } from '@repo/shared/onlineGame';
 	import Check from '@lucide/svelte/icons/check';
 	import Minus from '@lucide/svelte/icons/minus';
@@ -144,7 +143,7 @@
 					{#each voters as member (member.id)}
 						<div class="vote-person">
 							<Check class="yes" size={15} strokeWidth={2.6} />
-							<PlayerAvatar color={playerColorValue(member.color)} icon={member.icon} label={`${member.name} avatar`} />
+							<Avatar user={member} name={false} />
 							<span>{member.name}</span>
 						</div>
 					{/each}
@@ -157,7 +156,7 @@
 					{#each missing as member (member.id)}
 						<div class="vote-person">
 							<Minus size={15} strokeWidth={2.6} />
-							<PlayerAvatar color={playerColorValue(member.color)} icon={member.icon} label={`${member.name} avatar`} />
+							<Avatar user={member} name={false} />
 							<span>{member.name}</span>
 						</div>
 					{/each}
@@ -263,12 +262,15 @@
 		font-weight: 850;
 	}
 
-	.vote-person :global(.player-avatar) {
+	.vote-person :global(.avatar) {
+		display: inline-grid;
+		place-items: center;
 		width: 1.35rem;
 		height: 1.35rem;
+		flex: 0 0 auto;
 	}
 
-	.vote-person :global(.player-avatar svg) {
+	.vote-person :global(.avatar svg) {
 		width: 1.1rem;
 		height: 1.1rem;
 	}
