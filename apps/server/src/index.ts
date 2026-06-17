@@ -181,7 +181,11 @@ async function handleApi(request: Request, url: URL): Promise<Response> {
 
 	if (method === 'GET' && pathname === '/presence/online') {
 		pruneInactiveLobbyRooms();
-		return json({ users: getOnlineUsers() } satisfies OnlinePresenceResponse);
+		const currentUser = getUserByIdOrClientKey(
+			numberParam(url.searchParams.get('userId')),
+			url.searchParams.get('clientKey'),
+		);
+		return json({ users: getOnlineUsers(currentUser?.id ?? null) } satisfies OnlinePresenceResponse);
 	}
 
 	if (method === 'GET' && pathname === '/rooms') {
@@ -359,11 +363,13 @@ function touchUserPresence(userId: number, now = Date.now()): void {
 	userPresence.set(userId, now);
 }
 
-function getOnlineUsers(now = Date.now()): UserRecord[] {
+function getOnlineUsers(excludedUserId: number | null, now = Date.now()): UserRecord[] {
 	pruneExpiredPresence(now);
 
 	const users: UserRecord[] = [];
 	for (const userId of userPresence.keys()) {
+		if (userId === excludedUserId) continue;
+
 		const user = getUserRow(userId);
 		if (user) users.push(userRecord(user));
 	}

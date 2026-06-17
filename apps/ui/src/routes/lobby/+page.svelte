@@ -220,36 +220,33 @@
 		<span>Start a new séance</span>
 	</button>
 
-	<div class:collapsible={nearbyCollapsible} class="nearby-souls">
-		{#if nearbyCollapsible}
-			<button
-				aria-expanded={nearbyExpanded}
-				aria-label={`${nearbyExpanded ? 'Collapse' : 'Expand'} nearby souls`}
-				class="nearby-expand-button"
-				onclick={toggleNearbyExpanded}
-				type="button"
-			>
-				<ChevronDown size={19} strokeWidth={2.5} />
-			</button>
-		{/if}
+	{#if nearbySouls.length}
+		<div class:collapsible={nearbyCollapsible} class="nearby-souls">
+			{#if nearbyCollapsible}
+				<button
+					aria-expanded={nearbyExpanded}
+					aria-label={`${nearbyExpanded ? 'Collapse' : 'Expand'} nearby souls`}
+					class="nearby-expand-button"
+					onclick={toggleNearbyExpanded}
+					type="button"
+				>
+					<ChevronDown size={19} strokeWidth={2.5} />
+				</button>
+			{/if}
 
-		<div bind:this={nearbyListElement} class:expanded={nearbyExpanded} class="nearby-list">
-			<span class="nearby-label">
-				{nearbySouls.length}
-				{nearbySouls.length === 1 ? 'soul' : 'souls'} nearby:
-			</span>
-			{#if nearbySouls.length}
+			<div bind:this={nearbyListElement} class:expanded={nearbyExpanded} class="nearby-list">
+				<span class="nearby-label">
+					{nearbySouls.length} nearby {nearbySouls.length === 1 ? 'soul' : 'souls'}:
+				</span>
 				{#each nearbySouls as soul (soul.id)}
 					<span class="nearby-pill">
 						<PlayerAvatar color={playerColorValue(soul.color)} icon={soul.icon} label={`${soul.name} avatar`} />
 						<span>{soul.name}</span>
 					</span>
 				{/each}
-			{:else}
-				<span class="nearby-empty">none</span>
-			{/if}
+			</div>
 		</div>
-	</div>
+	{/if}
 
 	<div class="lobby-list" aria-live="polite">
 		{#if rooms.length}
@@ -399,13 +396,6 @@
 		font-weight: 900;
 		line-height: 1;
 		white-space: nowrap;
-	}
-
-	.nearby-empty {
-		color: color-mix(in oklab, var(--app-muted) 86%, transparent);
-		font-size: 0.92rem;
-		font-weight: 800;
-		line-height: 1;
 	}
 
 	.nearby-pill {

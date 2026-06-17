@@ -96,8 +96,16 @@ export async function getRoomDirectory(): Promise<RoomDirectoryListing[]> {
 }
 
 export async function getOnlineUsers(): Promise<UserRecord[]> {
+	const params = new URLSearchParams();
+	const userId = getStoredUserId();
+	const clientKey = readStoredClientKey();
+	if (userId) params.set('userId', String(userId));
+	if (clientKey) params.set('clientKey', clientKey);
+
 	const payload = await readJson<OnlinePresenceResponse>(
-		await fetch(`${apiBase}/presence/online`, { headers: { Accept: 'application/json' } }),
+		await fetch(`${apiBase}/presence/online${params.size ? `?${params.toString()}` : ''}`, {
+			headers: { Accept: 'application/json' },
+		}),
 	);
 	return payload.users;
 }
