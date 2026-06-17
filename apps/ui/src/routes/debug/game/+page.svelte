@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Avatar from '$lib/Avatar.svelte';
-	import { Eye } from '@lucide/svelte';
+	import { Eye, X } from '@lucide/svelte';
 	import { board, questions, words, type QuestionCard, type WordCard } from '@repo/shared/data';
 	import type { UserRecord } from '@repo/shared/onlineGame';
 	import { range, sample, shuffle, uniq } from 'es-toolkit';
@@ -801,20 +801,12 @@
 	</nav>
 
 	<section class="actor-view">
-		<div class="view-header">
-			<strong>{activeActorLabel}</strong>
-			<span>{activeView}</span>
-		</div>
-
 		{#if activeView === 'act'}
 			{#if snapshot.matches('setupWord')}
-				<h2>Pick Word</h2>
 				<p class="muted-line">{game.wordCard.words.join(' / ')}</p>
 			{:else if snapshot.matches('mediumsTurn')}
-				<h2>{currentTeam} Mediums</h2>
-				<p class="muted-line">choose an action</p>
+				<div class="empty-view"></div>
 			{:else if snapshot.matches('eyeHint')}
-				<h2>Pick Eye Clue</h2>
 				<div class="list">
 					{#each revealableClues as clue}
 						<span class="choice-preview">
@@ -823,7 +815,6 @@
 					{/each}
 				</div>
 			{:else if snapshot.matches('mediumsAsk')}
-				<h2>Pick Two Questions</h2>
 				<div class="question-grid">
 					{#each currentQuestions as q}
 						<label class:chosen={pickedQuestionIds.includes(q.id)}>
@@ -834,34 +825,30 @@
 					{/each}
 				</div>
 			{:else if snapshot.matches('spiritAnswers')}
-				<h2>Spirit Answers</h2>
 				<select bind:value={answerQuestionId}>
-					<option value="">Choose question</option>
+					<option value=""></option>
 					{#each spiritQuestions as q}
 						<option value={q.id}>{q.title}: {q.question}</option>
 					{/each}
 				</select>
-				<input bind:value={clueText} placeholder="Full clue" />
+				<input bind:value={clueText} placeholder="clue" />
 			{:else if snapshot.matches('mediumsGetClues')}
-				<h2>Reveal Clue</h2>
 				<p class="mono">
 					{currentClue?.value || 'blank'} ({currentClue?.revealed ?? 0}/{currentClue?.fullValue?.length ?? 0})
 				</p>
 			{:else if snapshot.matches('guessing')}
-				<h2>Guess Word</h2>
 				<p class="mono">{currentGuess?.value || 'blank'}</p>
 				<input
 					bind:value={guessLetter}
 					maxlength="1"
-					placeholder="Letter"
+					placeholder="letter"
 					onkeydown={event => event.key === 'Enter' && submitGuessLetter()}
 				/>
 			{:else}
 				<p>{waitMessage(currentState)}</p>
 			{/if}
 		{:else if activeView === 'watch'}
-			<pre class="placeholder-snippet">watch placeholder
-hidden information UX later</pre>
+			<p class="placeholder-snippet">watch</p>
 		{:else}
 			<p>{waitMessage(currentState)}</p>
 		{/if}
@@ -895,13 +882,14 @@ hidden information UX later</pre>
 	{#if drawerOpen}
 		<aside class="info-drawer" aria-label="Table drawer">
 			<header class="drawer-header">
-				<strong>{activeActorLabel}</strong>
-				<button onclick={() => (drawerOpen = false)} type="button">Close</button>
+				<button aria-label="Close table drawer" onclick={() => (drawerOpen = false)} type="button">
+					<X size={16} />
+				</button>
 			</header>
 
 			<div class="drawer-sections">
 				<details class="drawer-section" open>
-					<summary>current table board</summary>
+					<summary>board</summary>
 					<section class="board drawer-board">
 						<div class="table-row labels">
 							{#each teams as team}
@@ -942,7 +930,7 @@ hidden information UX later</pre>
 				</details>
 
 				<details class="drawer-section" open>
-					<summary>your questions</summary>
+					<summary>questions</summary>
 					<div class="question-list">
 						{#if actorQuestions.length}
 							{#each actorQuestions as q}
@@ -951,14 +939,12 @@ hidden information UX later</pre>
 									<span>{q.question}</span>
 								</div>
 							{/each}
-						{:else}
-							<p class="empty-line">none</p>
 						{/if}
 					</div>
 				</details>
 
 				<details class="drawer-section">
-					<summary>discarded questions by your spirit</summary>
+					<summary>your spirit discards</summary>
 					<div class="question-list">
 						{#if ownSpiritDiscards.length}
 							{#each ownSpiritDiscards as q}
@@ -967,14 +953,12 @@ hidden information UX later</pre>
 									<span>{q.question}</span>
 								</div>
 							{/each}
-						{:else}
-							<p class="empty-line">none</p>
 						{/if}
 					</div>
 				</details>
 
 				<details class="drawer-section">
-					<summary>discarded questions by the other spirit</summary>
+					<summary>other spirit discards</summary>
 					<div class="question-list">
 						{#if otherSpiritDiscards.length}
 							{#each otherSpiritDiscards as q}
@@ -983,26 +967,19 @@ hidden information UX later</pre>
 									<span>{q.question}</span>
 								</div>
 							{/each}
-						{:else}
-							<p class="empty-line">none</p>
 						{/if}
 					</div>
 				</details>
 
 				<details class="drawer-section" open>
-					<summary>notes table</summary>
+					<summary>notes</summary>
 					<table class="notes-table">
-						<thead>
-							<tr>
-								<th>topic</th>
-								<th>note</th>
-							</tr>
-						</thead>
 						<tbody>
 							{#each notes as note}
 								<tr>
 									<td>
 										<input
+											placeholder="topic"
 											value={note.topic}
 											oninput={event => updateNote(note.id, 'topic', event.currentTarget.value)}
 										/>
@@ -1034,10 +1011,6 @@ hidden information UX later</pre>
 			Table
 		</button>
 		<div class="action-bar">
-			<div class="action-context">
-				<strong>{activeActorLabel}</strong>
-				<span>{activeView}</span>
-			</div>
 			<div class="action-buttons">
 				{#if snapshot.matches('start')}
 					<button onclick={() => actor.send({ type: 'start' })}>Start</button>
@@ -1092,7 +1065,7 @@ hidden information UX later</pre>
 	select,
 	textarea {
 		border: 1px solid var(--app-border);
-		border-radius: 4px;
+		border-radius: 2px;
 		padding: 0.45rem 0.6rem;
 		background: var(--app-input);
 		color: inherit;
@@ -1114,7 +1087,6 @@ hidden information UX later</pre>
 		justify-content: space-between;
 	}
 
-	h2,
 	p {
 		margin: 0;
 	}
@@ -1125,17 +1097,13 @@ hidden information UX later</pre>
 	}
 
 	.muted-line,
-	.empty-line,
 	.empty-actions {
 		color: var(--app-muted);
 	}
 
 	.choice-preview {
 		display: inline-flex;
-		border: 1px solid var(--app-border);
-		border-radius: 4px;
-		padding: 0.45rem 0.6rem;
-		background: var(--app-input);
+		padding: 0.25rem 0;
 	}
 
 	.team-toggle,
@@ -1158,27 +1126,16 @@ hidden information UX later</pre>
 	.board,
 	.actor-view,
 	.role-table {
-		border: 1px solid var(--app-border);
-		border-radius: 6px;
-		background: var(--app-panel);
+		border: 0;
+		border-radius: 0;
+		background: transparent;
 	}
 
 	.actor-view {
 		display: grid;
 		gap: 0.75rem;
-		padding: 1rem;
-	}
-
-	.view-header {
-		display: flex;
-		gap: 0.5rem;
-		align-items: center;
-		justify-content: space-between;
-		text-transform: lowercase;
-	}
-
-	.view-header span {
-		color: var(--app-muted);
+		min-height: 3.5rem;
+		padding: 0.25rem 0;
 	}
 
 	.table-row {
@@ -1263,9 +1220,8 @@ hidden information UX later</pre>
 	.question-grid label {
 		display: grid;
 		gap: 0.2rem;
-		border: 1px solid var(--app-border);
-		border-radius: 4px;
-		padding: 0.5rem;
+		border-bottom: 1px solid var(--app-border);
+		padding: 0.5rem 0;
 	}
 
 	.question-grid input {
@@ -1283,14 +1239,12 @@ hidden information UX later</pre>
 
 	.placeholder-snippet {
 		margin: 0;
-		border: 1px dashed var(--app-border);
-		border-radius: 4px;
-		padding: 0.75rem;
 		color: var(--app-muted);
 		white-space: pre-wrap;
 	}
 
 	.role-table {
+		border-top: 1px solid var(--app-border);
 		overflow-x: auto;
 	}
 
@@ -1299,44 +1253,49 @@ hidden information UX later</pre>
 		bottom: 5.75rem;
 		z-index: 35;
 		display: grid;
-		gap: 0.75rem;
-		width: 100%;
+		gap: 0.5rem;
+		width: auto;
+		margin: 0 -1rem;
 		max-height: min(64dvh, 36rem);
 		border: 1px solid var(--app-border);
-		border-radius: 8px;
+		border-width: 1px 0;
+		border-radius: 0;
 		background: var(--app-panel);
-		box-shadow: 0 1.5rem 4rem color-mix(in srgb, black 54%, transparent);
-		padding: 0.75rem;
+		box-shadow: 0 -0.25rem 0.8rem color-mix(in srgb, black 16%, transparent);
+		padding: 0.65rem 1rem;
 		overflow: auto;
 	}
 
 	.drawer-header {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
+		justify-content: flex-end;
 		gap: 0.75rem;
 	}
 
 	.drawer-sections {
 		display: grid;
-		gap: 0.6rem;
 	}
 
 	.drawer-section {
-		border: 1px solid var(--app-border);
-		border-radius: 6px;
-		background: color-mix(in srgb, var(--app-input) 62%, transparent);
+		border-top: 1px solid var(--app-border);
+		border-radius: 0;
+		background: transparent;
 		overflow: hidden;
+	}
+
+	.drawer-section:last-child {
+		border-bottom: 1px solid var(--app-border);
 	}
 
 	.drawer-section summary {
 		cursor: pointer;
-		padding: 0.65rem 0.75rem;
-		font-weight: 700;
+		padding: 0.55rem 0;
+		font-weight: 600;
 	}
 
 	.drawer-section[open] summary {
-		border-bottom: 1px solid var(--app-border);
+		border-bottom: 0;
 	}
 
 	.drawer-board {
@@ -1347,17 +1306,15 @@ hidden information UX later</pre>
 
 	.question-list {
 		display: grid;
-		gap: 0.4rem;
-		padding: 0.65rem;
+		padding-bottom: 0.4rem;
 	}
 
 	.question-row {
 		display: grid;
 		gap: 0.15rem;
-		border: 1px solid var(--app-border);
-		border-radius: 4px;
-		padding: 0.5rem;
-		background: var(--app-panel);
+		border-top: 1px solid color-mix(in srgb, var(--app-border) 64%, transparent);
+		padding: 0.45rem 0;
+		background: transparent;
 	}
 
 	.notes-table input,
@@ -1377,9 +1334,10 @@ hidden information UX later</pre>
 		z-index: 40;
 		display: grid;
 		justify-items: center;
-		margin-top: 1rem;
+		margin: 1rem -1rem -1rem;
 		padding-top: 1.65rem;
-		background: linear-gradient(180deg, transparent, var(--app-bg) 28%);
+		background: var(--app-panel);
+		box-shadow: 0 -0.22rem 0.7rem color-mix(in srgb, black 14%, transparent);
 		pointer-events: none;
 	}
 
@@ -1397,31 +1355,18 @@ hidden information UX later</pre>
 		background: var(--app-accent);
 		color: var(--app-accent-ink);
 		font-weight: 700;
-		box-shadow: 0 0.6rem 1.6rem color-mix(in srgb, black 42%, transparent);
+		box-shadow: 0 -0.12rem 0.45rem color-mix(in srgb, black 18%, transparent);
 	}
 
 	.action-bar {
 		display: grid;
-		grid-template-columns: minmax(8rem, auto) minmax(0, 1fr);
-		gap: 0.75rem;
 		align-items: center;
 		width: 100%;
-		border: 1px solid var(--app-border);
-		border-radius: 8px;
-		background: color-mix(in srgb, var(--app-panel) 94%, black);
-		box-shadow: 0 0.8rem 3rem color-mix(in srgb, black 50%, transparent);
-		padding: 0.7rem;
-	}
-
-	.action-context {
-		display: grid;
-		gap: 0.15rem;
-		text-transform: lowercase;
-	}
-
-	.action-context span {
-		color: var(--app-muted);
-		font-size: 0.8rem;
+		border-top: 1px solid var(--app-border);
+		border-radius: 0;
+		background: transparent;
+		box-shadow: none;
+		padding: 0.55rem 1rem 0.65rem;
 	}
 
 	.action-buttons {
@@ -1464,10 +1409,6 @@ hidden information UX later</pre>
 	}
 
 	@media (max-width: 640px) {
-		.action-bar {
-			grid-template-columns: 1fr;
-		}
-
 		.action-buttons {
 			justify-content: flex-start;
 		}
