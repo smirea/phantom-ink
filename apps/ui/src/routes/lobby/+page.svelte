@@ -7,11 +7,13 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { type RoomDirectoryListing, type UserRecord } from '@repo/shared/onlineGame';
+	import { cubicOut, quintOut } from 'svelte/easing';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import Plus from '@lucide/svelte/icons/plus';
 	import UsersRound from '@lucide/svelte/icons/users-round';
 	import { onMount } from 'svelte';
+	import type { TransitionConfig } from 'svelte/transition';
 
 	let rooms = $state<RoomDirectoryListing[]>([]);
 	let nearbySouls = $state<UserRecord[]>([]);
@@ -199,6 +201,38 @@
 		}
 		return Number.parseFloat(maxHeight) || 0;
 	}
+
+	function soulRise(_node: Element): TransitionConfig {
+		if (prefersReducedMotion()) return { duration: 0 };
+
+		return {
+			duration: 520,
+			easing: quintOut,
+			css: (t, u) => `
+				opacity: ${t};
+				transform: translate3d(0, ${u * 1.35}rem, 0) scale(${0.9 + t * 0.1});
+				filter: blur(${u * 0.42}rem);
+			`,
+		};
+	}
+
+	function soulEvaporate(_node: Element): TransitionConfig {
+		if (prefersReducedMotion()) return { duration: 0 };
+
+		return {
+			duration: 620,
+			easing: cubicOut,
+			css: (t, u) => `
+				opacity: ${t * t};
+				transform: translate3d(${u * 0.28}rem, ${u * -0.72}rem, 0) scale(${1 + u * 0.14});
+				filter: blur(${u * 0.56}rem);
+			`,
+		};
+	}
+
+	function prefersReducedMotion(): boolean {
+		return typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+	}
 </script>
 
 <svelte:head>
@@ -239,7 +273,7 @@
 					{nearbySouls.length} nearby {nearbySouls.length === 1 ? 'soul' : 'souls'}:
 				</span>
 				{#each nearbySouls as soul (soul.id)}
-					<span class="nearby-pill">
+					<span class="nearby-pill" in:soulRise|local out:soulEvaporate|local>
 						<PlayerAvatar color={playerColorValue(soul.color)} icon={soul.icon} label={`${soul.name} avatar`} />
 						<span>{soul.name}</span>
 					</span>
@@ -408,6 +442,8 @@
 		font-size: 0.86rem;
 		font-weight: 850;
 		line-height: 1;
+		transform-origin: 50% 100%;
+		will-change: transform, filter, opacity;
 	}
 
 	.nearby-pill :global(.player-avatar) {
