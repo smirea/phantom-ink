@@ -28,6 +28,7 @@
 	let isSubmitting = $state(false);
 	let error = $state<string | null>(null);
 	let tapTarget = $state<string | null>(null);
+	let randomizedStartingIdentity = false;
 	let tapTimeout: ReturnType<typeof setTimeout> | undefined;
 	let tapFrame: number | undefined;
 	const selectedColor = $derived(playerColorPreset(color));
@@ -51,8 +52,11 @@
 				name = user.name;
 				color = user.color;
 				icon = user.icon;
+			} else {
+				randomizeStartingIdentity();
 			}
 		} catch {
+			randomizeStartingIdentity();
 			error = null;
 		} finally {
 			isLoading = false;
@@ -81,6 +85,16 @@
 
 	function randomizeIdentity() {
 		tapControl('dice');
+		applyRandomIdentity();
+	}
+
+	function randomizeStartingIdentity() {
+		if (randomizedStartingIdentity || isValidPlayerName(name)) return;
+		randomizedStartingIdentity = true;
+		applyRandomIdentity();
+	}
+
+	function applyRandomIdentity() {
 		color = randomPreset(PLAYER_COLOR_PRESETS).id;
 		icon = randomPreset(PLAYER_ICON_PRESETS).id;
 	}
