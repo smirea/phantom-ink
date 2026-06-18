@@ -105,7 +105,6 @@
 		joiningCode = code;
 		try {
 			const userId = appContext.user.id;
-			if (userId <= 0) throw new Error('Missing user');
 
 			await api.rooms.join({ code, userId });
 			await goto(roomHref(code), { noScroll: true });

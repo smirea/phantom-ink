@@ -20,6 +20,10 @@
 - Environment files are managed by `env-manager`.
 - Keep `.env` tracked with harmless/default values and `.env.local` ignored for local values.
 
+# Code Style
+
+- Treat required data as required. Do not add fallback branches, placeholder states, or defensive existence checks for fields that are guaranteed by types, route invariants, or the surrounding flow. Fix the broken invariant at its source instead of adding UI or code paths for impossible states.
+
 # Frontend
 
 - Tailwind CSS v4 is wired through `@tailwindcss/vite`.

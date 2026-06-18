@@ -67,7 +67,6 @@
 		async function connect() {
 			try {
 				const userId = appContext.user.id;
-				if (userId <= 0) throw new Error('Missing user');
 
 				const payload = await api.rooms.join({ code: roomCode ?? '', userId });
 				room = payload.room;
@@ -152,7 +151,6 @@
 		pendingAction = `team:${team}`;
 		try {
 			const userId = appContext.user.id;
-			if (userId <= 0) throw new Error('Missing user');
 
 			const payload = await api.rooms.action({
 				code: roomCode,
@@ -177,7 +175,6 @@
 		pendingAction = 'ready';
 		try {
 			const userId = appContext.user.id;
-			if (userId <= 0) throw new Error('Missing user');
 
 			const payload = await api.rooms.action({
 				code: roomCode,
@@ -201,7 +198,6 @@
 		pendingAction = `word:${mode}`;
 		try {
 			const userId = appContext.user.id;
-			if (userId <= 0) throw new Error('Missing user');
 
 			const payload = await api.rooms.action({
 				code: roomCode,

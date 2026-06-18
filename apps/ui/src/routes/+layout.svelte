@@ -30,13 +30,7 @@
 
 	const appContext = $state<AppContext>({
 		theme: LS.get('dark_mode') ? 'dark' : 'light',
-		user: {
-			id: -1,
-			name: 'some soul',
-			color: sample(PLAYER_COLOR_PRESETS).id,
-			icon: sample(PLAYER_ICON_PRESETS).id,
-			unsaved: true,
-		},
+		user: initialAppUser(),
 		saveUser: async function saveCurrentUser(): Promise<User> {
 			debouncedSaveUser.cancel();
 			if (!canSaveUser(appContext.user)) throw new Error('Set your name first.');
@@ -73,7 +67,7 @@
 	let settingsCloseTimer: ReturnType<typeof setTimeout> | undefined;
 	let manualViewTransition = false;
 	let profileCheckId = 0;
-	let lastSavedUserKey = '';
+	let lastSavedUserKey = appContext.user.unsaved ? '' : userSaveKey(appContext.user);
 	let userSaveSequence = 0;
 	const debouncedSaveUser = debounce(() => {
 		void appContext.saveUser();
@@ -84,6 +78,8 @@
 	const isBareScreen = $derived(activePath === '/' || activePath === '/setup');
 	const isLobbyScreen = $derived(activePath === '/lobby');
 	const isRoomScreen = $derived(Boolean(activeRoomCode));
+	const requiresSavedUser = $derived(!isPublicPath(activePath));
+	const canRenderRoute = $derived(!requiresSavedUser || !appContext.user.unsaved);
 	const setupHref = $derived(`/setup?returnTo=${encodeURIComponent(activeRoute)}`);
 	const theme = $derived(appContext.theme);
 
@@ -130,6 +126,12 @@
 	$effect(() => {
 		const user = appContext.user;
 		scheduleUserSave(user, userSaveKey(user), user.unsaved);
+	});
+
+	$effect(() => {
+		if (!browser || canRenderRoute) return;
+		const setupUrl = setupUrlForReturn(page.url);
+		void goto(`${setupUrl.pathname}${setupUrl.search}${setupUrl.hash}`, { noScroll: true });
 	});
 
 	onMount(() => {
@@ -182,6 +184,18 @@
 
 	function isPublicPath(path: string): boolean {
 		return path === '/' || path === '/setup';
+	}
+
+	function initialAppUser(): AppUser {
+		return (
+			data.user ?? {
+				id: -1,
+				name: 'some soul',
+				color: sample(PLAYER_COLOR_PRESETS).id,
+				icon: sample(PLAYER_ICON_PRESETS).id,
+				unsaved: true,
+			}
+		);
 	}
 
 	function userSaveKey(user: Pick<User, 'id' | 'name' | 'color' | 'icon'>): string {
@@ -434,7 +448,9 @@
 			<section class:lobby-card={isLobbyScreen} class:room-card={isRoomScreen} class="content-card">
 				{#key activePath}
 					<div class="route-frame">
-						{@render children()}
+						{#if canRenderRoute}
+							{@render children()}
+						{/if}
 					</div>
 				{/key}
 			</section>
