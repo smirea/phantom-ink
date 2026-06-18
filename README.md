@@ -26,6 +26,8 @@ bun run db push
 bun run dev
 ```
 
+Drizzle owns the SQLite schema. This project does not keep migrations; when the schema changes, reset the local database with `trash .data/phantom-ink.sqlite*` and run `bun run db push` again.
+
 Local UI host: http://phantom-ink.localhost (via localias)
 
 Useful checks:
