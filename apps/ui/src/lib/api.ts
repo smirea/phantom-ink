@@ -2,23 +2,24 @@ import {
 	DEFAULT_PLAYER_COLOR,
 	DEFAULT_PLAYER_ICON,
 	playerIdForUser,
-	type CurrentUserResponse,
-	type CurrentRoomResponse,
-	type DirectoryResponse,
 	type OnlineRoomAction,
-	type OnlinePresenceResponse,
 	type PlayerColorId,
 	type PlayerIconId,
 	type RoomDirectoryListing,
-	type RoomResponse,
 	type RoomViewState,
 	type UserRecord,
-	type UserResponse,
 } from '@repo/shared/onlineGame';
+import type { AppRouterClient } from '@repo/shared/rpc';
+import { consumeEventIterator, createORPCClient } from '@orpc/client';
+import { RPCLink } from '@orpc/client/fetch';
 import { getStoredClientKey, LS, readStoredClientKey, storageKeys } from './storage';
 import { parseRoomCode } from './roomCodes';
 
-const apiBase = '/api';
+const api = createORPCClient<AppRouterClient>(new RPCLink({ url: '/api/rpc' }));
+
+export interface RoomEventSubscription {
+	close: () => void;
+}
 
 export function getStoredUserId(): number | null {
 	const userId = LS.get(storageKeys.serverUserId);
@@ -26,18 +27,11 @@ export function getStoredUserId(): number | null {
 }
 
 export async function loadStoredUser(): Promise<UserRecord | null> {
-	const params = new URLSearchParams();
 	const userId = getStoredUserId();
 	const clientKey = readStoredClientKey();
-	if (userId) params.set('userId', String(userId));
-	if (clientKey) params.set('clientKey', clientKey);
-	if (!params.size) return null;
+	if (!userId && !clientKey) return null;
 
-	const payload = await readJson<CurrentUserResponse>(
-		await fetch(`${apiBase}/users/me?${params.toString()}`, {
-			headers: { Accept: 'application/json' },
-		}),
-	);
+	const payload = await api.users.me({ userId, clientKey });
 	if (payload.user) {
 		LS.set({
 			[storageKeys.serverUserId]: payload.user.id,
@@ -54,17 +48,11 @@ export async function ensureUser(profile: {
 	color: PlayerColorId;
 	icon: PlayerIconId;
 }): Promise<UserRecord> {
-	const payload = await readJson<UserResponse>(
-		await fetch(`${apiBase}/users`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				userId: getStoredUserId(),
-				clientKey: getStoredClientKey(),
-				...profile,
-			}),
-		}),
-	);
+	const payload = await api.users.ensure({
+		userId: getStoredUserId(),
+		clientKey: getStoredClientKey(),
+		...profile,
+	});
 	LS.set({
 		[storageKeys.serverUserId]: payload.user.id,
 		[storageKeys.playerName]: payload.user.name,
@@ -75,38 +63,26 @@ export async function ensureUser(profile: {
 }
 
 export async function getCurrentRoom(): Promise<string | null> {
-	const params = new URLSearchParams();
 	const userId = getStoredUserId();
-	if (userId) params.set('userId', String(userId));
-	params.set('clientKey', getStoredClientKey());
+	const clientKey = getStoredClientKey();
 
-	const payload = await readJson<CurrentRoomResponse>(
-		await fetch(`${apiBase}/users/current-room?${params.toString()}`, {
-			headers: { Accept: 'application/json' },
-		}),
-	);
+	const payload = await api.users.currentRoom({
+		userId,
+		clientKey,
+	});
 	return payload.roomCode;
 }
 
 export async function getRoomDirectory(): Promise<RoomDirectoryListing[]> {
-	const payload = await readJson<DirectoryResponse>(
-		await fetch(`${apiBase}/rooms`, { headers: { Accept: 'application/json' } }),
-	);
+	const payload = await api.rooms.list();
 	return payload.rooms;
 }
 
 export async function getOnlineUsers(): Promise<UserRecord[]> {
-	const params = new URLSearchParams();
 	const userId = getStoredUserId();
 	const clientKey = readStoredClientKey();
-	if (userId) params.set('userId', String(userId));
-	if (clientKey) params.set('clientKey', clientKey);
 
-	const payload = await readJson<OnlinePresenceResponse>(
-		await fetch(`${apiBase}/presence/online${params.size ? `?${params.toString()}` : ''}`, {
-			headers: { Accept: 'application/json' },
-		}),
-	);
+	const payload = await api.presence.online({ userId, clientKey });
 	return payload.users;
 }
 
@@ -115,13 +91,7 @@ export async function pingPresence(): Promise<void> {
 	const clientKey = readStoredClientKey();
 	if (!userId && !clientKey) return;
 
-	await readJson<{ ok: boolean }>(
-		await fetch(`${apiBase}/presence/ping`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ userId, clientKey }),
-		}),
-	);
+	await api.presence.ping({ userId, clientKey });
 }
 
 export async function joinRoom(code: string, name: string): Promise<RoomViewState> {
@@ -131,19 +101,7 @@ export async function joinRoom(code: string, name: string): Promise<RoomViewStat
 		color: LS.get(storageKeys.playerColor, DEFAULT_PLAYER_COLOR),
 		icon: LS.get(storageKeys.playerIcon, DEFAULT_PLAYER_ICON),
 	});
-	const payload = await readJson<RoomResponse>(
-		await fetch(`${apiBase}/rooms/${encodeURIComponent(roomCode)}/join`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				userId: user.id,
-				clientKey: getStoredClientKey(),
-				name: user.name,
-				color: user.color,
-				icon: user.icon,
-			}),
-		}),
-	);
+	const payload = await api.rooms.join({ code: roomCode, userId: user.id });
 	LS.set({ [storageKeys.currentRoom]: roomCode });
 	return payload.room;
 }
@@ -153,13 +111,7 @@ export async function sendRoomAction(code: string, action: OnlineRoomAction): Pr
 	const userId = getStoredUserId();
 	if (!userId) throw new Error('Missing user');
 
-	const payload = await readJson<RoomResponse>(
-		await fetch(`${apiBase}/rooms/${encodeURIComponent(roomCode)}/actions`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ userId, action }),
-		}),
-	);
+	const payload = await api.rooms.action({ code: roomCode, userId, action });
 	return payload.room;
 }
 
@@ -171,38 +123,24 @@ export async function leaveRoomForStoredUser(code: string): Promise<void> {
 	await sendRoomAction(roomCode, { type: 'leave', actorId: playerIdForUser(userId) });
 }
 
-export function openRoomEvents(code: string, onRoom: (room: RoomViewState) => void, onError: () => void): EventSource {
+export function openRoomEvents(
+	code: string,
+	onRoom: (room: RoomViewState) => void,
+	onError: () => void,
+): RoomEventSubscription {
 	const roomCode = requireRoomCode(code);
 	const userId = getStoredUserId();
-	const params = new URLSearchParams();
-	if (userId) params.set('userId', String(userId));
 
-	const events = new EventSource(`${apiBase}/rooms/${encodeURIComponent(roomCode)}/events?${params.toString()}`);
-	const updateRoom = (event: Event) => {
-		try {
-			const payload = JSON.parse((event as MessageEvent<string>).data) as RoomResponse;
-			onRoom(payload.room);
-		} catch {
-			onError();
-		}
+	const cancel = consumeEventIterator(api.rooms.events({ code: roomCode, userId }), {
+		onEvent: payload => onRoom(payload.room),
+		onError: () => onError(),
+	});
+
+	return {
+		close: () => {
+			void cancel();
+		},
 	};
-	events.addEventListener('room', updateRoom);
-	events.onmessage = updateRoom;
-	events.onerror = onError;
-	return events;
-}
-
-async function readJson<T>(response: Response): Promise<T> {
-	const payload = (await response.json()) as T | { error: string };
-	if (!response.ok) {
-		const message =
-			typeof payload === 'object' && payload !== null && 'error' in payload
-				? String(payload.error)
-				: `Request failed with ${response.status}`;
-		throw new Error(message);
-	}
-
-	return payload as T;
 }
 
 function requireRoomCode(value: string): string {

@@ -7,9 +7,11 @@
 		"./env": "./src/env.ts",
 		"./game": "./src/game.ts",
 		"./onlineGame": "./src/onlineGame.ts",
+		"./rpc": "./src/rpc.ts",
 		"./package.json": "./package.json"
 	},
 	"dependencies": {
+		"@orpc/contract": "^1.14.6",
 		"zod": "^4.4.3"
 	}
 }

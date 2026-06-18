@@ -55,7 +55,7 @@
 			return;
 		}
 
-		let events: EventSource | null = null;
+		let events: ReturnType<typeof openRoomEvents> | null = null;
 		let cancelled = false;
 
 		async function connect() {

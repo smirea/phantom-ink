@@ -21,11 +21,12 @@
 	} from '@repo/shared/onlineGame';
 	import { onMount } from 'svelte';
 	import './layout.css';
+	import { setAppContext } from '$lib/appContext';
+	import type { AppContext } from '$lib/appContext';
 
-	let { children } = $props();
+	let { children, data } = $props();
 	const browser = typeof window !== 'undefined';
 	const presencePingMs = 10_000;
-	type Theme = 'dark' | 'light';
 
 	const queryClient = new QueryClient({
 		defaultOptions: {
@@ -35,7 +36,11 @@
 		},
 	});
 
-	let theme = $state<Theme>(LS.get(storageKeys.darkMode) ? 'dark' : 'light');
+	const appContext = $state<AppContext>({
+		theme: LS.get(storageKeys.darkMode) ? 'dark' : 'light',
+		user: null,
+	});
+	setAppContext(appContext);
 	let playerName = $state(LS.get(storageKeys.playerName) ?? '');
 	let playerColor = $state<PlayerColorId>(LS.get(storageKeys.playerColor, DEFAULT_PLAYER_COLOR));
 	let playerIcon = $state<PlayerIconId>(LS.get(storageKeys.playerIcon, DEFAULT_PLAYER_ICON));
@@ -54,6 +59,7 @@
 	const setupHref = $derived(`/setup?returnTo=${encodeURIComponent(activeRoute)}`);
 	const displayedPlayerName = $derived(playerName.trim() || 'Unknown');
 	const displayedPlayer = $derived({ name: displayedPlayerName, color: playerColor, icon: playerIcon });
+	const theme = $derived(appContext.theme);
 
 	beforeNavigate(navigation => {
 		if (!browser || navigation.type === 'popstate' || navigation.willUnload || !navigation.to) return;
@@ -85,6 +91,10 @@
 		if (typeof document === 'undefined') return;
 		document.documentElement.dataset.theme = theme;
 		LS.set({ [storageKeys.darkMode]: theme === 'dark' });
+	});
+
+	$effect(() => {
+		appContext.user = data.user;
 	});
 
 	onMount(() => {
@@ -151,6 +161,7 @@
 		try {
 			const user = await loadStoredUser();
 			if (checkId !== profileCheckId) return;
+			appContext.user = user;
 			if (!isCompleteUserProfile(user)) {
 				const setupUrl = setupUrlForReturn(url);
 				await goto(`${setupUrl.pathname}${setupUrl.search}${setupUrl.hash}`, { noScroll: true });
@@ -179,7 +190,7 @@
 	}
 
 	function toggleTheme() {
-		theme = theme === 'dark' ? 'light' : 'dark';
+		appContext.theme = theme === 'dark' ? 'light' : 'dark';
 		closeSettings();
 	}
 

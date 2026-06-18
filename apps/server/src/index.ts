@@ -1,5 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { implement, ORPCError } from '@orpc/server';
+import { RPCHandler } from '@orpc/server/fetch';
 import { asc, desc, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import env from '@repo/shared/env';
@@ -12,16 +14,12 @@ import {
 	sanitizePlayerName,
 	selectRoomDirectoryListings,
 	selectRoomViewState,
-	type CurrentRoomResponse,
-	type CurrentUserResponse,
-	type DirectoryResponse,
 	type OnlineRoomAction,
 	type OnlineRoomState,
-	type OnlinePresenceResponse,
 	type RoomResponse,
 	type UserRecord,
-	type UserResponse,
 } from '@repo/shared/onlineGame';
+import { appContract } from '@repo/shared/rpc';
 import { roomActionsTable, roomsTable, usersTable } from './db/schema';
 
 const uiBuildPath = new URL('../../ui/build/', import.meta.url);
@@ -45,188 +43,140 @@ type RoomRow = typeof roomsTable.$inferSelect;
 type RoomActionRow = typeof roomActionsTable.$inferSelect;
 
 type RoomClient = {
-	controller: ReadableStreamDefaultController<Uint8Array>;
-	userId: number | null;
+	enqueue: (state?: OnlineRoomState) => void;
+	close: () => void;
 };
 
 const roomClients = new Map<string, Set<RoomClient>>();
 const roomStateCache = new Map<string, OnlineRoomState>();
 const userPresence = new Map<number, number>();
-const encoder = new TextEncoder();
 
-class HttpError extends Error {
-	constructor(
-		message: string,
-		readonly status: number,
-	) {
-		super(message);
-	}
-}
+const os = implement(appContract);
+
+const router = os.router({
+	status: os.status.handler(() => ({ ok: true, now: nowIso() })),
+	users: {
+		ensure: os.users.ensure.handler(({ input }) => ({
+			user: ensureUser(numberParam(input.userId), input.clientKey, input.name, input.color, input.icon),
+		})),
+		me: os.users.me.handler(({ input }) => {
+			const user = getUserByIdOrClientKey(numberParam(input.userId), input.clientKey);
+			return { user: user ? userRecord(user) : null };
+		}),
+		currentRoom: os.users.currentRoom.handler(({ input }) => {
+			pruneInactiveLobbyRooms();
+			const user = getUserByIdOrClientKey(numberParam(input.userId), input.clientKey);
+			return { roomCode: user ? findCurrentRoomForUser(user.id) : null };
+		}),
+	},
+	presence: {
+		ping: os.presence.ping.handler(({ input }) => {
+			const user = getUserByIdOrClientKey(numberParam(input.userId), input.clientKey);
+			if (!user) throw new ORPCError('NOT_FOUND', { message: 'User not found' });
+
+			touchUserPresence(user.id);
+			pruneInactiveLobbyRooms();
+			return { ok: true, timeoutMs: presenceTimeoutMs };
+		}),
+		online: os.presence.online.handler(({ input }) => {
+			pruneInactiveLobbyRooms();
+			const currentUser = getUserByIdOrClientKey(numberParam(input.userId), input.clientKey);
+			return { users: getOnlineUsers(currentUser?.id ?? null) };
+		}),
+	},
+	rooms: {
+		list: os.rooms.list.handler(() => {
+			pruneInactiveLobbyRooms();
+			const rooms = getRooms()
+				.map(room => ({ code: room.code, state: loadRoomState(room.code) }))
+				.filter(room => room.state.members.length > 0);
+			return { rooms: selectRoomDirectoryListings(rooms) };
+		}),
+		get: os.rooms.get.handler(({ input }) => {
+			pruneInactiveLobbyRooms();
+			const code = requireRoomCode(input.code);
+			ensureRoom(code);
+			return roomResponse(code, numberParam(input.userId));
+		}),
+		join: os.rooms.join.handler(({ input }) => {
+			pruneInactiveLobbyRooms();
+			const code = requireRoomCode(input.code);
+			const userId = requireUserId(input.userId);
+			const user = getUserRow(userId);
+			if (!user) throw new ORPCError('NOT_FOUND', { message: 'User not found' });
+
+			const record = userRecord(user);
+			touchUserPresence(record.id);
+			leaveOtherRooms(code, record);
+			const state = appendRoomAction(code, record.id, {
+				type: 'join',
+				actorId: playerIdForUser(record.id),
+				userId: record.id,
+				name: record.name,
+				color: record.color,
+				icon: record.icon,
+			});
+			return roomResponse(code, record.id, state);
+		}),
+		action: os.rooms.action.handler(({ input }) => {
+			pruneInactiveLobbyRooms();
+			const code = requireRoomCode(input.code);
+			const actorUserId = requireUserId(input.userId);
+			if (!input.action) throw new ORPCError('BAD_REQUEST', { message: 'action is required' });
+
+			touchUserPresence(actorUserId);
+			const state = appendRoomAction(code, actorUserId, input.action);
+			return roomResponse(code, actorUserId, state);
+		}),
+		events: os.rooms.events.handler(({ input, signal }) => {
+			pruneInactiveLobbyRooms();
+			const code = requireRoomCode(input.code);
+			ensureRoom(code);
+			return streamRoom(code, numberParam(input.userId), signal);
+		}),
+	},
+});
+
+const rpcHandler = new RPCHandler(router);
 
 const server = Bun.serve({
 	development: true,
 	idleTimeout: 120,
 	port: env.PORT,
 	async fetch(request) {
+		const rpc = await rpcHandler.handle(request, { prefix: '/api/rpc', context: {} });
+		if (rpc.matched) return rpc.response;
+
 		const url = new URL(request.url);
-
-		if (isApiPathname(url.pathname)) {
-			return handleApi(request, url).catch(error => {
-				if (error instanceof HttpError) {
-					return json({ ok: false, error: error.message }, { status: error.status });
-				}
-
-				console.error(error);
-				return json({ ok: false, error: 'Internal server error' }, { status: 500 });
-			});
-		}
+		if (isApiPathname(url.pathname)) return Response.json({ ok: false, error: 'Not found' }, { status: 404 });
 
 		return staticFile(url.pathname);
 	},
 });
 
-async function handleApi(request: Request, url: URL): Promise<Response> {
-	const method = request.method.toUpperCase();
-	const pathname = apiPathname(url.pathname);
-	const roomMatch = /^\/rooms\/([A-Z]{4})(?:\/(.+))?$/.exec(pathname);
-
-	if (method === 'GET' && pathname === '/status') {
-		return json({ ok: true, now: new Date().toISOString() });
-	}
-
-	if (method === 'POST' && pathname === '/users') {
-		const body = await readBody<{
-			userId?: number | null;
-			clientKey?: string | null;
-			name?: string | null;
-			color?: string | null;
-			icon?: string | null;
-		}>(request);
-		const user = ensureUser(body.userId ?? null, body.clientKey ?? null, body.name ?? null, body.color, body.icon);
-		return json({ user } satisfies UserResponse);
-	}
-
-	if (method === 'GET' && pathname === '/users/me') {
-		const user = getUserByIdOrClientKey(numberParam(url.searchParams.get('userId')), url.searchParams.get('clientKey'));
-		return json({ user: user ? userRecord(user) : null } satisfies CurrentUserResponse);
-	}
-
-	if (method === 'GET' && pathname === '/users/current-room') {
-		pruneInactiveLobbyRooms();
-		const user = getUserByIdOrClientKey(numberParam(url.searchParams.get('userId')), url.searchParams.get('clientKey'));
-		const roomCode = user ? findCurrentRoomForUser(user.id) : null;
-		return json({ roomCode } satisfies CurrentRoomResponse);
-	}
-
-	if (method === 'POST' && pathname === '/presence/ping') {
-		const body = await readBody<{ userId?: number | null; clientKey?: string | null }>(request);
-		const user = getUserByIdOrClientKey(body.userId ?? null, body.clientKey);
-		if (!user) throw new HttpError('User not found', 404);
-
-		touchUserPresence(user.id);
-		pruneInactiveLobbyRooms();
-		return json({ ok: true, timeoutMs: presenceTimeoutMs });
-	}
-
-	if (method === 'GET' && pathname === '/presence/online') {
-		pruneInactiveLobbyRooms();
-		const currentUser = getUserByIdOrClientKey(
-			numberParam(url.searchParams.get('userId')),
-			url.searchParams.get('clientKey'),
-		);
-		return json({ users: getOnlineUsers(currentUser?.id ?? null) } satisfies OnlinePresenceResponse);
-	}
-
-	if (method === 'GET' && pathname === '/rooms') {
-		pruneInactiveLobbyRooms();
-		const rooms = getRooms()
-			.map(room => ({ code: room.code, state: loadRoomState(room.code) }))
-			.filter(room => room.state.members.length > 0);
-		return json({ rooms: selectRoomDirectoryListings(rooms) } satisfies DirectoryResponse);
-	}
-
-	if (roomMatch) {
-		pruneInactiveLobbyRooms();
-		const code = roomMatch[1] ?? '';
-		const subpath = roomMatch[2] ?? '';
-		const userId = numberParam(url.searchParams.get('userId'));
-
-		if (method === 'GET' && subpath === '') {
-			ensureRoom(code);
-			return json(roomResponse(code, userId));
-		}
-
-		if (method === 'GET' && subpath === 'events') {
-			ensureRoom(code);
-			return streamRoom(code, userId);
-		}
-
-		if (method === 'POST' && subpath === 'join') {
-			const body = await readBody<{
-				userId?: number | null;
-				clientKey?: string | null;
-				name?: string | null;
-				color?: string | null;
-				icon?: string | null;
-			}>(request);
-			const user = ensureUser(body.userId ?? null, body.clientKey ?? null, body.name ?? null, body.color, body.icon);
-			touchUserPresence(user.id);
-			leaveOtherRooms(code, user);
-			const state = appendRoomAction(code, user.id, {
-				type: 'join',
-				actorId: playerIdForUser(user.id),
-				userId: user.id,
-				name: user.name,
-				color: user.color,
-				icon: user.icon,
-			});
-			return json(roomResponse(code, user.id, state));
-		}
-
-		if (method === 'POST' && subpath === 'actions') {
-			const body = await readBody<{ userId?: number | null; action?: OnlineRoomAction }>(request);
-			const action = body.action;
-			const actorUserId = numberParam(body.userId);
-			if (!actorUserId) throw new HttpError('userId is required', 400);
-			if (!action) throw new HttpError('action is required', 400);
-
-			touchUserPresence(actorUserId);
-			const state = appendRoomAction(code, actorUserId, action);
-			return json(roomResponse(code, actorUserId, state));
-		}
-	}
-
-	return json({ ok: false, error: 'Not found' }, { status: 404 });
-}
-
 function isApiPathname(pathname: string): boolean {
 	return pathname === '/api' || pathname.startsWith('/api/');
-}
-
-function apiPathname(pathname: string): string {
-	if (pathname === '/api') return '/';
-	return pathname.startsWith('/api/') ? pathname.slice(4) : pathname;
 }
 
 function nowIso(): string {
 	return new Date().toISOString();
 }
 
-function json(data: unknown, init?: ResponseInit): Response {
-	return Response.json(data, init);
-}
-
-async function readBody<T>(request: Request): Promise<T> {
-	try {
-		return (await request.json()) as T;
-	} catch {
-		throw new HttpError('Invalid JSON', 400);
-	}
-}
-
 function numberParam(value: unknown): number | null {
 	const number = typeof value === 'number' ? value : Number(value);
 	return Number.isInteger(number) && number > 0 ? number : null;
+}
+
+function requireUserId(value: unknown): number {
+	const userId = numberParam(value);
+	if (!userId) throw new ORPCError('BAD_REQUEST', { message: 'userId is required' });
+	return userId;
+}
+
+function requireRoomCode(value: string): string {
+	const code = value.trim().toUpperCase();
+	if (!/^[A-Z]{4}$/.test(code)) throw new ORPCError('BAD_REQUEST', { message: 'Room codes must be 4 letters' });
+	return code;
 }
 
 function sanitizeClientKey(value: string | null | undefined): string | null {
@@ -373,9 +323,7 @@ function deleteRoom(code: string): void {
 	const clients = roomClients.get(code);
 	if (clients) {
 		for (const client of clients) {
-			try {
-				client.controller.close();
-			} catch {}
+			client.close();
 		}
 		roomClients.delete(code);
 	}
@@ -421,7 +369,7 @@ function loadRoomState(code: string): OnlineRoomState {
 
 function appendRoomAction(code: string, userId: number, action: OnlineRoomAction): OnlineRoomState {
 	ensureRoom(code);
-	if (action.actorId !== playerIdForUser(userId)) throw new HttpError('Wrong actor', 403);
+	if (action.actorId !== playerIdForUser(userId)) throw new ORPCError('FORBIDDEN', { message: 'Wrong actor' });
 
 	const current = loadRoomState(code);
 	const next = structuredClone(current);
@@ -471,45 +419,61 @@ function roomResponse(code: string, userId: number | null, state = loadRoomState
 	};
 }
 
-function streamRoom(code: string, userId: number | null): Response {
-	let client: RoomClient | null = null;
-	let heartbeat: Timer | null = null;
+async function* streamRoom(
+	code: string,
+	userId: number | null,
+	signal?: AbortSignal,
+): AsyncGenerator<RoomResponse, void, void> {
+	const queue: RoomResponse[] = [];
+	let wake: (() => void) | undefined;
+	let closed = false;
 
-	return new Response(
-		new ReadableStream<Uint8Array>({
-			start(controller) {
-				client = { controller, userId };
-				const clients = roomClients.get(code) ?? new Set<RoomClient>();
-				clients.add(client);
-				roomClients.set(code, clients);
-				controller.enqueue(encoder.encode('retry: 1000\n\n'));
-				controller.enqueue(eventChunk(code, userId));
-				heartbeat = setInterval(() => {
-					try {
-						controller.enqueue(encoder.encode(': heartbeat\n\n'));
-					} catch {
-						if (heartbeat) clearInterval(heartbeat);
-					}
-				}, sseHeartbeatMs);
-			},
-			cancel() {
-				if (heartbeat) clearInterval(heartbeat);
-				if (!client) return;
-
-				const clients = roomClients.get(code);
-				clients?.delete(client);
-				if (clients && clients.size === 0) roomClients.delete(code);
-			},
-		}),
-		{
-			headers: {
-				'Content-Type': 'text/event-stream',
-				'Cache-Control': 'no-cache, no-transform',
-				'X-Accel-Buffering': 'no',
-				Connection: 'keep-alive',
-			},
+	const wakeNext = () => {
+		wake?.();
+		wake = undefined;
+	};
+	const enqueue = (state?: OnlineRoomState) => {
+		queue.push(roomResponse(code, userId, state));
+		wakeNext();
+	};
+	const client: RoomClient = {
+		enqueue,
+		close() {
+			closed = true;
+			wakeNext();
 		},
-	);
+	};
+	const clients = roomClients.get(code) ?? new Set<RoomClient>();
+	clients.add(client);
+	roomClients.set(code, clients);
+
+	const heartbeat = setInterval(() => enqueue(), sseHeartbeatMs);
+	const abort = () => {
+		closed = true;
+		wakeNext();
+	};
+	signal?.addEventListener('abort', abort, { once: true });
+
+	try {
+		enqueue();
+		while (!closed) {
+			if (!queue.length) {
+				await new Promise<void>(resolve => {
+					wake = resolve;
+				});
+			}
+
+			while (!closed && queue.length) {
+				const next = queue.shift();
+				if (next) yield next;
+			}
+		}
+	} finally {
+		clearInterval(heartbeat);
+		signal?.removeEventListener('abort', abort);
+		clients.delete(client);
+		if (clients.size === 0) roomClients.delete(code);
+	}
 }
 
 function broadcastRoom(code: string, state = loadRoomState(code)): void {
@@ -517,20 +481,8 @@ function broadcastRoom(code: string, state = loadRoomState(code)): void {
 	if (!clients?.size) return;
 
 	for (const client of clients) {
-		try {
-			client.controller.enqueue(eventChunk(code, client.userId, state));
-		} catch {
-			clients.delete(client);
-		}
+		client.enqueue(state);
 	}
-}
-
-function eventChunk(code: string, userId: number | null, state?: OnlineRoomState): Uint8Array {
-	return sseChunk('room', roomResponse(code, userId, state));
-}
-
-function sseChunk(event: string, data: unknown): Uint8Array {
-	return encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
 async function staticFile(pathname: string): Promise<Response> {

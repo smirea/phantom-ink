@@ -12,6 +12,7 @@
 		"typecheck": "tsc --noEmit -p tsconfig.json"
 	},
 	"dependencies": {
+		"@orpc/server": "^1.14.6",
 		"@repo/shared": "workspace:*",
 		"drizzle-orm": "^0.45.2"
 	}
