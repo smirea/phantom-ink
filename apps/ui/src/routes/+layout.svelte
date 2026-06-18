@@ -7,7 +7,6 @@
 	import { leaveRoomForStoredUser, loadStoredUser, pingPresence } from '$lib/api';
 	import { parseRoomCode } from '$lib/roomCodes';
 	import { LS, storageKeys } from '$lib/storage';
-	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
 	import DoorOpen from '@lucide/svelte/icons/door-open';
 	import Moon from '@lucide/svelte/icons/moon';
 	import Sun from '@lucide/svelte/icons/sun';
@@ -27,14 +26,6 @@
 	let { children, data } = $props();
 	const browser = typeof window !== 'undefined';
 	const presencePingMs = 10_000;
-
-	const queryClient = new QueryClient({
-		defaultOptions: {
-			queries: {
-				enabled: browser,
-			},
-		},
-	});
 
 	const appContext = $state<AppContext>({
 		theme: LS.get(storageKeys.darkMode) ? 'dark' : 'light',
@@ -331,75 +322,73 @@
 	}
 </script>
 
-<QueryClientProvider client={queryClient}>
-	<div class:view-transitioning={isViewTransitioning} class="app-scene">
-		<BackgroundHost />
+<div class:view-transitioning={isViewTransitioning} class="app-scene">
+	<BackgroundHost />
 
-		{#if isBareScreen}
-			{@render children()}
-		{:else}
-			<div class:room-shell={isRoomScreen} class="screen-shell">
-				<header class="screen-top">
-					{#if activeRoomCode}
-						<div class="room-code-mark" aria-label={`Room ${activeRoomCode}`}>{activeRoomCode}</div>
-					{:else}
-						<div class="top-logo-link">
-							<PhantomLogo compact textOnly />
-						</div>
-					{/if}
-					<div class="screen-actions">
-						<div class="settings-menu-wrap">
-							<button
-								aria-expanded={settingsMenuState === 'open'}
-								aria-haspopup="menu"
-								class="user-profile-trigger"
-								onclick={toggleSettings}
-								type="button"
-							>
-								<span class="user-name">{displayedPlayerName}</span>
-								<Avatar user={displayedPlayer} name={false} />
-							</button>
-
-							{#if settingsMenuState !== 'closed'}
-								<div class:closing={settingsMenuState === 'closing'} class="settings-menu" role="menu">
-									<button onclick={toggleTheme} role="menuitem" type="button">
-										{#if theme === 'dark'}
-											<Sun size={17} strokeWidth={2.25} />
-										{:else}
-											<Moon size={17} strokeWidth={2.25} />
-										{/if}
-										<span>Let there be {theme === 'dark' ? 'light' : 'dark'}</span>
-									</button>
-									<a href={setupHref} onclick={closeSettings} role="menuitem">
-										<UserRound size={17} strokeWidth={2.25} />
-										<span>Change Yourself</span>
-									</a>
-									{#if activeRoomCode}
-										<button onclick={abandonSeance} role="menuitem" type="button">
-											<DoorOpen size={17} strokeWidth={2.25} />
-											<span>Abandon séance</span>
-										</button>
-									{/if}
-								</div>
-							{/if}
-						</div>
-					</div>
-				</header>
-
-				<section class:lobby-card={isLobbyScreen} class:room-card={isRoomScreen} class="content-card">
-					{#key activePath}
-						<div class="route-frame">
-							{@render children()}
-						</div>
-					{/key}
-				</section>
-
+	{#if isBareScreen}
+		{@render children()}
+	{:else}
+		<div class:room-shell={isRoomScreen} class="screen-shell">
+			<header class="screen-top">
 				{#if activeRoomCode}
-					<div class="room-bottom-logo">
+					<div class="room-code-mark" aria-label={`Room ${activeRoomCode}`}>{activeRoomCode}</div>
+				{:else}
+					<div class="top-logo-link">
 						<PhantomLogo compact textOnly />
 					</div>
 				{/if}
-			</div>
-		{/if}
-	</div>
-</QueryClientProvider>
+				<div class="screen-actions">
+					<div class="settings-menu-wrap">
+						<button
+							aria-expanded={settingsMenuState === 'open'}
+							aria-haspopup="menu"
+							class="user-profile-trigger"
+							onclick={toggleSettings}
+							type="button"
+						>
+							<span class="user-name">{displayedPlayerName}</span>
+							<Avatar user={displayedPlayer} name={false} />
+						</button>
+
+						{#if settingsMenuState !== 'closed'}
+							<div class:closing={settingsMenuState === 'closing'} class="settings-menu" role="menu">
+								<button onclick={toggleTheme} role="menuitem" type="button">
+									{#if theme === 'dark'}
+										<Sun size={17} strokeWidth={2.25} />
+									{:else}
+										<Moon size={17} strokeWidth={2.25} />
+									{/if}
+									<span>Let there be {theme === 'dark' ? 'light' : 'dark'}</span>
+								</button>
+								<a href={setupHref} onclick={closeSettings} role="menuitem">
+									<UserRound size={17} strokeWidth={2.25} />
+									<span>Change Yourself</span>
+								</a>
+								{#if activeRoomCode}
+									<button onclick={abandonSeance} role="menuitem" type="button">
+										<DoorOpen size={17} strokeWidth={2.25} />
+										<span>Abandon séance</span>
+									</button>
+								{/if}
+							</div>
+						{/if}
+					</div>
+				</div>
+			</header>
+
+			<section class:lobby-card={isLobbyScreen} class:room-card={isRoomScreen} class="content-card">
+				{#key activePath}
+					<div class="route-frame">
+						{@render children()}
+					</div>
+				{/key}
+			</section>
+
+			{#if activeRoomCode}
+				<div class="room-bottom-logo">
+					<PhantomLogo compact textOnly />
+				</div>
+			{/if}
+		</div>
+	{/if}
+</div>

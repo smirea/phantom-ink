@@ -14,7 +14,7 @@ const uiHost = new URL(env.UI_URL).hostname;
 export default defineConfig({
 	plugins: [tailwindcss(), sveltekit()],
 	optimizeDeps: {
-		exclude: ['@lucide/svelte', '@tanstack/svelte-query'],
+		exclude: ['@lucide/svelte'],
 	},
 	server: {
 		allowedHosts: [uiHost],
