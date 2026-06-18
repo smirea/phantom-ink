@@ -159,6 +159,7 @@
 			setupNextTurn: assign(({ context }) => ({
 				currentTeam: context.debugHold ? context.currentTeam : otherTeam(context.currentTeam),
 			})),
+			debugSetTeam: assign(({ event }) => (event.type === 'debugSetState' ? { currentTeam: event.team } : {})),
 		},
 	}).createMachine({
 		id: 'phantomInk',
@@ -166,6 +167,11 @@
 		initial: 'start',
 		on: {
 			start: { target: '.setupWord', actions: 'setupGame' },
+			debugSetState: gameStates.map(state => ({
+				guard: ({ event }) => event.type === 'debugSetState' && event.state === state,
+				target: `.${state}`,
+				actions: 'debugSetTeam',
+			})),
 		},
 		states: {
 			start: {},
