@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { getAppContext } from '$lib/appContext';
+	import InkButton from '$lib/InkButton.svelte';
 	import PhantomLogo from '$lib/PhantomLogo.svelte';
 	import { playerColorPreset, playerIconComponents } from '$lib/playerPresentation';
 	import {
@@ -137,17 +138,18 @@
 	</div>
 
 	<form class="setup-form" onsubmit={submit}>
-		<button
+		<InkButton
 			aria-label="Random icon and color"
-			class:tapped={tapTarget === 'dice'}
-			class="dice-button"
+			class={`dice-button ${tapTarget === 'dice' ? 'tapped' : ''}`}
 			disabled={isSubmitting}
+			ghost
+			icon={Dices}
+			iconSize={28}
+			iconStrokeWidth={1.9}
 			onclick={randomizeIdentity}
 			title="Random icon and color"
 			type="button"
-		>
-			<Dices size={28} strokeWidth={1.9} />
-		</button>
+		/>
 
 		<label class="name-label">
 			<span class="visually-hidden">Name</span>
@@ -164,16 +166,17 @@
 			/>
 		</label>
 
-		<button
+		<InkButton
 			aria-label="Continue to lobby"
-			class:tapped={tapTarget === 'continue'}
-			class="continue-button"
+			class={`continue-button ${tapTarget === 'continue' ? 'tapped' : ''}`}
 			disabled={!canSubmit}
+			icon={ArrowRight}
+			iconSize={34}
+			iconStrokeWidth={2.2}
+			primary
 			title="Continue to lobby"
 			type="submit"
-		>
-			<ArrowRight size={34} strokeWidth={2.2} />
-		</button>
+		/>
 	</form>
 
 	<div class="color-picker" aria-label="Choose color">
@@ -232,9 +235,7 @@
 	}
 
 	.icon-picker button,
-	.color-picker button,
-	.dice-button,
-	.continue-button {
+	.color-picker button {
 		display: inline-grid;
 		place-items: center;
 		position: relative;
@@ -254,9 +255,7 @@
 	}
 
 	.icon-picker button::after,
-	.color-picker button::after,
-	.dice-button::after,
-	.continue-button::after {
+	.color-picker button::after {
 		position: absolute;
 		inset: -0.28rem;
 		border: 1px solid currentColor;
@@ -270,30 +269,23 @@
 		border-radius: 999px;
 	}
 
-	.icon-picker button:hover,
-	.dice-button:hover {
+	.icon-picker button:hover {
 		color: var(--app-text);
 		transform: translateY(-2px);
 	}
 
 	.icon-picker button:not(:disabled):active,
-	.color-picker button:not(:disabled):active,
-	.dice-button:not(:disabled):active,
-	.continue-button:not(:disabled):active {
+	.color-picker button:not(:disabled):active {
 		transform: translateY(1px) scale(0.94);
 	}
 
 	.icon-picker button.tapped,
-	.color-picker button.tapped,
-	.dice-button.tapped,
-	.continue-button.tapped {
+	.color-picker button.tapped {
 		animation: setup-control-tap 420ms cubic-bezier(0.16, 1, 0.3, 1);
 	}
 
 	.icon-picker button.tapped::after,
-	.color-picker button.tapped::after,
-	.dice-button.tapped::after,
-	.continue-button.tapped::after {
+	.color-picker button.tapped::after {
 		animation: setup-control-ring 420ms ease-out;
 	}
 
@@ -312,8 +304,12 @@
 		width: min(100%, 34rem);
 	}
 
-	.dice-button,
-	.continue-button {
+	:global(.setup-form .ink-button.dice-button),
+	:global(.setup-form .ink-button.continue-button) {
+		width: var(--picker-size);
+		height: var(--picker-size);
+		min-height: 0;
+		padding: 0;
 		border-radius: 0.5rem;
 	}
 
@@ -353,18 +349,11 @@
 		outline-offset: 4px;
 	}
 
-	.continue-button {
-		border-color: var(--app-accent-strong);
-		background:
-			linear-gradient(180deg, color-mix(in oklab, var(--app-accent) 84%, white 16%), var(--app-accent)),
-			var(--app-accent);
-		box-shadow:
-			0 0.9rem 2rem color-mix(in oklab, var(--app-accent) 28%, transparent),
-			inset 0 0 0 1px color-mix(in oklab, white 18%, transparent);
-		color: var(--app-accent-ink);
+	:global(.setup-form .ink-button.primary.continue-button:hover:not(:disabled)) {
+		transform: translateX(2px);
 	}
 
-	.continue-button:hover:not(:disabled) {
+	:global(.setup-form .ink-button.primary.continue-button:hover:not(:disabled) .ink-button-icon) {
 		transform: translateX(2px);
 	}
 
@@ -390,6 +379,28 @@
 		box-shadow:
 			inset 0 0 0 1px color-mix(in oklab, white 16%, transparent),
 			0 0.55rem 1.1rem color-mix(in oklab, black 24%, transparent);
+	}
+
+	.color-picker button::before {
+		position: absolute;
+		inset: -0.18rem;
+		border: 1px solid color-mix(in oklab, var(--swatch) 78%, white 22%);
+		border-radius: inherit;
+		opacity: 0;
+		pointer-events: none;
+		content: '';
+	}
+
+	.color-picker button:hover:not(:disabled) {
+		box-shadow:
+			inset 0 0 0 1px color-mix(in oklab, white 20%, transparent),
+			0 0.7rem 1.25rem color-mix(in oklab, black 28%, transparent),
+			0 0 1rem color-mix(in oklab, var(--swatch) 24%, transparent);
+		transform: translateY(-2px);
+	}
+
+	.color-picker button:hover:not(:disabled)::before {
+		animation: setup-swatch-ripple 1250ms ease-out infinite;
 	}
 
 	.color-picker button.selected {
@@ -443,6 +454,25 @@
 		100% {
 			opacity: 0;
 			transform: scale(1.34);
+		}
+	}
+
+	@keyframes setup-swatch-ripple {
+		0% {
+			opacity: 0.58;
+			transform: scale(0.72);
+		}
+
+		68%,
+		100% {
+			opacity: 0;
+			transform: scale(1.55);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.color-picker button:hover:not(:disabled)::before {
+			animation: none;
 		}
 	}
 

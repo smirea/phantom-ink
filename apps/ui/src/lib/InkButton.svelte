@@ -12,6 +12,7 @@
 		class: cls,
 		disabled = false,
 		fill = false,
+		ghost = false,
 		icon: Icon,
 		iconSize,
 		iconStrokeWidth,
@@ -26,6 +27,7 @@
 		iconSize?: number | string;
 		iconStrokeWidth?: number | string;
 		loading?: boolean;
+		ghost?: boolean;
 		primary?: boolean;
 		size?: ButtonSize;
 		fill?: boolean;
@@ -33,7 +35,15 @@
 	} = $props();
 
 	const className = $derived(
-		['ink-button', primary ? 'primary' : '', loading ? 'loading' : '', fill ? 'fill' : '', size, cls]
+		[
+			'ink-button',
+			primary ? 'primary' : '',
+			ghost ? 'ghost' : '',
+			loading ? 'loading' : '',
+			fill ? 'fill' : '',
+			size,
+			cls,
+		]
 			.filter(Boolean)
 			.join(' '),
 	);
@@ -116,6 +126,25 @@
 		font-size: 0.98rem;
 	}
 
+	.ink-button.ghost {
+		border-color: color-mix(in oklab, var(--app-border) 70%, transparent);
+		border-radius: 0.5rem;
+		background: color-mix(in oklab, var(--app-panel) 62%, transparent);
+		box-shadow: none;
+		color: var(--app-muted);
+		overflow: visible;
+	}
+
+	.ink-button.ghost::after {
+		position: absolute;
+		inset: -0.28rem;
+		border: 1px solid currentColor;
+		border-radius: inherit;
+		opacity: 0;
+		pointer-events: none;
+		content: '';
+	}
+
 	.ink-button.primary {
 		border-color: color-mix(in oklab, var(--app-accent) 54%, var(--app-border) 46%);
 		background:
@@ -155,6 +184,7 @@
 		width: var(--ink-button-icon-size);
 		height: var(--ink-button-icon-size);
 		flex: 0 0 auto;
+		transition: transform 180ms ease;
 	}
 
 	.ink-button-icon :global(svg) {
@@ -171,6 +201,13 @@
 		border-color: var(--app-accent-strong);
 		box-shadow: 0 0.5rem 1.2rem color-mix(in oklab, var(--app-accent) 18%, transparent);
 		transform: translateY(-1px);
+	}
+
+	.ink-button.ghost:hover:not(:disabled) {
+		border-color: color-mix(in oklab, var(--app-border) 70%, transparent);
+		box-shadow: none;
+		color: var(--app-text);
+		transform: translateY(-2px);
 	}
 
 	.ink-button.primary:hover:not(:disabled) {
@@ -214,6 +251,19 @@
 		transform: translateY(1px) scale(0.99);
 	}
 
+	.ink-button.ghost:active:not(:disabled) {
+		box-shadow: none;
+		transform: translateY(1px) scale(0.94);
+	}
+
+	.ink-button.ghost.tapped {
+		animation: ink-button-ghost-tap 420ms cubic-bezier(0.16, 1, 0.3, 1);
+	}
+
+	.ink-button.ghost.tapped::after {
+		animation: ink-button-ghost-ring 420ms ease-out;
+	}
+
 	.ink-button:focus-visible {
 		outline: 2px solid var(--app-focus);
 		outline-offset: 3px;
@@ -227,6 +277,32 @@
 	@keyframes ink-button-spin {
 		to {
 			transform: rotate(360deg);
+		}
+	}
+
+	@keyframes ink-button-ghost-tap {
+		0% {
+			transform: translateY(1px) scale(0.94) rotate(-1deg);
+		}
+
+		48% {
+			transform: translateY(-3px) scale(1.08) rotate(1.5deg);
+		}
+
+		100% {
+			transform: translateY(0) scale(1) rotate(0);
+		}
+	}
+
+	@keyframes ink-button-ghost-ring {
+		0% {
+			opacity: 0.5;
+			transform: scale(0.76);
+		}
+
+		100% {
+			opacity: 0;
+			transform: scale(1.34);
 		}
 	}
 
@@ -317,7 +393,9 @@
 
 	@media (prefers-reduced-motion: reduce) {
 		.ink-button.primary:hover:not(:disabled),
-		.ink-button.primary:active:not(:disabled) {
+		.ink-button.primary:active:not(:disabled),
+		.ink-button.ghost.tapped,
+		.ink-button.ghost.tapped::after {
 			animation: none;
 		}
 	}
