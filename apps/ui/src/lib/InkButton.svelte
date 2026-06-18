@@ -117,20 +117,24 @@
 	}
 
 	.ink-button.primary {
-		border-color: color-mix(in oklab, var(--app-accent-strong) 70%, var(--app-accent) 30%);
+		border-color: color-mix(in oklab, var(--app-accent) 54%, var(--app-border) 46%);
 		background:
 			radial-gradient(
 				120% 140% at 18% -20%,
-				color-mix(in oklab, var(--app-accent-strong) 62%, white 10%) 0%,
+				color-mix(in oklab, var(--app-accent) 68%, #5b4267 32%) 0%,
 				transparent 46%
 			),
-			radial-gradient(140% 150% at 88% 118%, color-mix(in oklab, var(--app-accent) 80%, black 34%) 0%, transparent 56%),
-			repeating-linear-gradient(112deg, color-mix(in oklab, white 7%, transparent) 0 1px, transparent 1px 4px),
-			repeating-linear-gradient(24deg, color-mix(in oklab, black 9%, transparent) 0 1px, transparent 1px 5px),
+			radial-gradient(
+				140% 150% at 88% 118%,
+				color-mix(in oklab, var(--app-accent) 54%, #32203b 46%) 0%,
+				transparent 56%
+			),
+			repeating-linear-gradient(112deg, color-mix(in oklab, white 5%, transparent) 0 1px, transparent 1px 4px),
+			repeating-linear-gradient(24deg, color-mix(in oklab, black 12%, transparent) 0 1px, transparent 1px 5px),
 			linear-gradient(
 				180deg,
-				color-mix(in oklab, var(--app-accent) 78%, #6f3c8f 22%),
-				color-mix(in oklab, var(--app-accent) 62%, #32123f 38%)
+				color-mix(in oklab, var(--app-accent) 66%, #5b4267 34%),
+				color-mix(in oklab, var(--app-accent) 52%, #2e1a38 48%)
 			);
 		background-position:
 			0 0,
@@ -139,9 +143,9 @@
 			0 0,
 			0 0;
 		box-shadow:
-			inset 0 0 0 1px color-mix(in oklab, white 14%, transparent),
-			inset 0 0.9rem 1.4rem color-mix(in oklab, white 5%, transparent),
-			inset 0 -0.7rem 1.1rem color-mix(in oklab, #260a36 28%, transparent);
+			inset 0 0 0 1px color-mix(in oklab, white 9%, transparent),
+			inset 0 0.9rem 1.4rem color-mix(in oklab, white 3%, transparent),
+			inset 0 -0.7rem 1.1rem color-mix(in oklab, #260a36 26%, transparent);
 		color: var(--app-accent-ink);
 	}
 
@@ -170,7 +174,7 @@
 	}
 
 	.ink-button.primary:hover:not(:disabled) {
-		border-color: color-mix(in oklab, var(--app-accent-strong) 86%, var(--app-accent) 14%);
+		border-color: color-mix(in oklab, var(--app-accent) 64%, var(--app-border) 36%);
 		background-position:
 			4% -5%,
 			96% 108%,
@@ -178,12 +182,12 @@
 			-0.1rem 0,
 			0 0;
 		box-shadow:
-			inset 0 0 0 1px color-mix(in oklab, white 18%, transparent),
-			inset 0 0.9rem 1.4rem color-mix(in oklab, white 7%, transparent),
-			inset 0 -0.72rem 1.16rem color-mix(in oklab, #260a36 30%, transparent),
-			0 0 0.55rem color-mix(in oklab, var(--app-accent-strong) 18%, transparent),
-			0 0 1rem color-mix(in oklab, var(--app-accent) 10%, transparent);
-		filter: saturate(1.1) brightness(1.02);
+			inset 0 0 0 1px color-mix(in oklab, white 12%, transparent),
+			inset 0 0.9rem 1.4rem color-mix(in oklab, white 4%, transparent),
+			inset 0 -0.72rem 1.16rem color-mix(in oklab, #260a36 28%, transparent),
+			0 0 0.42rem color-mix(in oklab, var(--app-accent) 12%, transparent),
+			0 0 0.82rem color-mix(in oklab, var(--app-accent-strong) 7%, transparent);
+		filter: saturate(1.06) brightness(1.01);
 		transform: none;
 		animation: ink-button-primary-pulse 1700ms ease-in-out infinite;
 	}
@@ -198,9 +202,9 @@
 		box-shadow:
 			inset 0 0 0 1px color-mix(in oklab, black 14%, transparent),
 			inset 0 0.55rem 0.9rem color-mix(in oklab, #260a36 24%, transparent),
-			inset 0 -0.2rem 0.75rem color-mix(in oklab, #8f4fba 10%, transparent),
-			0 0 0.42rem color-mix(in oklab, var(--app-accent-strong) 14%, transparent);
-		filter: saturate(1.06) brightness(0.96);
+			inset 0 -0.2rem 0.75rem color-mix(in oklab, #8f4fba 7%, transparent),
+			0 0 0.34rem color-mix(in oklab, var(--app-accent) 9%, transparent);
+		filter: saturate(1.03) brightness(0.95);
 		transform: scale(0.99);
 		animation: ink-button-primary-tap 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 	}
@@ -236,12 +240,12 @@
 				-0.1rem 0,
 				0 0;
 			box-shadow:
-				inset 0 0 0 1px color-mix(in oklab, white 18%, transparent),
-				inset 0 0.9rem 1.4rem color-mix(in oklab, white 7%, transparent),
-				inset 0 -0.72rem 1.16rem color-mix(in oklab, #260a36 30%, transparent),
-				0 0 0.55rem color-mix(in oklab, var(--app-accent-strong) 18%, transparent),
-				0 0 1rem color-mix(in oklab, var(--app-accent) 10%, transparent);
-			filter: saturate(1.08) brightness(1.01);
+				inset 0 0 0 1px color-mix(in oklab, white 12%, transparent),
+				inset 0 0.9rem 1.4rem color-mix(in oklab, white 4%, transparent),
+				inset 0 -0.72rem 1.16rem color-mix(in oklab, #260a36 28%, transparent),
+				0 0 0.42rem color-mix(in oklab, var(--app-accent) 12%, transparent),
+				0 0 0.82rem color-mix(in oklab, var(--app-accent-strong) 7%, transparent);
+			filter: saturate(1.04) brightness(1);
 		}
 
 		50% {
@@ -252,12 +256,12 @@
 				-0.28rem 0,
 				0 0;
 			box-shadow:
-				inset 0 0 0 1px color-mix(in oklab, white 23%, transparent),
-				inset 0 1rem 1.55rem color-mix(in oklab, white 10%, transparent),
-				inset 0 -0.78rem 1.28rem color-mix(in oklab, #260a36 34%, transparent),
-				0 0 0.95rem color-mix(in oklab, var(--app-accent-strong) 30%, transparent),
-				0 0 1.45rem color-mix(in oklab, #8f4fba 18%, transparent);
-			filter: saturate(1.18) brightness(1.045);
+				inset 0 0 0 1px color-mix(in oklab, white 16%, transparent),
+				inset 0 1rem 1.55rem color-mix(in oklab, white 6%, transparent),
+				inset 0 -0.78rem 1.28rem color-mix(in oklab, #260a36 32%, transparent),
+				0 0 0.68rem color-mix(in oklab, var(--app-accent) 18%, transparent),
+				0 0 1.05rem color-mix(in oklab, #8f4fba 9%, transparent);
+			filter: saturate(1.1) brightness(1.018);
 		}
 	}
 
@@ -270,11 +274,11 @@
 				-0.1rem 0,
 				0 0;
 			box-shadow:
-				inset 0 0 0 1px color-mix(in oklab, white 18%, transparent),
-				inset 0 0.9rem 1.4rem color-mix(in oklab, white 7%, transparent),
-				inset 0 -0.72rem 1.16rem color-mix(in oklab, #260a36 30%, transparent),
-				0 0 0.65rem color-mix(in oklab, var(--app-accent-strong) 18%, transparent);
-			filter: saturate(1.1) brightness(1.02);
+				inset 0 0 0 1px color-mix(in oklab, white 12%, transparent),
+				inset 0 0.9rem 1.4rem color-mix(in oklab, white 4%, transparent),
+				inset 0 -0.72rem 1.16rem color-mix(in oklab, #260a36 28%, transparent),
+				0 0 0.48rem color-mix(in oklab, var(--app-accent) 12%, transparent);
+			filter: saturate(1.06) brightness(1.01);
 			transform: scale(1);
 		}
 
@@ -288,9 +292,9 @@
 			box-shadow:
 				inset 0 0 0 1px color-mix(in oklab, black 18%, transparent),
 				inset 0 0.45rem 0.8rem color-mix(in oklab, #260a36 30%, transparent),
-				inset 0 -0.15rem 0.7rem color-mix(in oklab, #8f4fba 13%, transparent),
-				0 0 0.28rem color-mix(in oklab, var(--app-accent-strong) 11%, transparent);
-			filter: saturate(1.04) brightness(0.93);
+				inset 0 -0.15rem 0.7rem color-mix(in oklab, #8f4fba 9%, transparent),
+				0 0 0.22rem color-mix(in oklab, var(--app-accent) 8%, transparent);
+			filter: saturate(1.02) brightness(0.92);
 			transform: scale(0.986);
 		}
 
@@ -304,9 +308,9 @@
 			box-shadow:
 				inset 0 0 0 1px color-mix(in oklab, black 14%, transparent),
 				inset 0 0.55rem 0.9rem color-mix(in oklab, #260a36 24%, transparent),
-				inset 0 -0.2rem 0.75rem color-mix(in oklab, #8f4fba 10%, transparent),
-				0 0 0.42rem color-mix(in oklab, var(--app-accent-strong) 14%, transparent);
-			filter: saturate(1.06) brightness(0.96);
+				inset 0 -0.2rem 0.75rem color-mix(in oklab, #8f4fba 7%, transparent),
+				0 0 0.34rem color-mix(in oklab, var(--app-accent) 9%, transparent);
+			filter: saturate(1.03) brightness(0.95);
 			transform: scale(0.99);
 		}
 	}
