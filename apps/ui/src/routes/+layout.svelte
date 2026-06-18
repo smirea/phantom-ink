@@ -4,14 +4,20 @@
 	import PhantomLogo from '$lib/PhantomLogo.svelte';
 	import { beforeNavigate, goto, onNavigate } from '$app/navigation';
 	import { page } from '$app/state';
-	import { leaveRoomForUser, pingPresence, saveUser as saveServerUser } from '$lib/api';
+	import { api } from '$lib/api';
 	import { parseRoomCode } from '$lib/roomCodes';
 	import { LS } from '$lib/storage';
 	import DoorOpen from '@lucide/svelte/icons/door-open';
 	import Moon from '@lucide/svelte/icons/moon';
 	import Sun from '@lucide/svelte/icons/sun';
 	import UserRound from '@lucide/svelte/icons/user-round';
-	import { isValidPlayerName, PLAYER_COLOR_PRESETS, PLAYER_ICON_PRESETS, type User } from '@repo/shared/onlineGame';
+	import {
+		isValidPlayerName,
+		playerIdForUser,
+		PLAYER_COLOR_PRESETS,
+		PLAYER_ICON_PRESETS,
+		type User,
+	} from '@repo/shared/onlineGame';
 	import { onMount } from 'svelte';
 	import './layout.css';
 	import { setAppContext } from '$lib/appContext';
@@ -44,9 +50,16 @@
 			if (user.id > 0 && submittedUserKey === lastSavedUserKey) return appContext.user;
 
 			const saveId = ++userSaveSequence;
-			const savedUser = await saveServerUser(user);
+			const payload = await api.users.save({
+				userId: user.id > 0 ? user.id : null,
+				name: user.name,
+				color: user.color,
+				icon: user.icon,
+			});
+			const savedUser = payload.user;
 			if (saveId === userSaveSequence && userSaveKey(appContext.user) === submittedUserKey) {
 				lastSavedUserKey = userSaveKey(savedUser);
+				LS.set({ userId: savedUser.id });
 				appContext.user = savedUser;
 			}
 			return savedUser;
@@ -214,7 +227,8 @@
 		if (!browser || isPublicPath(path)) return;
 
 		try {
-			await pingPresence(appContext.user.id);
+			if (appContext.user.id <= 0) return;
+			await api.presence.ping({ userId: appContext.user.id });
 		} catch {}
 	}
 
@@ -248,7 +262,14 @@
 
 		closeSettings();
 		try {
-			await leaveRoomForUser(roomCode, appContext.user.id);
+			const userId = appContext.user.id;
+			if (userId > 0) {
+				await api.rooms.action({
+					code: roomCode,
+					userId,
+					action: { type: 'leave', actorId: playerIdForUser(userId) },
+				});
+			}
 		} catch {}
 		await goto(`/lobby${page.url.search}${page.url.hash}`, { noScroll: true });
 	}

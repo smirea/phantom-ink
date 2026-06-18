@@ -6,7 +6,7 @@ export interface UserLookupInput {
 	userId?: User['id'] | null;
 }
 
-export interface EnsureUserInput extends UserLookupInput {
+export interface SaveUserInput extends UserLookupInput {
 	name?: User['name'] | null;
 	color?: User['color'] | null;
 	icon?: User['icon'] | null;
@@ -24,7 +24,7 @@ export interface RoomActionInput extends RoomInput {
 export const appContract = {
 	status: oc.output(orpcType<{ ok: true; now: string }>()),
 	users: {
-		ensure: oc.input(orpcType<EnsureUserInput>()).output(orpcType<{ user: User }>()),
+		save: oc.input(orpcType<SaveUserInput>()).output(orpcType<{ user: User }>()),
 		get: oc.input(orpcType<UserLookupInput>()).output(orpcType<{ user: User | null }>()),
 		currentRoom: oc.input(orpcType<UserLookupInput>()).output(orpcType<{ roomCode: string | null }>()),
 	},

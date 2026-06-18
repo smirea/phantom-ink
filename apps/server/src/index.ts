@@ -52,8 +52,8 @@ const os = implement(appContract);
 const router = os.router({
 	status: os.status.handler(() => ({ ok: true, now: nowIso() })),
 	users: {
-		ensure: os.users.ensure.handler(({ input }) => ({
-			user: ensureUser(numberParam(input.userId), input.name, input.color, input.icon),
+		save: os.users.save.handler(({ input }) => ({
+			user: saveUser(numberParam(input.userId), input.name, input.color, input.icon),
 		})),
 		get: os.users.get.handler(({ input }) => {
 			return { user: getUser(numberParam(input.userId)) };
@@ -181,7 +181,7 @@ function getUser(userId: User['id'] | null): User | null {
 	return db.select(publicUserColumns).from(usersTable).where(eq(usersTable.id, userId)).get() ?? null;
 }
 
-function ensureUser(
+function saveUser(
 	userId: User['id'] | null,
 	rawName: string | null | undefined,
 	rawColor?: string | null,

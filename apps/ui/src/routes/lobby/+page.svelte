@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Avatar from '$lib/Avatar.svelte';
-	import { getOnlineUsers, getRoomDirectory, joinRoom } from '$lib/api';
+	import { api } from '$lib/api';
 	import { getAppContext } from '$lib/appContext';
 	import { createRoomCode } from '$lib/roomCodes';
 	import { goto } from '$app/navigation';
@@ -39,13 +39,14 @@
 
 		async function load() {
 			try {
-				const [nextRooms, nextNearbySouls] = await Promise.all([
-					getRoomDirectory(),
-					getOnlineUsers(appContext.user.id),
+				const userId = appContext.user.id > 0 ? appContext.user.id : null;
+				const [roomsPayload, nearbySoulsPayload] = await Promise.all([
+					api.rooms.list(),
+					api.presence.online({ userId }),
 				]);
 				if (!cancelled) {
-					rooms = nextRooms;
-					nearbySouls = nextNearbySouls;
+					rooms = roomsPayload.rooms;
+					nearbySouls = nearbySoulsPayload.users;
 					error = null;
 				}
 			} catch {
@@ -103,7 +104,10 @@
 	async function joinAndNavigate(code: string) {
 		joiningCode = code;
 		try {
-			await joinRoom(code, appContext.user);
+			const userId = appContext.user.id;
+			if (userId <= 0) throw new Error('Missing user');
+
+			await api.rooms.join({ code, userId });
 			await goto(roomHref(code), { noScroll: true });
 		} finally {
 			joiningCode = null;

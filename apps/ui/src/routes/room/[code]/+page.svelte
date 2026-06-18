@@ -3,9 +3,10 @@
 	import { page } from '$app/state';
 	import Avatar from '$lib/Avatar.svelte';
 	import VoteBadge from '$lib/VoteBadge.svelte';
-	import { joinRoom, openRoomEvents, sendRoomAction } from '$lib/api';
+	import { api } from '$lib/api';
 	import { getAppContext } from '$lib/appContext';
 	import { parseRoomCode } from '$lib/roomCodes';
+	import { consumeEventIterator } from '@orpc/client';
 	import {
 		playerIdForUser,
 		type RoomMemberView,
@@ -57,24 +58,31 @@
 			return;
 		}
 
-		let events: ReturnType<typeof openRoomEvents> | null = null;
+		let closeEvents: (() => void) | null = null;
 		let cancelled = false;
 
 		async function connect() {
 			try {
-				room = await joinRoom(roomCode ?? '', appContext.user);
+				const userId = appContext.user.id;
+				if (userId <= 0) throw new Error('Missing user');
+
+				const payload = await api.rooms.join({ code: roomCode ?? '', userId });
+				room = payload.room;
 				if (cancelled || !roomCode) return;
-				events = openRoomEvents(
-					roomCode,
-					appContext.user.id,
-					nextRoom => {
+
+				const cancel = consumeEventIterator(api.rooms.events({ code: roomCode, userId }), {
+					onEvent: payload => {
+						const nextRoom = payload.room;
 						room = nextRoom;
 						error = null;
 					},
-					() => {
+					onError: () => {
 						error = 'Connection faded.';
 					},
-				);
+				});
+				closeEvents = () => {
+					void cancel();
+				};
 			} catch (caught) {
 				if (!cancelled) error = caught instanceof Error ? caught.message : 'Unable to join séance.';
 			}
@@ -83,7 +91,7 @@
 		void connect();
 		return () => {
 			cancelled = true;
-			events?.close();
+			closeEvents?.();
 		};
 	});
 
@@ -121,12 +129,20 @@
 		if (self.role !== 'spectator' && self.team === team) return;
 		pendingAction = `team:${team}`;
 		try {
-			room = await sendRoomAction(roomCode, appContext.user.id, {
-				type: 'set-seat',
-				actorId: self.id,
-				team,
-				role: self.role === 'spectator' ? 'medium' : self.role,
+			const userId = appContext.user.id;
+			if (userId <= 0) throw new Error('Missing user');
+
+			const payload = await api.rooms.action({
+				code: roomCode,
+				userId,
+				action: {
+					type: 'set-seat',
+					actorId: self.id,
+					team,
+					role: self.role === 'spectator' ? 'medium' : self.role,
+				},
 			});
+			room = payload.room;
 		} catch (caught) {
 			error = caught instanceof Error ? caught.message : 'Unable to switch sides.';
 		} finally {
@@ -138,11 +154,19 @@
 		if (!roomCode || !self || !canUseLobbyControls || pendingAction) return;
 		pendingAction = 'ready';
 		try {
-			room = await sendRoomAction(roomCode, appContext.user.id, {
-				type: 'vote',
-				actorId: self.id,
-				vote: { type: 'ready' },
+			const userId = appContext.user.id;
+			if (userId <= 0) throw new Error('Missing user');
+
+			const payload = await api.rooms.action({
+				code: roomCode,
+				userId,
+				action: {
+					type: 'vote',
+					actorId: self.id,
+					vote: { type: 'ready' },
+				},
 			});
+			room = payload.room;
 		} catch (caught) {
 			error = caught instanceof Error ? caught.message : 'Unable to update readiness.';
 		} finally {
@@ -154,11 +178,19 @@
 		if (!roomCode || !self || !canUseLobbyControls || pendingAction) return;
 		pendingAction = `word:${mode}`;
 		try {
-			room = await sendRoomAction(roomCode, appContext.user.id, {
-				type: 'vote',
-				actorId: self.id,
-				vote: { type: 'word-mode', mode },
+			const userId = appContext.user.id;
+			if (userId <= 0) throw new Error('Missing user');
+
+			const payload = await api.rooms.action({
+				code: roomCode,
+				userId,
+				action: {
+					type: 'vote',
+					actorId: self.id,
+					vote: { type: 'word-mode', mode },
+				},
 			});
+			room = payload.room;
 		} catch (caught) {
 			error = caught instanceof Error ? caught.message : 'Unable to update word settings.';
 		} finally {
