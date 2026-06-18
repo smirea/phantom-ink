@@ -16,6 +16,7 @@
 	import './layout.css';
 	import { setAppContext } from '$lib/appContext';
 	import type { AppContext, AppUser } from '$lib/appContext';
+	import { debounce } from 'es-toolkit';
 
 	const browser = typeof window !== 'undefined';
 	const presencePingMs = 10_000;
@@ -23,8 +24,33 @@
 
 	const appContext = $state<AppContext>({
 		theme: LS.get('dark_mode') ? 'dark' : 'light',
-		user: createUnsavedUser(),
-		saveUser: saveCurrentUser,
+		user: {
+			id: -1,
+			name: 'some soul',
+			color: randomPreset(PLAYER_COLOR_PRESETS).id,
+			icon: randomPreset(PLAYER_ICON_PRESETS).id,
+			unsaved: true,
+		},
+		saveUser: async function saveCurrentUser(): Promise<User> {
+			debouncedSaveUser.cancel();
+			if (!canSaveUser(appContext.user)) throw new Error('Set your name first.');
+			const user = {
+				id: appContext.user.id,
+				name: appContext.user.name,
+				color: appContext.user.color,
+				icon: appContext.user.icon,
+			};
+			const submittedUserKey = userSaveKey(user);
+			if (user.id > 0 && submittedUserKey === lastSavedUserKey) return appContext.user;
+
+			const saveId = ++userSaveSequence;
+			const savedUser = await saveServerUser(user);
+			if (saveId === userSaveSequence && userSaveKey(appContext.user) === submittedUserKey) {
+				lastSavedUserKey = userSaveKey(savedUser);
+				appContext.user = savedUser;
+			}
+			return savedUser;
+		},
 	});
 	setAppContext(appContext);
 
@@ -32,12 +58,13 @@
 	let isViewTransitioning = $state(false);
 	let settingsMenuState = $state<'closed' | 'open' | 'closing'>('closed');
 	let settingsCloseTimer: ReturnType<typeof setTimeout> | undefined;
-	let userSaveTimer: ReturnType<typeof setTimeout> | undefined;
 	let manualViewTransition = false;
 	let profileCheckId = 0;
-	let loadedUserKey = '';
 	let lastSavedUserKey = '';
 	let userSaveSequence = 0;
+	const debouncedSaveUser = debounce(() => {
+		void appContext.saveUser();
+	}, 500);
 	const activePath = $derived(page.url.pathname);
 	const activeRoute = $derived(`${page.url.pathname}${page.url.search}${page.url.hash}`);
 	const activeRoomCode = $derived(roomCodeFromPath(activePath));
@@ -81,11 +108,9 @@
 
 	$effect(() => {
 		const user = data.user;
-		const nextLoadedUserKey = user ? userSaveKey(user) : '';
-		if (!user || nextLoadedUserKey === loadedUserKey) return;
+		if (!user) return;
 
-		loadedUserKey = nextLoadedUserKey;
-		lastSavedUserKey = nextLoadedUserKey;
+		lastSavedUserKey = userSaveKey(user);
 		appContext.user = user;
 	});
 
@@ -123,7 +148,7 @@
 		return () => {
 			window.clearInterval(presenceInterval);
 			if (settingsCloseTimer) clearTimeout(settingsCloseTimer);
-			if (userSaveTimer) clearTimeout(userSaveTimer);
+			debouncedSaveUser.cancel();
 			document.removeEventListener('click', handleLinkClick, true);
 			document.removeEventListener('pointerdown', handleOutsidePointer, true);
 			document.removeEventListener('keydown', handleEscape);
@@ -146,16 +171,6 @@
 		return path === '/' || path === '/setup';
 	}
 
-	function createUnsavedUser(): AppUser {
-		return {
-			id: -1,
-			name: 'some soul',
-			color: randomPreset(PLAYER_COLOR_PRESETS).id,
-			icon: randomPreset(PLAYER_ICON_PRESETS).id,
-			unsaved: true,
-		};
-	}
-
 	function randomPreset<T>(items: readonly T[]): T {
 		return items[Math.floor(Math.random() * items.length)] ?? items[0];
 	}
@@ -169,41 +184,12 @@
 	}
 
 	function scheduleUserSave(user: AppUser, userKey = userSaveKey(user), unsaved = user.unsaved) {
-		if (userSaveTimer) {
-			clearTimeout(userSaveTimer);
-			userSaveTimer = undefined;
+		if (!browser || unsaved || !isValidPlayerName(user.name) || userKey === lastSavedUserKey) {
+			debouncedSaveUser.cancel();
+			return;
 		}
-		if (!browser || unsaved || !isValidPlayerName(user.name)) return;
-		if (userKey === lastSavedUserKey) return;
 
-		userSaveTimer = setTimeout(() => {
-			userSaveTimer = undefined;
-			void saveCurrentUser();
-		}, 500);
-	}
-
-	async function saveCurrentUser(): Promise<User> {
-		if (userSaveTimer) {
-			clearTimeout(userSaveTimer);
-			userSaveTimer = undefined;
-		}
-		if (!canSaveUser(appContext.user)) throw new Error('Set your name first.');
-		const user = {
-			id: appContext.user.id,
-			name: appContext.user.name,
-			color: appContext.user.color,
-			icon: appContext.user.icon,
-		};
-		const submittedUserKey = userSaveKey(user);
-		if (user.id > 0 && submittedUserKey === lastSavedUserKey) return appContext.user;
-
-		const saveId = ++userSaveSequence;
-		const savedUser = await saveServerUser(user);
-		if (saveId === userSaveSequence && userSaveKey(appContext.user) === submittedUserKey) {
-			lastSavedUserKey = userSaveKey(savedUser);
-			appContext.user = savedUser;
-		}
-		return savedUser;
+		debouncedSaveUser();
 	}
 
 	async function checkProfileForPath(url: URL) {
