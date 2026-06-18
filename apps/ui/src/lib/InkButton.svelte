@@ -76,7 +76,11 @@
 			style={`--ink-button-icon-size: ${resolvedIconCssSize}`}
 			aria-hidden="true"
 		>
-			<DisplayIcon size={resolvedIconSize} strokeWidth={resolvedIconStrokeWidth} />
+			<DisplayIcon
+				size={resolvedIconSize}
+				strokeWidth={resolvedIconStrokeWidth}
+				style="display: block; width: 100%; height: 100%;"
+			/>
 		</span>
 	{/if}
 	{@render children?.()}
@@ -86,22 +90,10 @@
 </button>
 
 <style>
-	.ink-button :global(.vote-wrap) {
+	.ink-button {
 		--vote-badge-opacity: 0;
 		--vote-badge-pointer-events: none;
 		--vote-badge-scale: 0.92;
-	}
-
-	.ink-button:hover:not(:disabled) :global(.vote-wrap),
-	.ink-button:focus-visible :global(.vote-wrap),
-	.ink-button:focus-within :global(.vote-wrap),
-	.ink-button[data-self-voted='true'] :global(.vote-wrap) {
-		--vote-badge-opacity: 1;
-		--vote-badge-pointer-events: auto;
-		--vote-badge-scale: 1;
-	}
-
-	.ink-button {
 		position: relative;
 		display: inline-flex;
 		align-items: center;
@@ -130,6 +122,15 @@
 			filter 220ms ease,
 			opacity 180ms ease,
 			transform 180ms ease;
+	}
+
+	.ink-button:hover:not(:disabled),
+	.ink-button:focus-visible,
+	.ink-button:focus-within,
+	.ink-button[data-self-voted='true'] {
+		--vote-badge-opacity: 1;
+		--vote-badge-pointer-events: auto;
+		--vote-badge-scale: 1;
 	}
 
 	.ink-button[data-fill='true'] {
@@ -215,12 +216,6 @@
 		height: var(--ink-button-icon-size);
 		flex: 0 0 auto;
 		transition: transform 180ms ease;
-	}
-
-	.ink-button-icon :global(svg) {
-		display: block;
-		width: 100%;
-		height: 100%;
 	}
 
 	.ink-button-icon[data-loading='true'] {
