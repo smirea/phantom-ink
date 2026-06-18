@@ -1,6 +1,8 @@
-import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { asc, desc, eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import env from '@repo/shared/env';
 import {
 	applyOnlineRoomAction,
@@ -28,12 +30,45 @@ const sseHeartbeatMs = 5_000;
 const presenceTimeoutMs = 30_000;
 const serverStartedAt = Date.now();
 
+const usersTable = sqliteTable('users', {
+	id: integer('id').primaryKey({ autoIncrement: true }),
+	clientKey: text('client_key'),
+	name: text('name').notNull(),
+	color: text('color').notNull().default('ectoplasm'),
+	icon: text('icon').notNull().default('ghost'),
+	createdAt: text('created_at').notNull(),
+	updatedAt: text('updated_at').notNull(),
+});
+
+const roomsTable = sqliteTable('rooms', {
+	code: text('code').primaryKey(),
+	createdAt: text('created_at').notNull(),
+	updatedAt: text('updated_at').notNull(),
+});
+
+const roomActionsTable = sqliteTable('room_actions', {
+	id: integer('id').primaryKey({ autoIncrement: true }),
+	roomCode: text('room_code')
+		.notNull()
+		.references(() => roomsTable.code),
+	userId: integer('user_id')
+		.notNull()
+		.references(() => usersTable.id),
+	type: text('type').notNull(),
+	payload: text('payload').notNull(),
+	createdAt: text('created_at').notNull(),
+});
+
 mkdirSync(dirname(databaseUrl), { recursive: true });
 
-const sqlite = new Database(databaseUrl, { create: true });
-sqlite.exec('PRAGMA journal_mode = WAL');
-sqlite.exec('PRAGMA foreign_keys = ON');
-sqlite.exec(`
+const db = drizzle({
+	connection: { source: databaseUrl, create: true },
+	schema: { users: usersTable, rooms: roomsTable, roomActions: roomActionsTable },
+});
+
+db.run('PRAGMA journal_mode = WAL');
+db.run('PRAGMA foreign_keys = ON');
+db.run(`
 	CREATE TABLE IF NOT EXISTS users (
 		id integer PRIMARY KEY AUTOINCREMENT,
 		client_key text,
@@ -43,11 +78,15 @@ sqlite.exec(`
 		created_at text NOT NULL,
 		updated_at text NOT NULL
 	);
+`);
+db.run(`
 	CREATE TABLE IF NOT EXISTS rooms (
 		code text PRIMARY KEY,
 		created_at text NOT NULL,
 		updated_at text NOT NULL
 	);
+`);
+db.run(`
 	CREATE TABLE IF NOT EXISTS room_actions (
 		id integer PRIMARY KEY AUTOINCREMENT,
 		room_code text NOT NULL,
@@ -58,34 +97,13 @@ sqlite.exec(`
 		FOREIGN KEY (room_code) REFERENCES rooms(code),
 		FOREIGN KEY (user_id) REFERENCES users(id)
 	);
-	CREATE UNIQUE INDEX IF NOT EXISTS users_client_key_idx ON users(client_key) WHERE client_key IS NOT NULL;
-	CREATE INDEX IF NOT EXISTS room_actions_room_code_id_idx ON room_actions(room_code, id);
 `);
+db.run('CREATE UNIQUE INDEX IF NOT EXISTS users_client_key_idx ON users(client_key) WHERE client_key IS NOT NULL');
+db.run('CREATE INDEX IF NOT EXISTS room_actions_room_code_id_idx ON room_actions(room_code, id)');
 
-type UserRow = {
-	id: number;
-	client_key: string | null;
-	name: string;
-	color: string | null;
-	icon: string | null;
-	created_at: string;
-	updated_at: string;
-};
-
-type RoomRow = {
-	code: string;
-	created_at: string;
-	updated_at: string;
-};
-
-type RoomActionRow = {
-	id: number;
-	room_code: string;
-	user_id: number;
-	type: string;
-	payload: string;
-	created_at: string;
-};
+type UserRow = typeof usersTable.$inferSelect;
+type RoomRow = typeof roomsTable.$inferSelect;
+type RoomActionRow = typeof roomActionsTable.$inferSelect;
 
 type RoomClient = {
 	controller: ReadableStreamDefaultController<Uint8Array>;
@@ -97,12 +115,12 @@ const roomStateCache = new Map<string, OnlineRoomState>();
 const userPresence = new Map<number, number>();
 const encoder = new TextEncoder();
 
-const userColumns = sqlite.query<{ name: string }, []>('PRAGMA table_info(users)').all();
+const userColumns = db.all<{ name: string }>('PRAGMA table_info(users)');
 if (!userColumns.some(column => column.name === 'color')) {
-	sqlite.exec("ALTER TABLE users ADD COLUMN color text NOT NULL DEFAULT 'ectoplasm'");
+	db.run("ALTER TABLE users ADD COLUMN color text NOT NULL DEFAULT 'ectoplasm'");
 }
 if (!userColumns.some(column => column.name === 'icon')) {
-	sqlite.exec("ALTER TABLE users ADD COLUMN icon text NOT NULL DEFAULT 'ghost'");
+	db.run("ALTER TABLE users ADD COLUMN icon text NOT NULL DEFAULT 'ghost'");
 }
 
 class HttpError extends Error {
@@ -296,12 +314,12 @@ function userRecord(user: UserRow): UserRecord {
 
 function getUserRow(userId: number | null): UserRow | null {
 	if (!userId) return null;
-	return sqlite.query<UserRow, [number]>('SELECT * FROM users WHERE id = ?').get(userId) ?? null;
+	return db.select().from(usersTable).where(eq(usersTable.id, userId)).get() ?? null;
 }
 
 function getUserByClientKey(clientKey: string | null): UserRow | null {
 	if (!clientKey) return null;
-	return sqlite.query<UserRow, [string]>('SELECT * FROM users WHERE client_key = ?').get(clientKey) ?? null;
+	return db.select().from(usersTable).where(eq(usersTable.clientKey, clientKey)).get() ?? null;
 }
 
 function getUserByIdOrClientKey(userId: number | null, clientKeyValue: string | null | undefined): UserRow | null {
@@ -329,23 +347,21 @@ function ensureUser(
 			existing.name !== name ||
 			existingColor !== color ||
 			existingIcon !== icon ||
-			(clientKey && !existing.client_key)
+			(clientKey && !existing.clientKey)
 		) {
-			sqlite
-				.query(
-					'UPDATE users SET name = ?, color = ?, icon = ?, client_key = coalesce(client_key, ?), updated_at = ? WHERE id = ?',
-				)
-				.run(name, color, icon, clientKey, timestamp, existing.id);
+			const changes: Partial<typeof usersTable.$inferInsert> = { name, color, icon, updatedAt: timestamp };
+			if (clientKey && !existing.clientKey) changes.clientKey = clientKey;
+			db.update(usersTable).set(changes).where(eq(usersTable.id, existing.id)).run();
 		}
 		return { id: existing.id, name, color, icon };
 	}
 
 	try {
-		const inserted = sqlite
-			.query<UserRow, [string | null, string, string, string, string, string]>(
-				'INSERT INTO users (client_key, name, color, icon, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING *',
-			)
-			.get(clientKey, name, color, icon, timestamp, timestamp);
+		const inserted = db
+			.insert(usersTable)
+			.values({ clientKey, name, color, icon, createdAt: timestamp, updatedAt: timestamp })
+			.returning()
+			.get();
 		if (!inserted) throw new Error('Unable to create user');
 		return userRecord(inserted);
 	} catch (error) {
@@ -356,7 +372,7 @@ function ensureUser(
 }
 
 function getRooms(): RoomRow[] {
-	return sqlite.query<RoomRow, []>('SELECT * FROM rooms ORDER BY updated_at DESC').all();
+	return db.select().from(roomsTable).orderBy(desc(roomsTable.updatedAt)).all();
 }
 
 function touchUserPresence(userId: number, now = Date.now()): void {
@@ -415,11 +431,11 @@ function hasActiveRoomMember(state: OnlineRoomState, now: number): boolean {
 }
 
 function ensureRoom(code: string): void {
-	const existing = sqlite.query<RoomRow, [string]>('SELECT * FROM rooms WHERE code = ?').get(code);
+	const existing = db.select().from(roomsTable).where(eq(roomsTable.code, code)).get();
 	if (existing) return;
 
 	const timestamp = nowIso();
-	sqlite.query('INSERT INTO rooms (code, created_at, updated_at) VALUES (?, ?, ?)').run(code, timestamp, timestamp);
+	db.insert(roomsTable).values({ code, createdAt: timestamp, updatedAt: timestamp }).run();
 }
 
 function deleteRoom(code: string): void {
@@ -433,15 +449,18 @@ function deleteRoom(code: string): void {
 		roomClients.delete(code);
 	}
 
-	sqlite.query('DELETE FROM room_actions WHERE room_code = ?').run(code);
-	sqlite.query('DELETE FROM rooms WHERE code = ?').run(code);
+	db.delete(roomActionsTable).where(eq(roomActionsTable.roomCode, code)).run();
+	db.delete(roomsTable).where(eq(roomsTable.code, code)).run();
 	roomStateCache.delete(code);
 }
 
 function getRoomActions(code: string): RoomActionRow[] {
-	return sqlite
-		.query<RoomActionRow, [string]>('SELECT * FROM room_actions WHERE room_code = ? ORDER BY id ASC')
-		.all(code);
+	return db
+		.select()
+		.from(roomActionsTable)
+		.where(eq(roomActionsTable.roomCode, code))
+		.orderBy(asc(roomActionsTable.id))
+		.all();
 }
 
 function readAction(row: RoomActionRow): OnlineRoomAction | null {
@@ -479,14 +498,14 @@ function appendRoomAction(code: string, userId: number, action: OnlineRoomAction
 	if (!changed) return current;
 
 	const timestamp = nowIso();
-	const inserted = sqlite
-		.query<{ id: number }, [string, number, string, string, string]>(
-			'INSERT INTO room_actions (room_code, user_id, type, payload, created_at) VALUES (?, ?, ?, ?, ?) RETURNING id',
-		)
-		.get(code, userId, action.type, JSON.stringify(action), timestamp);
+	const inserted = db
+		.insert(roomActionsTable)
+		.values({ roomCode: code, userId, type: action.type, payload: JSON.stringify(action), createdAt: timestamp })
+		.returning({ id: roomActionsTable.id })
+		.get();
 	if (!inserted) throw new Error('Unable to store room action');
 
-	sqlite.query('UPDATE rooms SET updated_at = ? WHERE code = ?').run(timestamp, code);
+	db.update(roomsTable).set({ updatedAt: timestamp }).where(eq(roomsTable.code, code)).run();
 	next.v = inserted.id;
 	roomStateCache.set(code, next);
 	broadcastRoom(code, next);

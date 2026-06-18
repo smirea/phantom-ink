@@ -150,3 +150,5 @@ The co-op diagram shows clue fragments and a rising letter budget across the pad
 ## Notes for Implementation
 
 The initial web implementation should treat the pad as persistent room state, not as full game rules enforcement. The high-value state for now is room membership, team and role seating, ready/start status, the eight-row pad, active team, optional Eye reveals, hidden full clue text with revealed-letter count, snapshots, and action history.
+
+The server persists this room state with Drizzle over Bun SQLite; the action log remains the source for rebuilding live room snapshots.

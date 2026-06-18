@@ -12,7 +12,7 @@ Design language notes live in [design.md](./design.md).
 
 ## Architecture
 
-- `apps/server`: Bun API server. It stores users, rooms, and reducer actions in SQLite, rebuilds room state from the action log, and streams room snapshots over SSE.
+- `apps/server`: Bun API server. It stores users, rooms, and reducer actions in SQLite through Drizzle, rebuilds room state from the action log, and streams room snapshots over SSE.
 - `apps/ui`: SvelteKit SPA. Vite proxies same-origin `/api/*` requests to the Bun server in development.
 - `packages/shared`: shared TypeScript state, room types, and reducer-like actions used by both server and client.
 
