@@ -12,7 +12,7 @@ import {
 import type { AppRouterClient } from '@repo/shared/rpc';
 import { consumeEventIterator, createORPCClient } from '@orpc/client';
 import { RPCLink } from '@orpc/client/fetch';
-import { getStoredClientKey, LS, readStoredClientKey, storageKeys } from './storage';
+import { getStoredClientKey, LS, readStoredClientKey } from './storage';
 import { parseRoomCode } from './roomCodes';
 
 const api = createORPCClient<AppRouterClient>(
@@ -26,7 +26,7 @@ export interface RoomEventSubscription {
 }
 
 export function getStoredUserId(): number | null {
-	const userId = LS.get(storageKeys.serverUserId);
+	const userId = LS.get('server_user_id');
 	return typeof userId === 'number' && Number.isInteger(userId) && userId > 0 ? userId : null;
 }
 
@@ -38,10 +38,10 @@ export async function loadStoredUser(): Promise<UserRecord | null> {
 	const payload = await api.users.me({ userId, clientKey });
 	if (payload.user) {
 		LS.set({
-			[storageKeys.serverUserId]: payload.user.id,
-			[storageKeys.playerName]: payload.user.name,
-			[storageKeys.playerColor]: payload.user.color,
-			[storageKeys.playerIcon]: payload.user.icon,
+			server_user_id: payload.user.id,
+			player_name: payload.user.name,
+			player_color: payload.user.color,
+			player_icon: payload.user.icon,
 		});
 	}
 	return payload.user;
@@ -58,10 +58,10 @@ export async function ensureUser(profile: {
 		...profile,
 	});
 	LS.set({
-		[storageKeys.serverUserId]: payload.user.id,
-		[storageKeys.playerName]: payload.user.name,
-		[storageKeys.playerColor]: payload.user.color,
-		[storageKeys.playerIcon]: payload.user.icon,
+		server_user_id: payload.user.id,
+		player_name: payload.user.name,
+		player_color: payload.user.color,
+		player_icon: payload.user.icon,
 	});
 	return payload.user;
 }
@@ -102,11 +102,11 @@ export async function joinRoom(code: string, name: string): Promise<RoomViewStat
 	const roomCode = requireRoomCode(code);
 	const user = await ensureUser({
 		name,
-		color: LS.get(storageKeys.playerColor, DEFAULT_PLAYER_COLOR),
-		icon: LS.get(storageKeys.playerIcon, DEFAULT_PLAYER_ICON),
+		color: LS.get('player_color', DEFAULT_PLAYER_COLOR),
+		icon: LS.get('player_icon', DEFAULT_PLAYER_ICON),
 	});
 	const payload = await api.rooms.join({ code: roomCode, userId: user.id });
-	LS.set({ [storageKeys.currentRoom]: roomCode });
+	LS.set({ current_room: roomCode });
 	return payload.room;
 }
 

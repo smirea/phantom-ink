@@ -6,7 +6,7 @@
 	import { page } from '$app/state';
 	import { leaveRoomForStoredUser, loadStoredUser, pingPresence } from '$lib/api';
 	import { parseRoomCode } from '$lib/roomCodes';
-	import { LS, storageKeys } from '$lib/storage';
+	import { LS } from '$lib/storage';
 	import DoorOpen from '@lucide/svelte/icons/door-open';
 	import Moon from '@lucide/svelte/icons/moon';
 	import Sun from '@lucide/svelte/icons/sun';
@@ -28,13 +28,13 @@
 	const presencePingMs = 10_000;
 
 	const appContext = $state<AppContext>({
-		theme: LS.get(storageKeys.darkMode) ? 'dark' : 'light',
+		theme: LS.get('dark_mode') ? 'dark' : 'light',
 		user: null,
 	});
 	setAppContext(appContext);
-	let playerName = $state(LS.get(storageKeys.playerName) ?? '');
-	let playerColor = $state<PlayerColorId>(LS.get(storageKeys.playerColor, DEFAULT_PLAYER_COLOR));
-	let playerIcon = $state<PlayerIconId>(LS.get(storageKeys.playerIcon, DEFAULT_PLAYER_ICON));
+	let playerName = $state(LS.get('player_name') ?? '');
+	let playerColor = $state<PlayerColorId>(LS.get('player_color', DEFAULT_PLAYER_COLOR));
+	let playerIcon = $state<PlayerIconId>(LS.get('player_icon', DEFAULT_PLAYER_ICON));
 	let supportsViewTransitions = $state(false);
 	let isViewTransitioning = $state(false);
 	let settingsMenuState = $state<'closed' | 'open' | 'closing'>('closed');
@@ -81,7 +81,7 @@
 	$effect(() => {
 		if (typeof document === 'undefined') return;
 		document.documentElement.dataset.theme = theme;
-		LS.set({ [storageKeys.darkMode]: theme === 'dark' });
+		LS.set({ dark_mode: theme === 'dark' });
 	});
 
 	$effect(() => {
@@ -175,9 +175,9 @@
 	}
 
 	function syncPlayerFromStorage() {
-		playerName = LS.get(storageKeys.playerName) ?? '';
-		playerColor = LS.get(storageKeys.playerColor, DEFAULT_PLAYER_COLOR);
-		playerIcon = LS.get(storageKeys.playerIcon, DEFAULT_PLAYER_ICON);
+		playerName = LS.get('player_name') ?? '';
+		playerColor = LS.get('player_color', DEFAULT_PLAYER_COLOR);
+		playerIcon = LS.get('player_icon', DEFAULT_PLAYER_ICON);
 	}
 
 	function toggleTheme() {
@@ -212,7 +212,7 @@
 		try {
 			await leaveRoomForStoredUser(roomCode);
 		} catch {}
-		LS.set({ [storageKeys.currentRoom]: null });
+		LS.set({ current_room: null });
 		await goto(`/lobby${page.url.search}${page.url.hash}`, { noScroll: true });
 	}
 

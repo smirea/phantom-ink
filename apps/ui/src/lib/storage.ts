@@ -6,36 +6,24 @@ import {
 } from '@repo/shared/onlineGame';
 import createLocalStorage from './createLocalStorage';
 
-export const storageKeys = {
-	currentRoom: 'current_room',
-	darkMode: 'dark_mode',
-	playerColor: 'player_color',
-	playerIcon: 'player_icon',
-	playerName: 'player_name',
-	serverClientKey: 'server_client_key',
-	serverUserId: 'server_user_id',
-} as const;
-
-export type StorageKey = (typeof storageKeys)[keyof typeof storageKeys];
-
 export interface StorageShape {
-	[storageKeys.currentRoom]: string | null;
-	[storageKeys.darkMode]: boolean;
-	[storageKeys.playerColor]: PlayerColorId;
-	[storageKeys.playerIcon]: PlayerIconId;
-	[storageKeys.playerName]: string;
-	[storageKeys.serverClientKey]: string | null;
-	[storageKeys.serverUserId]: number | null;
+	current_room: string | null;
+	dark_mode: boolean;
+	player_color: PlayerColorId;
+	player_icon: PlayerIconId;
+	player_name: string;
+	server_client_key: string | null;
+	server_user_id: number | null;
 }
 
 const defaults: StorageShape = {
-	[storageKeys.currentRoom]: null,
-	[storageKeys.darkMode]: true,
-	[storageKeys.playerColor]: DEFAULT_PLAYER_COLOR,
-	[storageKeys.playerIcon]: DEFAULT_PLAYER_ICON,
-	[storageKeys.playerName]: '',
-	[storageKeys.serverClientKey]: null,
-	[storageKeys.serverUserId]: null,
+	current_room: null,
+	dark_mode: true,
+	player_color: DEFAULT_PLAYER_COLOR,
+	player_icon: DEFAULT_PLAYER_ICON,
+	player_name: '',
+	server_client_key: null,
+	server_user_id: null,
 };
 
 const searchParams = typeof location === 'undefined' ? new URLSearchParams() : new URLSearchParams(location.search);
@@ -51,7 +39,7 @@ export function getDebugId(): string | null {
 }
 
 export function readStoredClientKey(): string | null {
-	const stored = LS.get(storageKeys.serverClientKey);
+	const stored = LS.get('server_client_key');
 	return stored?.trim() ? stored : null;
 }
 
@@ -63,6 +51,6 @@ export function getStoredClientKey(): string {
 		typeof crypto !== 'undefined' && crypto.randomUUID
 			? crypto.randomUUID()
 			: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-	LS.set({ [storageKeys.serverClientKey]: next });
+	LS.set({ server_client_key: next });
 	return next;
 }

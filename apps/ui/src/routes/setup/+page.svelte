@@ -4,7 +4,7 @@
 	import { ensureUser, loadStoredUser } from '$lib/api';
 	import PhantomLogo from '$lib/PhantomLogo.svelte';
 	import { playerColorPreset, playerIconComponents } from '$lib/playerPresentation';
-	import { LS, storageKeys } from '$lib/storage';
+	import { LS } from '$lib/storage';
 	import {
 		DEFAULT_PLAYER_COLOR,
 		DEFAULT_PLAYER_ICON,
@@ -21,9 +21,9 @@
 	import Dices from '@lucide/svelte/icons/dices';
 	import { onMount } from 'svelte';
 
-	let name = $state(LS.get(storageKeys.playerName) ?? '');
-	let color = $state<PlayerColorId>(LS.get(storageKeys.playerColor, DEFAULT_PLAYER_COLOR));
-	let icon = $state<PlayerIconId>(LS.get(storageKeys.playerIcon, DEFAULT_PLAYER_ICON));
+	let name = $state(LS.get('player_name') ?? '');
+	let color = $state<PlayerColorId>(LS.get('player_color', DEFAULT_PLAYER_COLOR));
+	let icon = $state<PlayerIconId>(LS.get('player_icon', DEFAULT_PLAYER_ICON));
 	let isLoading = $state(true);
 	let isSubmitting = $state(false);
 	let error = $state<string | null>(null);

@@ -5,7 +5,7 @@
 	import VoteBadge from '$lib/VoteBadge.svelte';
 	import { joinRoom, openRoomEvents, sendRoomAction } from '$lib/api';
 	import { parseRoomCode } from '$lib/roomCodes';
-	import { LS, storageKeys } from '$lib/storage';
+	import { LS } from '$lib/storage';
 	import {
 		playerIdForUser,
 		type RoomMemberView,
@@ -60,7 +60,7 @@
 
 		async function connect() {
 			try {
-				room = await joinRoom(roomCode ?? '', LS.get(storageKeys.playerName) ?? '');
+				room = await joinRoom(roomCode ?? '', LS.get('player_name') ?? '');
 				if (cancelled || !roomCode) return;
 				events = openRoomEvents(
 					roomCode,
@@ -164,7 +164,7 @@
 	}
 
 	function storedUserPlayerId(): string | null {
-		const userId = LS.get(storageKeys.serverUserId);
+		const userId = LS.get('server_user_id');
 		return typeof userId === 'number' ? playerIdForUser(userId) : null;
 	}
 </script>

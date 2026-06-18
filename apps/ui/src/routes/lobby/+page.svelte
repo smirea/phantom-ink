@@ -2,7 +2,7 @@
 	import Avatar from '$lib/Avatar.svelte';
 	import { getOnlineUsers, getRoomDirectory, joinRoom } from '$lib/api';
 	import { createRoomCode } from '$lib/roomCodes';
-	import { LS, storageKeys } from '$lib/storage';
+	import { LS } from '$lib/storage';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { type RoomDirectoryListing, type UserRecord } from '@repo/shared/onlineGame';
@@ -99,7 +99,7 @@
 	async function joinAndNavigate(code: string) {
 		joiningCode = code;
 		try {
-			await joinRoom(code, LS.get(storageKeys.playerName) ?? '');
+			await joinRoom(code, LS.get('player_name') ?? '');
 			await goto(roomHref(code), { noScroll: true });
 		} finally {
 			joiningCode = null;
