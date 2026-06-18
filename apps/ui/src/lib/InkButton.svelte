@@ -36,12 +36,22 @@
 	const DisplayIcon = $derived(loading ? LoaderCircle : Icon);
 	const isDisabled = $derived(disabled || loading);
 	const resolvedIconSize = $derived(iconSize ?? (size === 'lg' ? 26 : size === 'sm' ? 17 : 20));
+	const resolvedIconCssSize = $derived(formatCssSize(resolvedIconSize));
 	const resolvedIconStrokeWidth = $derived(iconStrokeWidth ?? (size === 'lg' ? 2.5 : 2.3));
+
+	function formatCssSize(value: number | string): string {
+		return typeof value === 'number' ? `${value}px` : value;
+	}
 </script>
 
 <button {...rest} {type} aria-busy={loading || undefined} disabled={isDisabled} class={className}>
 	{#if DisplayIcon}
-		<span class:loading class="ink-button-icon" aria-hidden="true">
+		<span
+			class:loading
+			class="ink-button-icon"
+			style={`--ink-button-icon-size: ${resolvedIconCssSize}`}
+			aria-hidden="true"
+		>
 			<DisplayIcon size={resolvedIconSize} strokeWidth={resolvedIconStrokeWidth} />
 		</span>
 	{/if}
@@ -104,9 +114,15 @@
 	.ink-button-icon {
 		display: inline-grid;
 		place-items: center;
-		width: 1em;
-		height: 1em;
+		width: var(--ink-button-icon-size);
+		height: var(--ink-button-icon-size);
 		flex: 0 0 auto;
+	}
+
+	.ink-button-icon :global(svg) {
+		display: block;
+		width: 100%;
+		height: 100%;
 	}
 
 	.ink-button-icon.loading {
