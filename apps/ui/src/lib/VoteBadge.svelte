@@ -26,7 +26,7 @@
 	let isOpen = $state(false);
 	let isFlashing = $state(false);
 	let lastCount = $state<number | null>(null);
-	let badgeButton = $state<HTMLButtonElement | null>(null);
+	let badgeButton = $state<HTMLElement | null>(null);
 	let popoverNode = $state<HTMLDivElement | null>(null);
 	let popoverStyle = $state('visibility: hidden;');
 	let flashTimer: ReturnType<typeof setTimeout> | undefined;
@@ -86,7 +86,8 @@
 		return members.find(member => member.id === playerId) ?? null;
 	}
 
-	async function toggle(event: MouseEvent) {
+	async function toggle(event: Event) {
+		event.preventDefault();
 		event.stopPropagation();
 		if (isOpen) {
 			isOpen = false;
@@ -97,6 +98,15 @@
 		isOpen = true;
 		await tick();
 		updatePopoverPosition();
+	}
+
+	function stopBadgeEvent(event: Event) {
+		event.stopPropagation();
+	}
+
+	function handleBadgeKeydown(event: KeyboardEvent) {
+		if (event.key !== 'Enter' && event.key !== ' ') return;
+		void toggle(event);
 	}
 
 	function updatePopoverPosition() {
@@ -125,12 +135,61 @@
 	}
 </script>
 
+{#snippet Popover()}
+	{#if isOpen}
+		<div
+			bind:this={popoverNode}
+			use:portal
+			class="vote-popover"
+			style={popoverStyle}
+			onclick={event => event.stopPropagation()}
+		>
+			{#if voters.length}
+				<div class="vote-group">
+					{#each voters as member (member.id)}
+						<div class="vote-person">
+							<Check class="yes" size={15} strokeWidth={2.6} />
+							<Avatar user={member} name={false} />
+							<span>{member.name}</span>
+						</div>
+					{/each}
+				</div>
+			{:else}
+				<div class="vote-empty">No votes yet</div>
+			{/if}
+			{#if missing.length}
+				<div class="vote-group missing">
+					{#each missing as member (member.id)}
+						<div class="vote-person">
+							<Minus size={15} strokeWidth={2.6} />
+							<Avatar user={member} name={false} />
+							<span>{member.name}</span>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</div>
+	{/if}
+{/snippet}
+
 {#if passive}
-	<span class="vote-wrap" data-passive="true" aria-label={`${label}: ${currentVotes} of ${requiredVotes}`}>
-		<span class:flash={isFlashing} class="vote-badge">
+	<span class:open={isOpen} class="vote-wrap" data-passive="true">
+		<span
+			bind:this={badgeButton}
+			aria-expanded={isOpen}
+			aria-label={`${label}: ${currentVotes} of ${requiredVotes}`}
+			class:flash={isFlashing}
+			class="vote-badge"
+			onclick={toggle}
+			onkeydown={handleBadgeKeydown}
+			onpointerdown={stopBadgeEvent}
+			role="button"
+			tabindex="0"
+		>
 			<ScrollText size={14} strokeWidth={2.4} />
 			<span>{currentVotes}/{requiredVotes}</span>
 		</span>
+		{@render Popover()}
 	</span>
 {:else}
 	<div class:open={isOpen} class="vote-wrap">
@@ -147,40 +206,7 @@
 			<span>{currentVotes}/{requiredVotes}</span>
 		</button>
 
-		{#if isOpen}
-			<div
-				bind:this={popoverNode}
-				use:portal
-				class="vote-popover"
-				style={popoverStyle}
-				onclick={event => event.stopPropagation()}
-			>
-				{#if voters.length}
-					<div class="vote-group">
-						{#each voters as member (member.id)}
-							<div class="vote-person">
-								<Check class="yes" size={15} strokeWidth={2.6} />
-								<Avatar user={member} name={false} />
-								<span>{member.name}</span>
-							</div>
-						{/each}
-					</div>
-				{:else}
-					<div class="vote-empty">No votes yet</div>
-				{/if}
-				{#if missing.length}
-					<div class="vote-group missing">
-						{#each missing as member (member.id)}
-							<div class="vote-person">
-								<Minus size={15} strokeWidth={2.6} />
-								<Avatar user={member} name={false} />
-								<span>{member.name}</span>
-							</div>
-						{/each}
-					</div>
-				{/if}
-			</div>
-		{/if}
+		{@render Popover()}
 	</div>
 {/if}
 
@@ -188,11 +214,11 @@
 	.vote-wrap {
 		position: absolute;
 		top: 0;
-		right: 0;
+		right: 50%;
 		z-index: 3;
 		opacity: var(--vote-badge-opacity, 1);
 		pointer-events: var(--vote-badge-pointer-events, auto);
-		transform: translate(50%, -50%) scale(var(--vote-badge-scale, 1));
+		transform: translate(50%, -75%) scale(var(--vote-badge-scale, 1));
 		transition:
 			opacity 160ms ease,
 			transform 160ms ease;
@@ -230,10 +256,20 @@
 	}
 
 	.vote-wrap[data-passive='true'] .vote-badge {
-		cursor: inherit;
+		cursor: pointer;
 	}
 
-	.vote-wrap:not([data-passive='true']) .vote-badge:hover,
+	.vote-wrap[data-passive='true'] {
+		pointer-events: auto;
+	}
+
+	.vote-wrap[data-passive='true']:hover,
+	.vote-wrap[data-passive='true'].open {
+		opacity: 1;
+		transform: translate(50%, -50%) scale(1);
+	}
+
+	.vote-badge:hover,
 	.vote-badge[aria-expanded='true'] {
 		background: color-mix(in oklab, var(--app-accent) 18%, var(--app-panel));
 		border-color: var(--app-accent);
