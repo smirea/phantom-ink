@@ -57,63 +57,45 @@
 	}
 </script>
 
-{#snippet ButtonElement()}
-	<button
-		{...rest}
-		{type}
-		aria-busy={loading || undefined}
-		data-fill={fill ? 'true' : undefined}
-		data-loading={loading ? 'true' : undefined}
-		data-size={size}
-		data-variant={variant}
-		disabled={isDisabled}
-		class={className}
-	>
-		{#if DisplayIcon}
-			<span
-				data-loading={loading ? 'true' : undefined}
-				class="ink-button-icon"
-				style={`--ink-button-icon-size: ${resolvedIconCssSize}`}
-				aria-hidden="true"
-			>
-				<DisplayIcon size={resolvedIconSize} strokeWidth={resolvedIconStrokeWidth} />
-			</span>
-		{/if}
-		{@render children?.()}
-	</button>
-{/snippet}
-
-{#if voting}
-	<span
-		class="ink-button-vote-host"
-		data-fill={fill ? 'true' : undefined}
-		data-self-voted={selfHasVoted ? 'true' : undefined}
-	>
-		{@render ButtonElement()}
-		<VoteBadge {voting} label={voteLabel} />
-	</span>
-{:else}
-	{@render ButtonElement()}
-{/if}
+<button
+	{...rest}
+	{type}
+	aria-busy={loading || undefined}
+	data-fill={fill ? 'true' : undefined}
+	data-loading={loading ? 'true' : undefined}
+	data-self-voted={selfHasVoted ? 'true' : undefined}
+	data-size={size}
+	data-variant={variant}
+	disabled={isDisabled}
+	class={className}
+>
+	{#if DisplayIcon}
+		<span
+			data-loading={loading ? 'true' : undefined}
+			class="ink-button-icon"
+			style={`--ink-button-icon-size: ${resolvedIconCssSize}`}
+			aria-hidden="true"
+		>
+			<DisplayIcon size={resolvedIconSize} strokeWidth={resolvedIconStrokeWidth} />
+		</span>
+	{/if}
+	{@render children?.()}
+	{#if voting}
+		<VoteBadge {voting} label={voteLabel} passive />
+	{/if}
+</button>
 
 <style>
-	.ink-button-vote-host {
-		position: relative;
-		display: inline-block;
-		min-width: 0;
+	.ink-button :global(.vote-wrap) {
 		--vote-badge-opacity: 0;
 		--vote-badge-pointer-events: none;
 		--vote-badge-scale: 0.92;
 	}
 
-	.ink-button-vote-host[data-fill='true'] {
-		display: block;
-		width: 100%;
-	}
-
-	.ink-button-vote-host:hover,
-	.ink-button-vote-host:focus-within,
-	.ink-button-vote-host[data-self-voted='true'] {
+	.ink-button:hover:not(:disabled) :global(.vote-wrap),
+	.ink-button:focus-visible :global(.vote-wrap),
+	.ink-button:focus-within :global(.vote-wrap),
+	.ink-button[data-self-voted='true'] :global(.vote-wrap) {
 		--vote-badge-opacity: 1;
 		--vote-badge-pointer-events: auto;
 		--vote-badge-scale: 1;
@@ -138,7 +120,7 @@
 		white-space: nowrap;
 		cursor: pointer;
 		isolation: isolate;
-		overflow: hidden;
+		overflow: visible;
 		transition:
 			background 180ms ease,
 			background-position 360ms ease,
@@ -169,7 +151,7 @@
 	.ink-button[data-size='lg'] {
 		min-height: 3rem;
 		padding: 0 1.05rem;
-		font-size: 0.98rem;
+		font-size: 1.125rem;
 	}
 
 	.ink-button[data-variant='ghost'] {
@@ -222,6 +204,8 @@
 			inset 0 0.9rem 1.4rem color-mix(in oklab, white 3%, transparent),
 			inset 0 -0.7rem 1.1rem color-mix(in oklab, #260a36 26%, transparent);
 		color: var(--app-accent-ink);
+		font-family: Luminari, 'Palatino Linotype', var(--font-sans), Georgia, serif;
+		font-weight: bold;
 	}
 
 	.ink-button-icon {

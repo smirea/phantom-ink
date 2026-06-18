@@ -386,11 +386,6 @@
 		overflow: visible;
 	}
 
-	.word-toggle-wrap :global(.ink-button-vote-host) {
-		display: inline-block;
-		min-width: 0;
-	}
-
 	.word-toggle-wrap :global(.ink-button.word-toggle) {
 		gap: 0.62rem;
 		min-height: 3rem;
@@ -759,7 +754,6 @@
 		}
 
 		.word-toggle-wrap,
-		.word-toggle-wrap :global(.ink-button-vote-host),
 		.word-toggle-wrap :global(.ink-button.word-toggle) {
 			width: 100%;
 		}

@@ -447,11 +447,9 @@
 
 			<section class:lobby-card={isLobbyScreen} class:room-card={isRoomScreen} class="content-card">
 				{#key activePath}
-					<div class="route-frame">
-						{#if canRenderRoute}
-							{@render children()}
-						{/if}
-					</div>
+					{#if canRenderRoute}
+						{@render children()}
+					{/if}
 				{/key}
 			</section>
 

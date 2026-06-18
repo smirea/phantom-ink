@@ -13,11 +13,13 @@
 		summary,
 		members = [],
 		label = 'Votes',
+		passive = false,
 		voting,
 	}: {
 		summary?: RoomVoteSummary | null | undefined;
 		members?: RoomMemberView[];
 		label?: string;
+		passive?: boolean;
 		voting?: VotingState;
 	} = $props();
 
@@ -123,55 +125,64 @@
 	}
 </script>
 
-<div class:open={isOpen} class="vote-wrap">
-	<button
-		bind:this={badgeButton}
-		aria-expanded={isOpen}
-		aria-label={`${label}: ${currentVotes} of ${requiredVotes}`}
-		class:flash={isFlashing}
-		class="vote-badge"
-		onclick={toggle}
-		type="button"
-	>
-		<ScrollText size={14} strokeWidth={2.4} />
-		<span>{currentVotes}/{requiredVotes}</span>
-	</button>
-
-	{#if isOpen}
-		<div
-			bind:this={popoverNode}
-			use:portal
-			class="vote-popover"
-			style={popoverStyle}
-			onclick={event => event.stopPropagation()}
+{#if passive}
+	<span class="vote-wrap" data-passive="true" aria-label={`${label}: ${currentVotes} of ${requiredVotes}`}>
+		<span class:flash={isFlashing} class="vote-badge">
+			<ScrollText size={14} strokeWidth={2.4} />
+			<span>{currentVotes}/{requiredVotes}</span>
+		</span>
+	</span>
+{:else}
+	<div class:open={isOpen} class="vote-wrap">
+		<button
+			bind:this={badgeButton}
+			aria-expanded={isOpen}
+			aria-label={`${label}: ${currentVotes} of ${requiredVotes}`}
+			class:flash={isFlashing}
+			class="vote-badge"
+			onclick={toggle}
+			type="button"
 		>
-			{#if voters.length}
-				<div class="vote-group">
-					{#each voters as member (member.id)}
-						<div class="vote-person">
-							<Check class="yes" size={15} strokeWidth={2.6} />
-							<Avatar user={member} name={false} />
-							<span>{member.name}</span>
-						</div>
-					{/each}
-				</div>
-			{:else}
-				<div class="vote-empty">No votes yet</div>
-			{/if}
-			{#if missing.length}
-				<div class="vote-group missing">
-					{#each missing as member (member.id)}
-						<div class="vote-person">
-							<Minus size={15} strokeWidth={2.6} />
-							<Avatar user={member} name={false} />
-							<span>{member.name}</span>
-						</div>
-					{/each}
-				</div>
-			{/if}
-		</div>
-	{/if}
-</div>
+			<ScrollText size={14} strokeWidth={2.4} />
+			<span>{currentVotes}/{requiredVotes}</span>
+		</button>
+
+		{#if isOpen}
+			<div
+				bind:this={popoverNode}
+				use:portal
+				class="vote-popover"
+				style={popoverStyle}
+				onclick={event => event.stopPropagation()}
+			>
+				{#if voters.length}
+					<div class="vote-group">
+						{#each voters as member (member.id)}
+							<div class="vote-person">
+								<Check class="yes" size={15} strokeWidth={2.6} />
+								<Avatar user={member} name={false} />
+								<span>{member.name}</span>
+							</div>
+						{/each}
+					</div>
+				{:else}
+					<div class="vote-empty">No votes yet</div>
+				{/if}
+				{#if missing.length}
+					<div class="vote-group missing">
+						{#each missing as member (member.id)}
+							<div class="vote-person">
+								<Minus size={15} strokeWidth={2.6} />
+								<Avatar user={member} name={false} />
+								<span>{member.name}</span>
+							</div>
+						{/each}
+					</div>
+				{/if}
+			</div>
+		{/if}
+	</div>
+{/if}
 
 <style>
 	.vote-wrap {
@@ -218,7 +229,11 @@
 			transform 160ms ease;
 	}
 
-	.vote-badge:hover,
+	.vote-wrap[data-passive='true'] .vote-badge {
+		cursor: inherit;
+	}
+
+	.vote-wrap:not([data-passive='true']) .vote-badge:hover,
 	.vote-badge[aria-expanded='true'] {
 		background: color-mix(in oklab, var(--app-accent) 18%, var(--app-panel));
 		border-color: var(--app-accent);
