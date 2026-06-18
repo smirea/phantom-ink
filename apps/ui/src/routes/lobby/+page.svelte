@@ -9,7 +9,6 @@
 	import { type RoomDirectoryListing, type User } from '@repo/shared/onlineGame';
 	import { cubicOut, quintOut } from 'svelte/easing';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
-	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import Plus from '@lucide/svelte/icons/plus';
 	import UsersRound from '@lucide/svelte/icons/users-round';
 	import { onMount } from 'svelte';
@@ -256,17 +255,14 @@
 <section class="lobby-screen">
 	<InkButton
 		class="new-seance-button"
-		disabled={isCreating || Boolean(joiningCode)}
+		disabled={Boolean(joiningCode)}
+		icon={Plus}
+		loading={isCreating}
 		onclick={startNewSeance}
 		primary
 		size="lg"
 		type="button"
 	>
-		{#if isCreating}
-			<LoaderCircle class="spin" size={24} strokeWidth={2.4} />
-		{:else}
-			<Plus size={26} strokeWidth={2.5} />
-		{/if}
 		<span>Convene a new séance</span>
 	</InkButton>
 
@@ -660,16 +656,6 @@
 		font-size: 0.9rem;
 		font-weight: 850;
 		text-align: center;
-	}
-
-	:global(.spin) {
-		animation: spin 850ms linear infinite;
-	}
-
-	@keyframes spin {
-		to {
-			transform: rotate(360deg);
-		}
 	}
 
 	@media (max-width: 460px) {
