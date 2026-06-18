@@ -182,10 +182,6 @@ export function sanitizeWordMode(value: string | null | undefined): WordMode {
 	return value === 'custom' ? 'custom' : 'standard';
 }
 
-export function isCompleteUserProfile(user: User | null | undefined): user is User {
-	return Boolean(user && isValidPlayerName(user.name));
-}
-
 export function buildRoomMembers(
 	members: readonly RoomMember[],
 	readyPlayerIds: readonly PlayerId[] = [],

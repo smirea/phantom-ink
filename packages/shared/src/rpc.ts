@@ -4,7 +4,6 @@ import type { OnlineRoomAction, RoomDirectoryListing, RoomViewState, User } from
 
 export interface UserLookupInput {
 	userId?: User['id'] | null;
-	clientKey?: string | null;
 }
 
 export interface EnsureUserInput extends UserLookupInput {

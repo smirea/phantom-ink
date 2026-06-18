@@ -9,5 +9,7 @@ export const load: LayoutLoad = async () => {
 	const { LS } = await import('$lib/storage');
 	const userId = LS.get('userId');
 	if (!userId) return { user: null };
-	return await api.users.get({ userId });
+	const payload = await api.users.get({ userId });
+	if (!payload.user) LS.set({ userId: null });
+	return payload;
 };

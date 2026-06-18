@@ -1,8 +1,8 @@
 <script lang="ts">
 	import Avatar from '$lib/Avatar.svelte';
 	import { getOnlineUsers, getRoomDirectory, joinRoom } from '$lib/api';
+	import { getAppContext } from '$lib/appContext';
 	import { createRoomCode } from '$lib/roomCodes';
-	import { LS } from '$lib/storage';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { type RoomDirectoryListing, type User } from '@repo/shared/onlineGame';
@@ -14,6 +14,7 @@
 	import { onMount } from 'svelte';
 	import type { TransitionConfig } from 'svelte/transition';
 
+	const appContext = getAppContext();
 	let rooms = $state<RoomDirectoryListing[]>([]);
 	let nearbySouls = $state<User[]>([]);
 	let expandedRooms = $state<Set<string>>(new Set());
@@ -38,7 +39,10 @@
 
 		async function load() {
 			try {
-				const [nextRooms, nextNearbySouls] = await Promise.all([getRoomDirectory(), getOnlineUsers()]);
+				const [nextRooms, nextNearbySouls] = await Promise.all([
+					getRoomDirectory(),
+					getOnlineUsers(appContext.user.id),
+				]);
 				if (!cancelled) {
 					rooms = nextRooms;
 					nearbySouls = nextNearbySouls;
@@ -99,7 +103,7 @@
 	async function joinAndNavigate(code: string) {
 		joiningCode = code;
 		try {
-			await joinRoom(code, LS.get('player_name') ?? '');
+			await joinRoom(code, appContext.user);
 			await goto(roomHref(code), { noScroll: true });
 		} finally {
 			joiningCode = null;

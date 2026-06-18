@@ -1,10 +1,6 @@
 import {
-	DEFAULT_PLAYER_COLOR,
-	DEFAULT_PLAYER_ICON,
 	playerIdForUser,
 	type OnlineRoomAction,
-	type PlayerColorId,
-	type PlayerIconId,
 	type RoomDirectoryListing,
 	type RoomViewState,
 	type User,
@@ -25,35 +21,17 @@ export interface RoomEventSubscription {
 	close: () => void;
 }
 
-export function getStoredUserId(): number | null {
-	const userId = LS.get('userId');
-	return typeof userId === 'number' && Number.isInteger(userId) && userId > 0 ? userId : null;
-}
+type UserProfile = Pick<User, 'id' | 'name' | 'color' | 'icon'>;
 
-export async function ensureUser(profile: { name: string; color: PlayerColorId; icon: PlayerIconId }): Promise<User> {
+export async function saveUser(user: UserProfile): Promise<User> {
 	const payload = await api.users.ensure({
-		userId: getStoredUserId(),
-		clientKey: getStoredClientKey(),
-		...profile,
+		userId: serverUserId(user.id),
+		name: user.name,
+		color: user.color,
+		icon: user.icon,
 	});
-	LS.set({
-		userId: payload.user.id,
-		player_name: payload.user.name,
-		player_color: payload.user.color,
-		player_icon: payload.user.icon,
-	});
+	LS.set({ userId: payload.user.id });
 	return payload.user;
-}
-
-export async function getCurrentRoom(): Promise<string | null> {
-	const userId = getStoredUserId();
-	const clientKey = getStoredClientKey();
-
-	const payload = await api.users.currentRoom({
-		userId,
-		clientKey,
-	});
-	return payload.roomCode;
 }
 
 export async function getRoomDirectory(): Promise<RoomDirectoryListing[]> {
@@ -61,60 +39,57 @@ export async function getRoomDirectory(): Promise<RoomDirectoryListing[]> {
 	return payload.rooms;
 }
 
-export async function getOnlineUsers(): Promise<User[]> {
-	const userId = getStoredUserId();
-	const clientKey = readStoredClientKey();
-
-	const payload = await api.presence.online({ userId, clientKey });
+export async function getOnlineUsers(userId: User['id'] | null): Promise<User[]> {
+	const payload = await api.presence.online({ userId: serverUserId(userId) });
 	return payload.users;
 }
 
-export async function pingPresence(): Promise<void> {
-	const userId = getStoredUserId();
-	const clientKey = readStoredClientKey();
-	if (!userId && !clientKey) return;
+export async function pingPresence(userId: User['id'] | null): Promise<void> {
+	const serverId = serverUserId(userId);
+	if (!serverId) return;
 
-	await api.presence.ping({ userId, clientKey });
+	await api.presence.ping({ userId: serverId });
 }
 
-export async function joinRoom(code: string, name: string): Promise<RoomViewState> {
+export async function joinRoom(code: string, user: UserProfile): Promise<RoomViewState> {
 	const roomCode = requireRoomCode(code);
-	const user = await ensureUser({
-		name,
-		color: LS.get('player_color', DEFAULT_PLAYER_COLOR),
-		icon: LS.get('player_icon', DEFAULT_PLAYER_ICON),
-	});
-	const payload = await api.rooms.join({ code: roomCode, userId: user.id });
-	LS.set({ current_room: roomCode });
-	return payload.room;
-}
-
-export async function sendRoomAction(code: string, action: OnlineRoomAction): Promise<RoomViewState> {
-	const roomCode = requireRoomCode(code);
-	const userId = getStoredUserId();
+	const userId = serverUserId(user.id);
 	if (!userId) throw new Error('Missing user');
 
-	const payload = await api.rooms.action({ code: roomCode, userId, action });
+	const payload = await api.rooms.join({ code: roomCode, userId });
 	return payload.room;
 }
 
-export async function leaveRoomForStoredUser(code: string): Promise<void> {
-	const roomCode = parseRoomCode(code);
-	const userId = getStoredUserId();
-	if (!roomCode || !userId) return;
+export async function sendRoomAction(
+	code: string,
+	userId: User['id'] | null,
+	action: OnlineRoomAction,
+): Promise<RoomViewState> {
+	const roomCode = requireRoomCode(code);
+	const serverId = serverUserId(userId);
+	if (!serverId) throw new Error('Missing user');
 
-	await sendRoomAction(roomCode, { type: 'leave', actorId: playerIdForUser(userId) });
+	const payload = await api.rooms.action({ code: roomCode, userId: serverId, action });
+	return payload.room;
+}
+
+export async function leaveRoomForUser(code: string, userId: User['id'] | null): Promise<void> {
+	const roomCode = parseRoomCode(code);
+	const serverId = serverUserId(userId);
+	if (!roomCode || !serverId) return;
+
+	await sendRoomAction(roomCode, serverId, { type: 'leave', actorId: playerIdForUser(serverId) });
 }
 
 export function openRoomEvents(
 	code: string,
+	userId: User['id'] | null,
 	onRoom: (room: RoomViewState) => void,
 	onError: () => void,
 ): RoomEventSubscription {
 	const roomCode = requireRoomCode(code);
-	const userId = getStoredUserId();
 
-	const cancel = consumeEventIterator(api.rooms.events({ code: roomCode, userId }), {
+	const cancel = consumeEventIterator(api.rooms.events({ code: roomCode, userId: serverUserId(userId) }), {
 		onEvent: payload => onRoom(payload.room),
 		onError: () => onError(),
 	});
@@ -130,4 +105,8 @@ function requireRoomCode(value: string): string {
 	const code = parseRoomCode(value);
 	if (!code) throw new Error('Room codes must be 4 letters');
 	return code;
+}
+
+function serverUserId(value: User['id'] | null): User['id'] | null {
+	return value !== null && Number.isInteger(value) && value > 0 ? value : null;
 }

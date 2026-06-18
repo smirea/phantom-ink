@@ -1,10 +1,12 @@
 import type { User } from '@repo/shared/onlineGame';
 import { createContext } from 'svelte';
 
+export type AppUser = User & { unsaved?: true };
+
 export interface AppContext {
 	theme: 'light' | 'dark';
-	/** the root layout guards against this being null before the setup */
-	user: User & { unsaved?: true };
+	user: AppUser;
+	saveUser: () => Promise<User>;
 }
 
 export const [getAppContext, setAppContext] = createContext<AppContext>();

@@ -4,25 +4,18 @@
 	import PhantomLogo from '$lib/PhantomLogo.svelte';
 	import { beforeNavigate, goto, onNavigate } from '$app/navigation';
 	import { page } from '$app/state';
-	import { leaveRoomForStoredUser, pingPresence } from '$lib/api';
+	import { leaveRoomForUser, pingPresence, saveUser as saveServerUser } from '$lib/api';
 	import { parseRoomCode } from '$lib/roomCodes';
 	import { LS } from '$lib/storage';
 	import DoorOpen from '@lucide/svelte/icons/door-open';
 	import Moon from '@lucide/svelte/icons/moon';
 	import Sun from '@lucide/svelte/icons/sun';
 	import UserRound from '@lucide/svelte/icons/user-round';
-	import {
-		DEFAULT_PLAYER_COLOR,
-		DEFAULT_PLAYER_ICON,
-		isCompleteUserProfile,
-		PLAYER_COLOR_PRESETS,
-		PLAYER_ICON_PRESETS,
-	} from '@repo/shared/onlineGame';
+	import { isValidPlayerName, PLAYER_COLOR_PRESETS, PLAYER_ICON_PRESETS, type User } from '@repo/shared/onlineGame';
 	import { onMount } from 'svelte';
 	import './layout.css';
 	import { setAppContext } from '$lib/appContext';
-	import type { AppContext } from '$lib/appContext';
-	import { sample } from 'es-toolkit';
+	import type { AppContext, AppUser } from '$lib/appContext';
 
 	const browser = typeof window !== 'undefined';
 	const presencePingMs = 10_000;
@@ -30,25 +23,21 @@
 
 	const appContext = $state<AppContext>({
 		theme: LS.get('dark_mode') ? 'dark' : 'light',
-		user: {
-			name: 'some soul',
-			id: -1,
-			color: sample(PLAYER_COLOR_PRESETS).id,
-			icon: sample(PLAYER_ICON_PRESETS).id,
-			unsaved: true,
-		},
+		user: createUnsavedUser(),
+		saveUser: saveCurrentUser,
 	});
 	setAppContext(appContext);
-	$effect(() => {
-		appContext.user = data.user!;
-	});
 
 	let supportsViewTransitions = $state(false);
 	let isViewTransitioning = $state(false);
 	let settingsMenuState = $state<'closed' | 'open' | 'closing'>('closed');
 	let settingsCloseTimer: ReturnType<typeof setTimeout> | undefined;
+	let userSaveTimer: ReturnType<typeof setTimeout> | undefined;
 	let manualViewTransition = false;
 	let profileCheckId = 0;
+	let loadedUserKey = '';
+	let lastSavedUserKey = '';
+	let userSaveSequence = 0;
 	const activePath = $derived(page.url.pathname);
 	const activeRoute = $derived(`${page.url.pathname}${page.url.search}${page.url.hash}`);
 	const activeRoomCode = $derived(roomCodeFromPath(activePath));
@@ -91,13 +80,22 @@
 	});
 
 	$effect(() => {
-		appContext.user = data.user;
+		const user = data.user;
+		const nextLoadedUserKey = user ? userSaveKey(user) : '';
+		if (!user || nextLoadedUserKey === loadedUserKey) return;
+
+		loadedUserKey = nextLoadedUserKey;
+		lastSavedUserKey = nextLoadedUserKey;
+		appContext.user = user;
+	});
+
+	$effect(() => {
+		const user = appContext.user;
+		scheduleUserSave(user, userSaveKey(user), user.unsaved);
 	});
 
 	onMount(() => {
 		supportsViewTransitions = Boolean(document.startViewTransition) && !prefersReducedMotion();
-		syncPlayerFromStorage();
-		const stopStorage = LS.onChange(syncPlayerFromStorage);
 		const handleLinkClick = (event: MouseEvent) => {
 			const anchor = getAnchor(event.target);
 			if (!anchor || !shouldHandleLink(event, anchor)) return;
@@ -123,9 +121,9 @@
 		document.addEventListener('keydown', handleEscape);
 
 		return () => {
-			stopStorage();
 			window.clearInterval(presenceInterval);
 			if (settingsCloseTimer) clearTimeout(settingsCloseTimer);
+			if (userSaveTimer) clearTimeout(userSaveTimer);
 			document.removeEventListener('click', handleLinkClick, true);
 			document.removeEventListener('pointerdown', handleOutsidePointer, true);
 			document.removeEventListener('keydown', handleEscape);
@@ -148,6 +146,66 @@
 		return path === '/' || path === '/setup';
 	}
 
+	function createUnsavedUser(): AppUser {
+		return {
+			id: -1,
+			name: 'some soul',
+			color: randomPreset(PLAYER_COLOR_PRESETS).id,
+			icon: randomPreset(PLAYER_ICON_PRESETS).id,
+			unsaved: true,
+		};
+	}
+
+	function randomPreset<T>(items: readonly T[]): T {
+		return items[Math.floor(Math.random() * items.length)] ?? items[0];
+	}
+
+	function userSaveKey(user: Pick<User, 'id' | 'name' | 'color' | 'icon'>): string {
+		return `${user.id}:${user.name}:${user.color}:${user.icon}`;
+	}
+
+	function canSaveUser(user: AppUser): user is User {
+		return !user.unsaved && isValidPlayerName(user.name);
+	}
+
+	function scheduleUserSave(user: AppUser, userKey = userSaveKey(user), unsaved = user.unsaved) {
+		if (userSaveTimer) {
+			clearTimeout(userSaveTimer);
+			userSaveTimer = undefined;
+		}
+		if (!browser || unsaved || !isValidPlayerName(user.name)) return;
+		if (userKey === lastSavedUserKey) return;
+
+		userSaveTimer = setTimeout(() => {
+			userSaveTimer = undefined;
+			void saveCurrentUser();
+		}, 500);
+	}
+
+	async function saveCurrentUser(): Promise<User> {
+		if (userSaveTimer) {
+			clearTimeout(userSaveTimer);
+			userSaveTimer = undefined;
+		}
+		if (!canSaveUser(appContext.user)) throw new Error('Set your name first.');
+		const user = {
+			id: appContext.user.id,
+			name: appContext.user.name,
+			color: appContext.user.color,
+			icon: appContext.user.icon,
+		};
+		const submittedUserKey = userSaveKey(user);
+		if (user.id > 0 && submittedUserKey === lastSavedUserKey) return appContext.user;
+
+		const saveId = ++userSaveSequence;
+		const savedUser = await saveServerUser(user);
+		if (saveId === userSaveSequence && userSaveKey(appContext.user) === submittedUserKey) {
+			lastSavedUserKey = userSaveKey(savedUser);
+			appContext.user = savedUser;
+		}
+		return savedUser;
+	}
+
 	async function checkProfileForPath(url: URL) {
 		if (!browser) return;
 
@@ -157,7 +215,7 @@
 
 		try {
 			if (checkId !== profileCheckId) return;
-			if (!isCompleteUserProfile(appContext.user)) {
+			if (appContext.user.unsaved) {
 				const setupUrl = setupUrlForReturn(url);
 				await goto(`${setupUrl.pathname}${setupUrl.search}${setupUrl.hash}`, { noScroll: true });
 				return;
@@ -174,14 +232,8 @@
 		if (!browser || isPublicPath(path)) return;
 
 		try {
-			await pingPresence();
+			await pingPresence(appContext.user.id);
 		} catch {}
-	}
-
-	function syncPlayerFromStorage() {
-		playerName = LS.get('player_name') ?? '';
-		playerColor = LS.get('player_color', DEFAULT_PLAYER_COLOR);
-		playerIcon = LS.get('player_icon', DEFAULT_PLAYER_ICON);
 	}
 
 	function toggleTheme() {
@@ -214,9 +266,8 @@
 
 		closeSettings();
 		try {
-			await leaveRoomForStoredUser(roomCode);
+			await leaveRoomForUser(roomCode, appContext.user.id);
 		} catch {}
-		LS.set({ current_room: null });
 		await goto(`/lobby${page.url.search}${page.url.hash}`, { noScroll: true });
 	}
 
@@ -266,9 +317,7 @@
 	async function resolveNavigationUrl(url: URL): Promise<URL> {
 		if (isPublicPath(url.pathname)) return url;
 
-		try {
-			if (isCompleteUserProfile(appContext.user)) return url;
-		} catch {}
+		if (!appContext.user.unsaved) return url;
 
 		return setupUrlForReturn(url);
 	}

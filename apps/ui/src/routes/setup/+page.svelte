@@ -1,19 +1,16 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { ensureUser, loadStoredUser } from '$lib/api';
+	import { getAppContext } from '$lib/appContext';
 	import PhantomLogo from '$lib/PhantomLogo.svelte';
 	import { playerColorPreset, playerIconComponents } from '$lib/playerPresentation';
-	import { LS } from '$lib/storage';
 	import {
-		DEFAULT_PLAYER_COLOR,
-		DEFAULT_PLAYER_ICON,
 		MAX_PLAYER_NAME_LENGTH,
 		MIN_PLAYER_NAME_LENGTH,
 		PLAYER_COLOR_PRESETS,
 		PLAYER_ICON_PRESETS,
-		isCompleteUserProfile,
 		isValidPlayerName,
+		sanitizePlayerName,
 		type PlayerColorId,
 		type PlayerIconId,
 	} from '@repo/shared/onlineGame';
@@ -21,52 +18,28 @@
 	import Dices from '@lucide/svelte/icons/dices';
 	import { onMount } from 'svelte';
 
-	let name = $state(LS.get('player_name') ?? '');
-	let color = $state<PlayerColorId>(LS.get('player_color', DEFAULT_PLAYER_COLOR));
-	let icon = $state<PlayerIconId>(LS.get('player_icon', DEFAULT_PLAYER_ICON));
-	let isLoading = $state(true);
+	const appContext = getAppContext();
 	let isSubmitting = $state(false);
 	let error = $state<string | null>(null);
 	let tapTarget = $state<string | null>(null);
-	let randomizedStartingIdentity = false;
 	let tapTimeout: ReturnType<typeof setTimeout> | undefined;
 	let tapFrame: number | undefined;
-	const selectedColor = $derived(playerColorPreset(color));
-	const canSubmit = $derived(isValidPlayerName(name) && !isLoading && !isSubmitting);
+	const selectedColor = $derived(playerColorPreset(appContext.user.color));
+	const canSubmit = $derived(isValidPlayerName(appContext.user.name) && !isSubmitting);
 	const returnPath = $derived(getReturnPath(page.url.searchParams.get('returnTo')));
 
 	onMount(() => {
-		void loadProfile();
 		return () => {
 			if (tapFrame !== undefined) cancelAnimationFrame(tapFrame);
 			if (tapTimeout) clearTimeout(tapTimeout);
 		};
 	});
 
-	async function loadProfile() {
-		isLoading = true;
-		error = null;
-		try {
-			const user = await loadStoredUser();
-			if (isCompleteUserProfile(user)) {
-				name = user.name;
-				color = user.color;
-				icon = user.icon;
-			} else {
-				randomizeStartingIdentity();
-			}
-		} catch {
-			randomizeStartingIdentity();
-			error = null;
-		} finally {
-			isLoading = false;
-		}
-	}
-
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
 		tapControl('continue');
-		if (!isValidPlayerName(name)) {
+		const name = sanitizePlayerName(appContext.user.name);
+		if (!name) {
 			error = `Name must be ${MIN_PLAYER_NAME_LENGTH}-${MAX_PLAYER_NAME_LENGTH} characters.`;
 			return;
 		}
@@ -74,7 +47,13 @@
 		isSubmitting = true;
 		error = null;
 		try {
-			await ensureUser({ name, color, icon });
+			appContext.user = {
+				id: appContext.user.id,
+				name,
+				color: appContext.user.color,
+				icon: appContext.user.icon,
+			};
+			await appContext.saveUser();
 			await goto(returnPath, { noScroll: true });
 		} catch (caught) {
 			error = caught instanceof Error ? caught.message : 'Unable to save soul.';
@@ -88,24 +67,18 @@
 		applyRandomIdentity();
 	}
 
-	function randomizeStartingIdentity() {
-		if (randomizedStartingIdentity || isValidPlayerName(name)) return;
-		randomizedStartingIdentity = true;
-		applyRandomIdentity();
-	}
-
 	function applyRandomIdentity() {
-		color = randomPreset(PLAYER_COLOR_PRESETS).id;
-		icon = randomPreset(PLAYER_ICON_PRESETS).id;
+		appContext.user.color = randomPreset(PLAYER_COLOR_PRESETS).id;
+		appContext.user.icon = randomPreset(PLAYER_ICON_PRESETS).id;
 	}
 
 	function selectIcon(nextIcon: PlayerIconId) {
-		icon = nextIcon;
+		appContext.user.icon = nextIcon;
 		tapControl(`icon:${nextIcon}`);
 	}
 
 	function selectColor(nextColor: PlayerColorId) {
-		color = nextColor;
+		appContext.user.color = nextColor;
 		tapControl(`color:${nextColor}`);
 	}
 
@@ -153,10 +126,10 @@
 			{@const Icon = playerIconComponents[preset.id]}
 			<button
 				aria-label={preset.label}
-				aria-pressed={icon === preset.id}
-				class:selected={icon === preset.id}
+				aria-pressed={appContext.user.icon === preset.id}
+				class:selected={appContext.user.icon === preset.id}
 				class:tapped={tapTarget === `icon:${preset.id}`}
-				disabled={isLoading || isSubmitting}
+				disabled={isSubmitting}
 				onclick={() => selectIcon(preset.id)}
 				title={preset.label}
 				type="button"
@@ -171,7 +144,7 @@
 			aria-label="Random icon and color"
 			class:tapped={tapTarget === 'dice'}
 			class="dice-button"
-			disabled={isLoading || isSubmitting}
+			disabled={isSubmitting}
 			onclick={randomizeIdentity}
 			title="Random icon and color"
 			type="button"
@@ -184,13 +157,13 @@
 			<input
 				autocomplete="nickname"
 				autofocus
-				disabled={isLoading || isSubmitting}
+				disabled={isSubmitting}
 				maxlength={MAX_PLAYER_NAME_LENGTH}
 				minlength={MIN_PLAYER_NAME_LENGTH}
 				placeholder="Who are you?"
 				spellcheck="false"
 				type="text"
-				bind:value={name}
+				bind:value={appContext.user.name}
 			/>
 		</label>
 
@@ -210,10 +183,10 @@
 		{#each PLAYER_COLOR_PRESETS as preset}
 			<button
 				aria-label={preset.label}
-				aria-pressed={color === preset.id}
-				class:selected={color === preset.id}
+				aria-pressed={appContext.user.color === preset.id}
+				class:selected={appContext.user.color === preset.id}
 				class:tapped={tapTarget === `color:${preset.id}`}
-				disabled={isLoading || isSubmitting}
+				disabled={isSubmitting}
 				onclick={() => selectColor(preset.id)}
 				style={`--swatch: ${preset.value}`}
 				title={preset.label}

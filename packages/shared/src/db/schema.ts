@@ -1,24 +1,14 @@
-import { sql } from 'drizzle-orm';
-import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import type { PlayerColorId, PlayerIconId } from '../playerProfile';
 
-export const usersTable = sqliteTable(
-	'users',
-	{
-		id: integer('id').primaryKey({ autoIncrement: true }),
-		clientKey: text('client_key'),
-		name: text('name').notNull(),
-		color: text('color', { mode: 'text', length: 16 }).$type<PlayerColorId>().notNull(),
-		icon: text('icon', { mode: 'text', length: 16 }).$type<PlayerIconId>().notNull(),
-		createdAt: text('created_at').notNull(),
-		updatedAt: text('updated_at').notNull(),
-	},
-	table => [
-		uniqueIndex('users_client_key_idx')
-			.on(table.clientKey)
-			.where(sql`${table.clientKey} is not null`),
-	],
-);
+export const usersTable = sqliteTable('users', {
+	id: integer('id').primaryKey({ autoIncrement: true }),
+	name: text('name').notNull(),
+	color: text('color', { mode: 'text', length: 16 }).$type<PlayerColorId>().notNull(),
+	icon: text('icon', { mode: 'text', length: 16 }).$type<PlayerIconId>().notNull(),
+	createdAt: text('created_at').notNull(),
+	updatedAt: text('updated_at').notNull(),
+});
 
 export const publicUserColumns = {
 	id: usersTable.id,

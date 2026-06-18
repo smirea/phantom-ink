@@ -4,8 +4,8 @@
 	import Avatar from '$lib/Avatar.svelte';
 	import VoteBadge from '$lib/VoteBadge.svelte';
 	import { joinRoom, openRoomEvents, sendRoomAction } from '$lib/api';
+	import { getAppContext } from '$lib/appContext';
 	import { parseRoomCode } from '$lib/roomCodes';
-	import { LS } from '$lib/storage';
 	import {
 		playerIdForUser,
 		type RoomMemberView,
@@ -23,6 +23,7 @@
 	import UsersRound from '@lucide/svelte/icons/users-round';
 	import { onMount } from 'svelte';
 
+	const appContext = getAppContext();
 	const roomCode = $derived(parseRoomCode(page.params.code));
 	let room = $state<RoomViewState | null>(null);
 	let error = $state<string | null>(null);
@@ -60,10 +61,11 @@
 
 		async function connect() {
 			try {
-				room = await joinRoom(roomCode ?? '', LS.get('player_name') ?? '');
+				room = await joinRoom(roomCode ?? '', appContext.user);
 				if (cancelled || !roomCode) return;
 				events = openRoomEvents(
 					roomCode,
+					appContext.user.id,
 					nextRoom => {
 						room = nextRoom;
 						error = null;
@@ -118,7 +120,7 @@
 		if (self.role !== 'spectator' && self.team === team) return;
 		pendingAction = `team:${team}`;
 		try {
-			room = await sendRoomAction(roomCode, {
+			room = await sendRoomAction(roomCode, appContext.user.id, {
 				type: 'set-seat',
 				actorId: self.id,
 				team,
@@ -135,7 +137,11 @@
 		if (!roomCode || !self || !canUseLobbyControls || pendingAction) return;
 		pendingAction = 'ready';
 		try {
-			room = await sendRoomAction(roomCode, { type: 'vote', actorId: self.id, vote: { type: 'ready' } });
+			room = await sendRoomAction(roomCode, appContext.user.id, {
+				type: 'vote',
+				actorId: self.id,
+				vote: { type: 'ready' },
+			});
 		} catch (caught) {
 			error = caught instanceof Error ? caught.message : 'Unable to update readiness.';
 		} finally {
@@ -147,7 +153,7 @@
 		if (!roomCode || !self || !canUseLobbyControls || pendingAction) return;
 		pendingAction = `word:${mode}`;
 		try {
-			room = await sendRoomAction(roomCode, {
+			room = await sendRoomAction(roomCode, appContext.user.id, {
 				type: 'vote',
 				actorId: self.id,
 				vote: { type: 'word-mode', mode },
@@ -163,9 +169,8 @@
 		void voteWordMode(targetWordMode);
 	}
 
-	function storedUserPlayerId(): string | null {
-		const userId = LS.get('userId');
-		return typeof userId === 'number' ? playerIdForUser(userId) : null;
+	function currentUserPlayerId(): string | null {
+		return appContext.user.id > 0 ? playerIdForUser(appContext.user.id) : null;
 	}
 </script>
 
@@ -212,14 +217,14 @@
 			{@render TeamColumn({
 				team: 'sun',
 				members: sunMembers,
-				selfId: room?.selfPlayerId ?? storedUserPlayerId(),
+				selfId: room?.selfPlayerId ?? currentUserPlayerId(),
 				pending: pendingAction === 'team:sun',
 				onSwitch: () => switchTeam('sun'),
 			})}
 			{@render TeamColumn({
 				team: 'moon',
 				members: moonMembers,
-				selfId: room?.selfPlayerId ?? storedUserPlayerId(),
+				selfId: room?.selfPlayerId ?? currentUserPlayerId(),
 				pending: pendingAction === 'team:moon',
 				onSwitch: () => switchTeam('moon'),
 			})}

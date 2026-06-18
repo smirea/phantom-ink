@@ -53,21 +53,20 @@ const router = os.router({
 	status: os.status.handler(() => ({ ok: true, now: nowIso() })),
 	users: {
 		ensure: os.users.ensure.handler(({ input }) => ({
-			user: ensureUser(numberParam(input.userId), input.clientKey, input.name, input.color, input.icon),
+			user: ensureUser(numberParam(input.userId), input.name, input.color, input.icon),
 		})),
 		get: os.users.get.handler(({ input }) => {
-			const user = getUserByIdOrClientKey(numberParam(input.userId), input.clientKey);
-			return { user: user ? getUser(user.id) : null };
+			return { user: getUser(numberParam(input.userId)) };
 		}),
 		currentRoom: os.users.currentRoom.handler(({ input }) => {
 			pruneInactiveLobbyRooms();
-			const user = getUserByIdOrClientKey(numberParam(input.userId), input.clientKey);
+			const user = getUser(numberParam(input.userId));
 			return { roomCode: user ? findCurrentRoomForUser(user.id) : null };
 		}),
 	},
 	presence: {
 		ping: os.presence.ping.handler(({ input }) => {
-			const user = getUserByIdOrClientKey(numberParam(input.userId), input.clientKey);
+			const user = getUser(numberParam(input.userId));
 			if (!user) throw new ORPCError('NOT_FOUND', { message: 'User not found' });
 
 			touchUserPresence(user.id);
@@ -76,7 +75,7 @@ const router = os.router({
 		}),
 		online: os.presence.online.handler(({ input }) => {
 			pruneInactiveLobbyRooms();
-			const currentUser = getUserByIdOrClientKey(numberParam(input.userId), input.clientKey);
+			const currentUser = getUser(numberParam(input.userId));
 			return { users: getOnlineUsers(currentUser?.id ?? null) };
 		}),
 	},
@@ -174,11 +173,6 @@ function requireRoomCode(value: string): string {
 	return code;
 }
 
-function sanitizeClientKey(value: string | null | undefined): string | null {
-	const key = value?.trim() ?? '';
-	return key ? key.slice(0, 128) : null;
-}
-
 function getUserRow(userId: User['id'] | null): UserRow | null {
 	if (!userId) return null;
 	return db.select().from(usersTable).where(eq(usersTable.id, userId)).get() ?? null;
@@ -189,18 +183,8 @@ function getUser(userId: User['id'] | null): User | null {
 	return db.select(publicUserColumns).from(usersTable).where(eq(usersTable.id, userId)).get() ?? null;
 }
 
-function getUserByClientKey(clientKey: string | null): UserRow | null {
-	if (!clientKey) return null;
-	return db.select().from(usersTable).where(eq(usersTable.clientKey, clientKey)).get() ?? null;
-}
-
-function getUserByIdOrClientKey(userId: User['id'] | null, clientKeyValue: string | null | undefined): UserRow | null {
-	return getUserRow(userId) ?? getUserByClientKey(sanitizeClientKey(clientKeyValue));
-}
-
 function ensureUser(
 	userId: User['id'] | null,
-	clientKeyValue: string | null | undefined,
 	rawName: string | null | undefined,
 	rawColor?: string | null,
 	rawIcon?: string | null,
@@ -208,21 +192,14 @@ function ensureUser(
 	const name = sanitizePlayerName(rawName ?? '') ?? 'Soul';
 	const color = sanitizePlayerColor(rawColor);
 	const icon = sanitizePlayerIcon(rawIcon);
-	const clientKey = sanitizeClientKey(clientKeyValue);
-	const existing = getUserByIdOrClientKey(userId, clientKey);
+	const existing = getUserRow(userId);
 	const timestamp = nowIso();
 
 	if (existing) {
 		const existingColor = sanitizePlayerColor(existing.color);
 		const existingIcon = sanitizePlayerIcon(existing.icon);
-		if (
-			existing.name !== name ||
-			existingColor !== color ||
-			existingIcon !== icon ||
-			(clientKey && !existing.clientKey)
-		) {
+		if (existing.name !== name || existingColor !== color || existingIcon !== icon) {
 			const changes: Partial<UserInsert> = { name, color, icon, updatedAt: timestamp };
-			if (clientKey && !existing.clientKey) changes.clientKey = clientKey;
 			db.update(usersTable).set(changes).where(eq(usersTable.id, existing.id)).run();
 		}
 		const user = getUser(existing.id);
@@ -230,19 +207,13 @@ function ensureUser(
 		return user;
 	}
 
-	try {
-		const inserted = db
-			.insert(usersTable)
-			.values({ clientKey, name, color, icon, createdAt: timestamp, updatedAt: timestamp })
-			.returning(publicUserColumns)
-			.get();
-		if (!inserted) throw new Error('Unable to create user');
-		return inserted;
-	} catch (error) {
-		const existingByKey = getUserByClientKey(clientKey);
-		if (existingByKey) return ensureUser(existingByKey.id, clientKey, name, color, icon);
-		throw error;
-	}
+	const inserted = db
+		.insert(usersTable)
+		.values({ name, color, icon, createdAt: timestamp, updatedAt: timestamp })
+		.returning(publicUserColumns)
+		.get();
+	if (!inserted) throw new Error('Unable to create user');
+	return inserted;
 }
 
 function getRooms(): RoomRow[] {
