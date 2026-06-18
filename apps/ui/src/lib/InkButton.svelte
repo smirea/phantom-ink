@@ -11,6 +11,7 @@
 		children,
 		class: cls,
 		disabled = false,
+		fill = false,
 		icon: Icon,
 		iconSize,
 		iconStrokeWidth,
@@ -27,11 +28,14 @@
 		loading?: boolean;
 		primary?: boolean;
 		size?: ButtonSize;
+		fill?: boolean;
 		type?: ButtonType;
 	} = $props();
 
 	const className = $derived(
-		['ink-button', primary ? 'primary' : '', loading ? 'loading' : '', size, cls].filter(Boolean).join(' '),
+		['ink-button', primary ? 'primary' : '', loading ? 'loading' : '', fill ? 'fill' : '', size, cls]
+			.filter(Boolean)
+			.join(' '),
 	);
 	const DisplayIcon = $derived(loading ? LoaderCircle : Icon);
 	const isDisabled = $derived(disabled || loading);
@@ -65,10 +69,9 @@
 		align-items: center;
 		justify-content: center;
 		gap: 0.45rem;
-		width: fit-content;
 		min-width: 0;
 		border: 1px solid var(--app-border);
-		border-radius: 0.5rem;
+		border-radius: 0.375rem;
 		background: var(--app-input);
 		box-shadow: 0 0 0 0 color-mix(in oklab, var(--app-accent) 0%, transparent);
 		color: var(--app-text);
@@ -78,13 +81,21 @@
 		line-height: 1;
 		white-space: nowrap;
 		cursor: pointer;
+		isolation: isolate;
+		overflow: hidden;
 		transition:
 			background 180ms ease,
+			background-position 360ms ease,
 			border-color 180ms ease,
 			box-shadow 220ms ease,
 			color 180ms ease,
+			filter 220ms ease,
 			opacity 180ms ease,
 			transform 180ms ease;
+	}
+
+	.ink-button.fill {
+		width: 100%;
 	}
 
 	.ink-button.sm {
@@ -106,8 +117,29 @@
 	}
 
 	.ink-button.primary {
-		border-color: var(--app-accent);
-		background: var(--app-accent);
+		border-color: color-mix(in oklab, var(--app-accent-strong) 74%, black 14%);
+		background:
+			radial-gradient(
+				130% 120% at 18% 0%,
+				color-mix(in oklab, var(--app-accent-strong) 74%, white 18%) 0%,
+				transparent 42%
+			),
+			radial-gradient(120% 150% at 90% 115%, color-mix(in oklab, var(--app-accent) 78%, black 26%) 0%, transparent 54%),
+			repeating-linear-gradient(112deg, color-mix(in oklab, white 9%, transparent) 0 1px, transparent 1px 4px),
+			linear-gradient(
+				180deg,
+				color-mix(in oklab, var(--app-accent) 82%, white 12%),
+				color-mix(in oklab, var(--app-accent) 78%, black 24%)
+			);
+		background-position:
+			0 0,
+			100% 100%,
+			0 0,
+			0 0;
+		box-shadow:
+			inset 0 1px 0 color-mix(in oklab, white 30%, transparent),
+			inset 0 -0.8rem 1.25rem color-mix(in oklab, black 16%, transparent),
+			0 0.45rem 1.05rem color-mix(in oklab, var(--app-accent) 16%, transparent);
 		color: var(--app-accent-ink);
 	}
 
@@ -135,6 +167,22 @@
 		transform: translateY(-1px);
 	}
 
+	.ink-button.primary:hover:not(:disabled) {
+		border-color: color-mix(in oklab, var(--app-accent-strong) 88%, white 12%);
+		background-position:
+			8% -8%,
+			92% 108%,
+			0.18rem 0,
+			0 0;
+		box-shadow:
+			inset 0 1px 0 color-mix(in oklab, white 38%, transparent),
+			inset 0 -0.9rem 1.35rem color-mix(in oklab, black 18%, transparent),
+			0 0.55rem 1.35rem color-mix(in oklab, var(--app-accent) 22%, transparent),
+			0 0 0.9rem color-mix(in oklab, var(--app-accent-strong) 22%, transparent);
+		filter: saturate(1.05) brightness(1.03);
+		animation: ink-button-primary-pulse 1500ms ease-in-out infinite;
+	}
+
 	.ink-button:active:not(:disabled) {
 		box-shadow: 0 0.15rem 0.45rem color-mix(in oklab, var(--app-accent) 14%, transparent);
 		transform: translateY(1px) scale(0.99);
@@ -153,6 +201,31 @@
 	@keyframes ink-button-spin {
 		to {
 			transform: rotate(360deg);
+		}
+	}
+
+	@keyframes ink-button-primary-pulse {
+		0%,
+		100% {
+			box-shadow:
+				inset 0 1px 0 color-mix(in oklab, white 38%, transparent),
+				inset 0 -0.9rem 1.35rem color-mix(in oklab, black 18%, transparent),
+				0 0.55rem 1.35rem color-mix(in oklab, var(--app-accent) 22%, transparent),
+				0 0 0.85rem color-mix(in oklab, var(--app-accent-strong) 20%, transparent);
+		}
+
+		50% {
+			box-shadow:
+				inset 0 1px 0 color-mix(in oklab, white 45%, transparent),
+				inset 0 -0.95rem 1.45rem color-mix(in oklab, black 20%, transparent),
+				0 0.65rem 1.55rem color-mix(in oklab, var(--app-accent) 26%, transparent),
+				0 0 1.35rem color-mix(in oklab, var(--app-accent-strong) 34%, transparent);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.ink-button.primary:hover:not(:disabled) {
+			animation: none;
 		}
 	}
 </style>

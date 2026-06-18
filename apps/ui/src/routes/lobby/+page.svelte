@@ -254,8 +254,8 @@
 
 <section class="lobby-screen">
 	<InkButton
-		class="new-seance-button"
 		disabled={Boolean(joiningCode)}
+		fill
 		icon={Plus}
 		loading={isCreating}
 		onclick={startNewSeance}
@@ -263,7 +263,7 @@
 		size="lg"
 		type="button"
 	>
-		<span>Convene a new séance</span>
+		Convene a new séance
 	</InkButton>
 
 	{#if nearbySouls.length}
@@ -359,18 +359,6 @@
 		display: grid;
 		gap: 1rem;
 		min-width: 0;
-	}
-
-	:global(.new-seance-button) {
-		gap: 0.6rem;
-		width: 100%;
-		min-height: 4rem;
-		background:
-			linear-gradient(180deg, color-mix(in oklab, var(--app-accent) 86%, white 14%), var(--app-accent)),
-			var(--app-accent);
-		font-size: clamp(1.1rem, 4.8vw, 1.45rem);
-		font-weight: 950;
-		padding: 0.85rem 1rem;
 	}
 
 	.lobby-list {
