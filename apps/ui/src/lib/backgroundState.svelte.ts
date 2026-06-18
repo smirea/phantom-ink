@@ -123,7 +123,6 @@ export class BackgroundState {
 
 	resetMetrics(id: BackgroundId): void {
 		delete this.metrics[id];
-		if (typeof document !== 'undefined') delete document.documentElement.dataset.backgroundMetrics;
 	}
 
 	recordFrame(
@@ -171,14 +170,6 @@ export class BackgroundState {
 		current.gridShiftY = gridShiftY;
 		current.lastAt = now;
 		this.metrics[id] = current;
-
-		if (typeof document !== 'undefined' && frames % 30 === 0) {
-			document.documentElement.dataset.backgroundMetrics = JSON.stringify({
-				active: id,
-				...current,
-				avgFps: current.avgFrameMs > 0 ? 1000 / current.avgFrameMs : 0,
-			});
-		}
 	}
 
 	installDebug(): () => void {

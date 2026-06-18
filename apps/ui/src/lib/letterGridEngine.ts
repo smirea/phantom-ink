@@ -381,8 +381,12 @@ export class LetterGridEngine {
 	private createGridCell(column: number, row: number, seedAlive: boolean, index: number, spawnNew = false): EngineCell {
 		const char = this.chooseGlyph();
 		const status: EngineCellStatus =
-			seedAlive && Math.random() < this.config.targetAliveRatio ? (spawnNew ? 'spawning' : 'alive') : 'dead';
-		const spawnMs = randomRange(this.config.spawnMs);
+			seedAlive && (spawnNew || Math.random() < this.config.targetAliveRatio)
+				? spawnNew
+					? 'spawning'
+					: 'alive'
+				: 'dead';
+		const spawnMs = status === 'spawning' ? this.transitionSpawnMs() : randomRange(this.config.spawnMs);
 		const cell: EngineCell = {
 			index,
 			id: (this.cellId += 1),
@@ -459,13 +463,13 @@ export class LetterGridEngine {
 		}
 	}
 
-	private spawnCell(cell: EngineCell, now: number): void {
+	private spawnCell(cell: EngineCell, now: number, spawnMs = randomRange(this.config.spawnMs)): void {
 		cell.char = this.chooseGlyph();
 		cell.opacity = randomRange(this.config.glyphOpacity);
 		cell.scale = this.glyphScale(cell.char);
 		cell.spinDuration = randomBetween(18000, 44000);
 		cell.spinDirection = Math.random() < 0.5 ? -1 : 1;
-		cell.spawnMs = randomRange(this.config.spawnMs);
+		cell.spawnMs = spawnMs;
 		cell.decayMs = randomRange(this.config.naturalDecayMs);
 		cell.spawnStartedAt = now;
 		cell.spawnDoneAt = now + cell.spawnMs;
@@ -827,6 +831,7 @@ export class LetterGridEngine {
 		this.spacing.transitionId += 1;
 		this.nextAutoEventAt = Number.POSITIVE_INFINITY;
 		this.ensureCellCapacity(this.viewportWidth(), this.viewportHeight(), false);
+		this.spawnCompressionTargetCells(now, this.viewportWidth(), this.viewportHeight());
 		return true;
 	}
 
@@ -1010,6 +1015,27 @@ export class LetterGridEngine {
 	private capacityGridShiftY(spacing: number): number {
 		if (!this.spacing.active || this.spacing.target >= this.spacing.from) return this.gridShiftY;
 		return this.gridShiftY + (this.spacing.current - spacing) * (this.spacing.anchorRow + 0.5);
+	}
+
+	private transitionSpawnMs(): number {
+		return randomBetween(
+			Math.max(this.config.spawnMs[0], this.spacing.duration * 0.35),
+			Math.max(this.config.spawnMs[1], this.spacing.duration * 0.85),
+		);
+	}
+
+	private spawnCompressionTargetCells(now: number, width: number, height: number): void {
+		if (!this.spacing.active || this.spacing.target >= this.spacing.from) return;
+
+		const spacing = Math.max(1, this.spacing.target);
+		const shiftX = this.capacityGridShiftX(spacing);
+		const shiftY = this.capacityGridShiftY(spacing);
+		for (const cell of this.cells) {
+			if (cell.wasOnscreen || cell.status === 'alive' || cell.status === 'spawning') continue;
+			const x = shiftX + (cell.column + 0.5) * spacing;
+			const y = shiftY + (cell.row + 0.5) * spacing;
+			if (this.isNearViewportPoint(x, y, width, height, spacing)) this.spawnCell(cell, now, this.transitionSpawnMs());
+		}
 	}
 
 	private nextColumnSide(width: number, spacing: number, shiftX = this.gridShiftX): 'left' | 'right' {
