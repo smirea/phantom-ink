@@ -55,12 +55,9 @@ const router = os.router({
 		ensure: os.users.ensure.handler(({ input }) => ({
 			user: ensureUser(numberParam(input.userId), input.clientKey, input.name, input.color, input.icon),
 		})),
-		me: os.users.me.handler(({ input }) => {
+		get: os.users.get.handler(({ input }) => {
 			const user = getUserByIdOrClientKey(numberParam(input.userId), input.clientKey);
 			return { user: user ? getUser(user.id) : null };
-		}),
-		get: os.users.get.handler(({ input }) => {
-			return { user: getUser(requireUserId(input.userId)) };
 		}),
 		currentRoom: os.users.currentRoom.handler(({ input }) => {
 			pruneInactiveLobbyRooms();

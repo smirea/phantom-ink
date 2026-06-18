@@ -26,8 +26,7 @@ export const appContract = {
 	status: oc.output(orpcType<{ ok: true; now: string }>()),
 	users: {
 		ensure: oc.input(orpcType<EnsureUserInput>()).output(orpcType<{ user: User }>()),
-		me: oc.input(orpcType<UserLookupInput>()).output(orpcType<{ user: User | null }>()),
-		get: oc.input(orpcType<{ userId: User['id'] }>()).output(orpcType<{ user: User | null }>()),
+		get: oc.input(orpcType<UserLookupInput>()).output(orpcType<{ user: User | null }>()),
 		currentRoom: oc.input(orpcType<UserLookupInput>()).output(orpcType<{ roomCode: string | null }>()),
 	},
 	presence: {

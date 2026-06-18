@@ -15,7 +15,7 @@ import { RPCLink } from '@orpc/client/fetch';
 import { getStoredClientKey, LS, readStoredClientKey } from './storage';
 import { parseRoomCode } from './roomCodes';
 
-const api = createORPCClient<AppRouterClient>(
+export const api = createORPCClient<AppRouterClient>(
 	new RPCLink({
 		url: () => new URL('/api/rpc', typeof location === 'undefined' ? 'http://localhost' : location.origin),
 	}),
@@ -35,7 +35,7 @@ export async function loadStoredUser(): Promise<User | null> {
 	const clientKey = readStoredClientKey();
 	if (!userId && !clientKey) return null;
 
-	const payload = await api.users.me({ userId, clientKey });
+	const payload = await api.users.get({ userId, clientKey });
 	if (payload.user) {
 		LS.set({
 			server_user_id: payload.user.id,
