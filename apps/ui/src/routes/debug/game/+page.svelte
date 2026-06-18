@@ -22,8 +22,6 @@
 	] as const;
 
 	type GameState = (typeof gameStates)[number];
-	type ActorKey = 'sunSpirit' | 'moonSpirit' | 'sunMediums' | 'moonMediums';
-
 	type BoardEntry = {
 		id: string;
 		type: 'guess' | 'hint';
@@ -73,8 +71,6 @@
 		questionsInHand: 7,
 		questionsGivenToSpirit: 2,
 	} as const;
-
-	const questionById = new Map(questions.map(question => [question.id, question]));
 
 	const gameMachine = setup({
 		types: {
@@ -269,29 +265,11 @@
 		actor.stop();
 	});
 
-	let pickedQuestionIds = $state<Array<QuestionCard['id']>>([]);
-	let answerQuestionId = $state<QuestionCard['id']>('');
-	let clueText = $state('');
-	let guessLetter = $state('');
-	let activeActor = $state<ActorKey>('sunMediums');
-
 	let game = $derived(snapshot.context);
 	let currentState = $derived(
 		gameStates.includes(snapshot.value as GameState) ? (snapshot.value as GameState) : 'start',
 	);
 	let currentTeam = $derived(game.currentTeam);
-	let currentTeamState = $derived(game.teams[currentTeam]);
-	let currentQuestions = $derived(
-		currentTeamState.questions.map(id => questionById.get(id)).filter(question => question !== undefined),
-	);
-	let spiritQuestions = $derived(
-		currentTeamState.spiritQuestionPicks.map(id => questionById.get(id)).filter(question => question !== undefined),
-	);
-	let revealableClues = $derived(getRevealableClues(game));
-	let currentClue = $derived(getCurrentClue(game));
-	let currentGuess = $derived(getCurrentGuess(game));
-	let canUseEye = $derived(hasEyeHint(game));
-	let canTakeTurn = $derived(currentTeamState.board.length < board.turns);
 
 	function createInitialContext(): GameContext {
 		return {
@@ -447,12 +425,6 @@
 		return team === 'sun' ? 'moon' : 'sun';
 	}
 
-	function waitMessage(state: GameState): string {
-		if (state === 'win') return `${currentTeam} wins`;
-		if (state === 'lose') return 'both teams lose';
-		return 'wait';
-	}
-
 	function sanitizePhrase(value: string): string {
 		return value
 			.toUpperCase()
@@ -468,16 +440,6 @@
 			.trim()
 			.slice(0, 1);
 	}
-
-	function submitGuessLetter(): void {
-		if (!guessLetter.trim()) return;
-		actor.send({ type: 'guessLetter', letter: guessLetter });
-		guessLetter = '';
-	}
-
-	const isState = (...states: (typeof snapshot.value)[]) => states.some(s => s === snapshot.value);
-
-	// const isActing = $derived(snapshot.context.currentTeam ===)
 </script>
 
 <div class="debug-game">
@@ -557,65 +519,12 @@
 		flex-wrap: wrap;
 	}
 
-	.team-toggle button,
-	.actor-tabs button {
+	.team-toggle button {
 		background: transparent;
 	}
 
-	.active-toggle,
-	.active-tab {
+	.active-toggle {
 		background: color-mix(in srgb, var(--app-accent) 16%, transparent) !important;
-	}
-
-	.actor-view {
-		border: 0;
-		border-radius: 0;
-		background: transparent;
-	}
-
-	.actor-view {
-		display: grid;
-		gap: 0.75rem;
-		min-height: 3.5rem;
-		padding: 0.25rem 0;
-	}
-
-	.list {
-		display: flex;
-		gap: 0.5rem;
-		flex-wrap: wrap;
-	}
-
-	.question-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-		gap: 0.5rem;
-	}
-
-	.question-grid label {
-		display: grid;
-		gap: 0.2rem;
-		border-bottom: 1px solid var(--app-border);
-		padding: 0.5rem 0;
-	}
-
-	.question-grid input {
-		width: max-content;
-	}
-
-	.chosen {
-		background: color-mix(in srgb, var(--app-accent) 12%, transparent);
-	}
-
-	.mono {
-		font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-		text-transform: uppercase;
-	}
-
-	.placeholder-snippet {
-		margin: 0;
-		color: var(--app-muted);
-		white-space: pre-wrap;
 	}
 
 	.action-dock {
@@ -635,10 +544,6 @@
 		align-items: center;
 		justify-content: flex-end;
 		overflow-x: auto;
-	}
-
-	.action-buttons button {
-		white-space: nowrap;
 	}
 
 	@media (max-width: 640px) {

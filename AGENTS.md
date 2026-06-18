@@ -7,6 +7,7 @@
 - Data Fetching: TanStack Query
 - Linting: Oxlint + oxfmt
 - Git Hooks: Lefthook
+- Utility helpers: prefer `es-toolkit` for common collection, object, and math helpers.
 
 # Architecture
 

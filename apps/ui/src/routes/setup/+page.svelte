@@ -16,6 +16,7 @@
 	} from '@repo/shared/onlineGame';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 	import Dices from '@lucide/svelte/icons/dices';
+	import { sample } from 'es-toolkit';
 	import { onMount } from 'svelte';
 
 	const appContext = getAppContext();
@@ -68,8 +69,8 @@
 	}
 
 	function applyRandomIdentity() {
-		appContext.user.color = randomPreset(PLAYER_COLOR_PRESETS).id;
-		appContext.user.icon = randomPreset(PLAYER_ICON_PRESETS).id;
+		appContext.user.color = sample(PLAYER_COLOR_PRESETS).id;
+		appContext.user.icon = sample(PLAYER_ICON_PRESETS).id;
 	}
 
 	function selectIcon(nextIcon: PlayerIconId) {
@@ -93,10 +94,6 @@
 				if (tapTarget === target) tapTarget = null;
 			}, 420);
 		});
-	}
-
-	function randomPreset<T>(items: readonly T[]): T {
-		return items[Math.floor(Math.random() * items.length)] ?? items[0];
 	}
 
 	function getReturnPath(value: string | null): string {

@@ -142,15 +142,13 @@ const server = Bun.serve({
 		if (rpc.matched) return rpc.response;
 
 		const url = new URL(request.url);
-		if (isApiPathname(url.pathname)) return Response.json({ ok: false, error: 'Not found' }, { status: 404 });
+		if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
+			return Response.json({ ok: false, error: 'Not found' }, { status: 404 });
+		}
 
 		return staticFile(url.pathname);
 	},
 });
-
-function isApiPathname(pathname: string): boolean {
-	return pathname === '/api' || pathname.startsWith('/api/');
-}
 
 function nowIso(): string {
 	return new Date().toISOString();

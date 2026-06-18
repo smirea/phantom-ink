@@ -1,3 +1,4 @@
+import { countBy, difference, intersection, uniq, uniqBy } from 'es-toolkit';
 import {
 	applyPhantomInkGameAction,
 	createInitialGameState,
@@ -448,9 +449,11 @@ function defaultSeatFor(members: readonly RoomMember[]): Pick<RoomMember, 'team'
 }
 
 function leastPopulatedTeam(members: readonly RoomMember[]): Team {
-	const sunCount = members.filter(member => member.role !== 'spectator' && member.team === 'sun').length;
-	const moonCount = members.filter(member => member.role !== 'spectator' && member.team === 'moon').length;
-	return sunCount <= moonCount ? 'sun' : 'moon';
+	const seatedByTeam = countBy(
+		members.filter(member => member.role !== 'spectator'),
+		member => member.team,
+	);
+	return (seatedByTeam.sun ?? 0) <= (seatedByTeam.moon ?? 0) ? 'sun' : 'moon';
 }
 
 type VoteBehavior =
@@ -474,7 +477,7 @@ function buildVoteSummary(state: OnlineRoomState, action: RoomVoteActionName, la
 	const voterIds = state.votes
 		.filter(vote => vote.action === action && eligiblePlayerIds.includes(vote.playerId))
 		.map(vote => vote.playerId);
-	const uniqueVoterIds = [...new Set(voterIds)];
+	const uniqueVoterIds = uniq(voterIds);
 	return {
 		ns: voteNamespace(action),
 		action,
@@ -482,7 +485,7 @@ function buildVoteSummary(state: OnlineRoomState, action: RoomVoteActionName, la
 		currentVotes: uniqueVoterIds.length,
 		requiredVotes,
 		voterIds: uniqueVoterIds,
-		missingPlayerIds: eligiblePlayerIds.filter(playerId => !uniqueVoterIds.includes(playerId)),
+		missingPlayerIds: difference(eligiblePlayerIds, uniqueVoterIds),
 		eligiblePlayerIds,
 		consensus: requiredVotes > 0 && uniqueVoterIds.length >= requiredVotes,
 	};
@@ -496,7 +499,7 @@ function winningChoice(state: OnlineRoomState, ns: Extract<RoomVoteNamespace, 'w
 
 	for (const action of [`${ns}:standard`, `${ns}:custom`] as RoomVoteActionName[]) {
 		const votes = state.votes.filter(vote => vote.action === action && eligiblePlayerIds.includes(vote.playerId));
-		if (new Set(votes.map(vote => vote.playerId)).size >= requiredVotes) return action;
+		if (uniq(votes.map(vote => vote.playerId)).length >= requiredVotes) return action;
 	}
 
 	return null;
@@ -509,14 +512,10 @@ function simpleMajority(total: number): number {
 function pruneVotes(state: OnlineRoomState): RoomVote[] {
 	const votes = Array.isArray(state.votes) ? state.votes : [];
 	const validPlayers = new Set(state.members.map(member => member.id));
-	const seen = new Set<string>();
-	return votes.filter(vote => {
-		if (!validPlayers.has(vote.playerId) || !isRoomVoteActionName(vote.action)) return false;
-		const key = `${vote.playerId}:${vote.action}`;
-		if (seen.has(key)) return false;
-		seen.add(key);
-		return true;
-	});
+	return uniqBy(
+		votes.filter(vote => validPlayers.has(vote.playerId) && isRoomVoteActionName(vote.action)),
+		vote => `${vote.playerId}:${vote.action}`,
+	);
 }
 
 function clearVoteNamespace(votes: readonly RoomVote[], ns: RoomVoteNamespace): RoomVote[] {
@@ -546,8 +545,10 @@ function isPlayerRole(value: unknown): value is PlayerRole {
 }
 
 function uniquePlayerIds(ids: readonly PlayerId[], members: readonly Pick<RoomMember, 'id'>[]): PlayerId[] {
-	const validIds = new Set(members.map(member => member.id));
-	return [...new Set(ids)].filter(id => validIds.has(id));
+	return intersection(
+		uniq(ids),
+		members.map(member => member.id),
+	);
 }
 
 function nameKey(value: string): string {

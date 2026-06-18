@@ -4,6 +4,7 @@
 	import Check from '@lucide/svelte/icons/check';
 	import Minus from '@lucide/svelte/icons/minus';
 	import ScrollText from '@lucide/svelte/icons/scroll-text';
+	import { clamp, compact } from 'es-toolkit';
 	import { onMount, tick } from 'svelte';
 
 	let {
@@ -27,8 +28,8 @@
 
 	const currentVotes = $derived(summary?.currentVotes ?? 0);
 	const requiredVotes = $derived(summary?.requiredVotes ?? 0);
-	const voters = $derived((summary?.voterIds ?? []).map(memberForId).filter(member => member !== null));
-	const missing = $derived((summary?.missingPlayerIds ?? []).map(memberForId).filter(member => member !== null));
+	const voters = $derived(compact((summary?.voterIds ?? []).map(memberForId)));
+	const missing = $derived(compact((summary?.missingPlayerIds ?? []).map(memberForId)));
 
 	$effect(() => {
 		if (lastCount === null) {
@@ -96,7 +97,7 @@
 		const anchor = badgeButton.getBoundingClientRect();
 		const popover = popoverNode.getBoundingClientRect();
 		const margin = 10;
-		const left = Math.min(window.innerWidth - popover.width - margin, Math.max(margin, anchor.right - popover.width));
+		const left = clamp(anchor.right - popover.width, margin, window.innerWidth - popover.width - margin);
 		const topBelow = anchor.bottom + 7;
 		const top =
 			topBelow + popover.height + margin > window.innerHeight

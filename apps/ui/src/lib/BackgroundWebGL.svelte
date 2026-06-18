@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { BackgroundState } from '$lib/backgroundState.svelte';
 	import { type EngineCell, LetterGridEngine } from '$lib/letterGridEngine';
+	import { clamp, uniq } from 'es-toolkit';
 	import { onMount } from 'svelte';
 
 	type Atlas = {
@@ -239,7 +240,7 @@
 	}
 
 	function currentPixelRatio(): number {
-		return Math.max(0.5, Math.min(window.devicePixelRatio || 1, backgroundState.config.renderPixelRatio));
+		return clamp(window.devicePixelRatio || 1, 0.5, backgroundState.config.renderPixelRatio);
 	}
 
 	function createStaticBuffer(gl: WebGLRenderingContext, data: Float32Array): WebGLBuffer {
@@ -251,7 +252,8 @@
 	}
 
 	function createAtlas(gl: WebGLRenderingContext): Atlas {
-		const chars = uniqueChars([...backgroundState.config.glyphs, ...backgroundState.config.specialGlyphs]);
+		const chars = uniq([...backgroundState.config.glyphs, ...backgroundState.config.specialGlyphs]);
+		if (chars.length === 0) chars.push('P');
 		const cellSize = 96;
 		const count = chars.length;
 		const columns = Math.ceil(Math.sqrt(count));
@@ -817,10 +819,6 @@
 		if (!value.startsWith('#')) return [0.72, 0.67, 0.72, 1];
 		const color = Number.parseInt(value.slice(1), 16);
 		return [((color >> 16) & 255) / 255, ((color >> 8) & 255) / 255, (color & 255) / 255, 1];
-	}
-
-	function uniqueChars(chars: string[]): string[] {
-		return [...new Set(chars.length ? chars : ['P'])];
 	}
 
 	function handlePointer(event: PointerEvent): void {

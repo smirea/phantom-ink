@@ -30,7 +30,3 @@ export const playerIconComponents = {
 export function playerColorPreset(color: PlayerColorId) {
 	return PLAYER_COLOR_PRESETS.find(preset => preset.id === color) ?? PLAYER_COLOR_PRESETS[0];
 }
-
-export function playerColorValue(color: PlayerColorId): string {
-	return playerColorPreset(color).value;
-}

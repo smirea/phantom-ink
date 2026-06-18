@@ -44,6 +44,7 @@
 	const displayedWordVoteLabel = $derived(
 		(selfWordVoteMode ?? targetWordMode) === 'custom' ? 'Custom words' : 'Standard words',
 	);
+	const fallbackSelfPlayerId = $derived(appContext.user.id > 0 ? playerIdForUser(appContext.user.id) : null);
 	const selfIsReady = $derived(Boolean(self && readyVote?.voterIds.includes(self.id)));
 	const canUseLobbyControls = $derived(
 		Boolean(roomCode && room?.phase === 'lobby' && self && self.role !== 'spectator'),
@@ -164,14 +165,6 @@
 			pendingAction = null;
 		}
 	}
-
-	function toggleWordMode() {
-		void voteWordMode(targetWordMode);
-	}
-
-	function currentUserPlayerId(): string | null {
-		return appContext.user.id > 0 ? playerIdForUser(appContext.user.id) : null;
-	}
 </script>
 
 <svelte:head>
@@ -196,7 +189,7 @@
 					class:checked={displayedWordMode === 'custom'}
 					class="word-toggle"
 					disabled={!canUseLobbyControls || pendingAction === `word:${targetWordMode}`}
-					onclick={toggleWordMode}
+					onclick={() => void voteWordMode(targetWordMode)}
 					role="checkbox"
 					type="button"
 				>
@@ -217,14 +210,14 @@
 			{@render TeamColumn({
 				team: 'sun',
 				members: sunMembers,
-				selfId: room?.selfPlayerId ?? currentUserPlayerId(),
+				selfId: room?.selfPlayerId ?? fallbackSelfPlayerId,
 				pending: pendingAction === 'team:sun',
 				onSwitch: () => switchTeam('sun'),
 			})}
 			{@render TeamColumn({
 				team: 'moon',
 				members: moonMembers,
-				selfId: room?.selfPlayerId ?? currentUserPlayerId(),
+				selfId: room?.selfPlayerId ?? fallbackSelfPlayerId,
 				pending: pendingAction === 'team:moon',
 				onSwitch: () => switchTeam('moon'),
 			})}

@@ -16,7 +16,7 @@
 	import './layout.css';
 	import { setAppContext } from '$lib/appContext';
 	import type { AppContext, AppUser } from '$lib/appContext';
-	import { debounce } from 'es-toolkit';
+	import { debounce, sample } from 'es-toolkit';
 
 	const browser = typeof window !== 'undefined';
 	const presencePingMs = 10_000;
@@ -27,8 +27,8 @@
 		user: {
 			id: -1,
 			name: 'some soul',
-			color: randomPreset(PLAYER_COLOR_PRESETS).id,
-			icon: randomPreset(PLAYER_ICON_PRESETS).id,
+			color: sample(PLAYER_COLOR_PRESETS).id,
+			icon: sample(PLAYER_ICON_PRESETS).id,
 			unsaved: true,
 		},
 		saveUser: async function saveCurrentUser(): Promise<User> {
@@ -169,10 +169,6 @@
 
 	function isPublicPath(path: string): boolean {
 		return path === '/' || path === '/setup';
-	}
-
-	function randomPreset<T>(items: readonly T[]): T {
-		return items[Math.floor(Math.random() * items.length)] ?? items[0];
 	}
 
 	function userSaveKey(user: Pick<User, 'id' | 'name' | 'color' | 'icon'>): string {

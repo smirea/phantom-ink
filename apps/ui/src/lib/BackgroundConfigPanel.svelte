@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { type BackgroundState, clamp, degreesToRadians } from '$lib/backgroundState.svelte';
+	import { type BackgroundState, degreesToRadians } from '$lib/backgroundState.svelte';
+	import { clamp, uniq } from 'es-toolkit';
 
 	type NumberKey =
 		| 'targetAliveRatio'
@@ -11,7 +12,7 @@
 		| 'targetFps'
 		| 'renderPixelRatio';
 	type BooleanKey = 'antialias';
-	type RangeKey = 'glyphOpacity' | 'smokeTtlMs' | 'minGlyphScale' | 'maxGlyphScale';
+	type LetterSizeKey = 'minGlyphScale' | 'maxGlyphScale';
 	type NumberControl = {
 		key: NumberKey;
 		label: string;
@@ -104,7 +105,9 @@
 		backgroundState.config[control.key] = value;
 		if (control.key === 'initialSpacing') {
 			backgroundState.config.minimumGridSpacing = Math.min(value, backgroundState.config.minimumGridSpacing);
-			backgroundState.config.spacingOptions = uniqueSpacingOptions(value, backgroundState.config.spacingOptions);
+			backgroundState.config.spacingOptions = uniq([...backgroundState.config.spacingOptions, Math.round(value)]).sort(
+				(a, b) => a - b,
+			);
 		}
 		backgroundState.notifyConfigChanged(control.key);
 		control.apply?.(value);
@@ -124,7 +127,7 @@
 		backgroundState.triggerDirectionChange(degreesToRadians(value));
 	}
 
-	function updateLetterSize(key: RangeKey, event: Event): void {
+	function updateLetterSize(key: LetterSizeKey, event: Event): void {
 		const input = event.currentTarget as HTMLInputElement;
 		const value = clamp(Number(input.value), 0.2, 3);
 		if (!Number.isFinite(value)) return;
@@ -161,10 +164,6 @@
 
 	function randomSpacing(): void {
 		backgroundState.triggerSpacingChange();
-	}
-
-	function uniqueSpacingOptions(value: number, options: number[]): number[] {
-		return [...new Set([...options, Math.round(value)])].sort((a, b) => a - b);
 	}
 
 	function display(control: NumberControl): string {

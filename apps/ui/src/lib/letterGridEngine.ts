@@ -1,5 +1,6 @@
 import type { BackgroundAction, BackgroundConfig, BackgroundState } from '$lib/backgroundState.svelte';
 import { degreesToRadians } from '$lib/backgroundState.svelte';
+import { clamp } from 'es-toolkit';
 
 export type EngineCellStatus = 'alive' | 'spawning' | 'dying' | 'dead';
 export type DirectionPhase = 'cruise' | 'decelerating' | 'turning' | 'accelerating';
@@ -132,7 +133,7 @@ export class LetterGridEngine {
 			this.lastTime = now;
 		}
 
-		const elapsedMs = Math.max(0, Math.min(this.config.maxFrameMs, now - this.lastTime));
+		const elapsedMs = clamp(now - this.lastTime, 0, this.config.maxFrameMs);
 		this.lastTime = now;
 
 		this.updateSpacing(now);
@@ -921,7 +922,7 @@ export class LetterGridEngine {
 	private constrainSpacing(spacing: number): number {
 		const minSpacing = Math.max(1, Math.round(this.config.minimumGridSpacing));
 		const maxSpacing = Math.max(minSpacing, Math.round(this.config.maximumGridSpacing));
-		return Math.min(maxSpacing, Math.max(minSpacing, Math.round(spacing)));
+		return clamp(Math.round(spacing), minSpacing, maxSpacing);
 	}
 
 	private normalizeGridOrigin(spacing: number): void {
@@ -1078,8 +1079,8 @@ export class LetterGridEngine {
 		spacing: number,
 	): { x: number; y: number } {
 		const padded = spacing * this.config.edgePuffOutsidePaddingCells;
-		const clampedX = Math.min(width, Math.max(0, x));
-		const clampedY = Math.min(height, Math.max(0, y));
+		const clampedX = clamp(x, 0, width);
+		const clampedY = clamp(y, 0, height);
 		const edges = [
 			{ x: -padded, y: clampedY, distance: Math.abs(x) },
 			{ x: width + padded, y: clampedY, distance: Math.abs(width - x) },
@@ -1115,7 +1116,7 @@ export class LetterGridEngine {
 }
 
 export function smoothProgress(value: number): number {
-	const progress = Math.min(1, Math.max(0, value));
+	const progress = clamp(value, 0, 1);
 	return progress * progress * (3 - 2 * progress);
 }
 

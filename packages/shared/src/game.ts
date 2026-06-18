@@ -1,3 +1,5 @@
+import { maxBy } from 'es-toolkit';
+
 export const TEAMS = ['sun', 'moon'] as const;
 
 export type Team = (typeof TEAMS)[number];
@@ -84,7 +86,7 @@ export function normalizeGameState(input: PhantomInkGameState): PhantomInkGameSt
 	const nextLogId =
 		Number.isInteger(input.nextLogId) && input.nextLogId > 0
 			? input.nextLogId
-			: Math.max(0, ...log.map(entry => entry.id)) + 1;
+			: (maxBy(log, entry => entry.id)?.id ?? 0) + 1;
 
 	return {
 		status: input.status === 'complete' ? 'complete' : input.status === 'setup' ? 'setup' : 'playing',

@@ -1,3 +1,5 @@
+import { isNotNil } from 'es-toolkit';
+
 type AnyObject = object;
 
 type StorageLike = {
@@ -69,7 +71,7 @@ export class LocalStorage<T extends AnyObject = AnyObject> {
 	private getAllStoreKeys(): string[] {
 		if (typeof this.options.store.key === 'function' && typeof this.options.store.length === 'number') {
 			return Array.from({ length: this.options.store.length }, (_, index) => this.options.store.key?.(index)).filter(
-				(key): key is string => key !== null && key !== undefined,
+				isNotNil,
 			);
 		}
 
@@ -161,9 +163,4 @@ export class LocalStorage<T extends AnyObject = AnyObject> {
 		if (!this.eventsEnabled) return;
 		for (const callback of this.onChangeEvents) callback(diff);
 	}
-}
-
-export default function createLocalStorage<Shape extends AnyObject>(options: LocalStorageOptions<Shape>) {
-	const LS = new LocalStorage<Shape>(options);
-	return { LS };
 }
