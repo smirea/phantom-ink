@@ -16,11 +16,12 @@ import {
 	selectRoomViewState,
 	type OnlineRoomAction,
 	type OnlineRoomState,
+	type RoomViewState,
 	type User,
 } from '@repo/shared/onlineGame';
 import { appContract } from '@repo/shared/rpc';
 import { publicUserColumns, roomActionsTable, roomsTable, usersTable } from '@repo/shared/db/schema';
-import type { RoomActionRow, RoomRow, UserInsert, UserRow } from '@repo/shared/db/schema';
+import type { RoomActionRow, RoomRow, UserRow } from '@repo/shared/db/schema';
 
 const uiBuildPath = new URL('../../ui/build/', import.meta.url);
 const databaseUrl = process.env.DATABASE_URL ?? new URL('../../../.data/phantom-ink.sqlite', import.meta.url).pathname;
@@ -42,6 +43,8 @@ type RoomClient = {
 	enqueue: (state?: OnlineRoomState) => void;
 	close: () => void;
 };
+
+type RoomResponse = { room: RoomViewState };
 
 const roomClients = new Map<string, Set<RoomClient>>();
 const roomStateCache = new Map<string, OnlineRoomState>();
@@ -197,8 +200,10 @@ function saveUser(
 		const existingColor = sanitizePlayerColor(existing.color);
 		const existingIcon = sanitizePlayerIcon(existing.icon);
 		if (existing.name !== name || existingColor !== color || existingIcon !== icon) {
-			const changes: Partial<UserInsert> = { name, color, icon, updatedAt: timestamp };
-			db.update(usersTable).set(changes).where(eq(usersTable.id, existing.id)).run();
+			db.update(usersTable)
+				.set({ name, color, icon, updatedAt: timestamp })
+				.where(eq(usersTable.id, existing.id))
+				.run();
 		}
 		const user = getUser(existing.id);
 		if (!user) throw new Error('Unable to load user');
@@ -375,7 +380,7 @@ function findCurrentRoomForUser(userId: User['id']): string | null {
 	return null;
 }
 
-function roomResponse(code: string, userId: User['id'] | null, state = loadRoomState(code)) {
+function roomResponse(code: string, userId: User['id'] | null, state = loadRoomState(code)): RoomResponse {
 	return {
 		room: selectRoomViewState(state, userId, 'connected'),
 	};
@@ -385,8 +390,8 @@ async function* streamRoom(
 	code: string,
 	userId: User['id'] | null,
 	signal?: AbortSignal,
-): AsyncGenerator<ReturnType<typeof roomResponse>, void, void> {
-	const queue: ReturnType<typeof roomResponse>[] = [];
+): AsyncGenerator<RoomResponse, void, void> {
+	const queue: RoomResponse[] = [];
 	let wake: (() => void) | undefined;
 	let closed = false;
 
