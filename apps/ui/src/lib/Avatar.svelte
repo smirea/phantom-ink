@@ -1,15 +1,13 @@
 <script lang="ts">
-	import type { PlayerColorId, PlayerIconId } from '@repo/shared/onlineGame';
+	import type { User } from '@repo/shared/onlineGame';
 	import { playerColorPreset, playerIconComponents } from '$lib/playerPresentation';
-
-	type AvatarUser = { name: string; color: PlayerColorId; icon: PlayerIconId };
 
 	const {
 		user,
 		name = 'after',
 		class: cls,
 		...rest
-	}: { user: AvatarUser; name?: boolean | 'before' | 'after'; class?: string } = $props();
+	}: { user: Pick<User, 'name' | 'color' | 'icon'>; name?: boolean | 'before' | 'after'; class?: string } = $props();
 
 	const Icon = $derived(playerIconComponents[user.icon]);
 	const color = $derived(playerColorPreset(user.color).value);

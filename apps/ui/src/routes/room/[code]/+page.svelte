@@ -164,7 +164,7 @@
 	}
 
 	function storedUserPlayerId(): string | null {
-		const userId = LS.get('server_user_id');
+		const userId = LS.get('userId');
 		return typeof userId === 'number' ? playerIdForUser(userId) : null;
 	}
 </script>

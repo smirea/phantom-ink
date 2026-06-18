@@ -12,7 +12,7 @@ import {
 import type { AppRouterClient } from '@repo/shared/rpc';
 import { consumeEventIterator, createORPCClient } from '@orpc/client';
 import { RPCLink } from '@orpc/client/fetch';
-import { getStoredClientKey, LS, readStoredClientKey } from './storage';
+import { LS } from './storage';
 import { parseRoomCode } from './roomCodes';
 
 export const api = createORPCClient<AppRouterClient>(
@@ -26,25 +26,8 @@ export interface RoomEventSubscription {
 }
 
 export function getStoredUserId(): number | null {
-	const userId = LS.get('server_user_id');
+	const userId = LS.get('userId');
 	return typeof userId === 'number' && Number.isInteger(userId) && userId > 0 ? userId : null;
-}
-
-export async function loadStoredUser(): Promise<User | null> {
-	const userId = getStoredUserId();
-	const clientKey = readStoredClientKey();
-	if (!userId && !clientKey) return null;
-
-	const payload = await api.users.get({ userId, clientKey });
-	if (payload.user) {
-		LS.set({
-			server_user_id: payload.user.id,
-			player_name: payload.user.name,
-			player_color: payload.user.color,
-			player_icon: payload.user.icon,
-		});
-	}
-	return payload.user;
 }
 
 export async function ensureUser(profile: { name: string; color: PlayerColorId; icon: PlayerIconId }): Promise<User> {
@@ -54,7 +37,7 @@ export async function ensureUser(profile: { name: string; color: PlayerColorId; 
 		...profile,
 	});
 	LS.set({
-		server_user_id: payload.user.id,
+		userId: payload.user.id,
 		player_name: payload.user.name,
 		player_color: payload.user.color,
 		player_icon: payload.user.icon,

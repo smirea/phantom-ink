@@ -17,7 +17,7 @@ import {
 import type { User } from './db/schema';
 
 export type { Team } from './game';
-export type { User } from './db/schema';
+export type * from './db/schema';
 export {
 	DEFAULT_PLAYER_COLOR,
 	DEFAULT_PLAYER_ICON,

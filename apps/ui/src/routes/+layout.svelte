@@ -4,7 +4,7 @@
 	import PhantomLogo from '$lib/PhantomLogo.svelte';
 	import { beforeNavigate, goto, onNavigate } from '$app/navigation';
 	import { page } from '$app/state';
-	import { leaveRoomForStoredUser, loadStoredUser, pingPresence } from '$lib/api';
+	import { leaveRoomForStoredUser, pingPresence } from '$lib/api';
 	import { parseRoomCode } from '$lib/roomCodes';
 	import { LS } from '$lib/storage';
 	import DoorOpen from '@lucide/svelte/icons/door-open';
@@ -15,26 +15,34 @@
 		DEFAULT_PLAYER_COLOR,
 		DEFAULT_PLAYER_ICON,
 		isCompleteUserProfile,
-		type PlayerColorId,
-		type PlayerIconId,
+		PLAYER_COLOR_PRESETS,
+		PLAYER_ICON_PRESETS,
 	} from '@repo/shared/onlineGame';
 	import { onMount } from 'svelte';
 	import './layout.css';
 	import { setAppContext } from '$lib/appContext';
 	import type { AppContext } from '$lib/appContext';
+	import { sample } from 'es-toolkit';
 
-	let { children, data } = $props();
 	const browser = typeof window !== 'undefined';
 	const presencePingMs = 10_000;
+	let { children, data } = $props();
 
 	const appContext = $state<AppContext>({
 		theme: LS.get('dark_mode') ? 'dark' : 'light',
-		user: null,
+		user: {
+			name: 'some soul',
+			id: -1,
+			color: sample(PLAYER_COLOR_PRESETS).id,
+			icon: sample(PLAYER_ICON_PRESETS).id,
+			unsaved: true,
+		},
 	});
 	setAppContext(appContext);
-	let playerName = $state(LS.get('player_name') ?? '');
-	let playerColor = $state<PlayerColorId>(LS.get('player_color', DEFAULT_PLAYER_COLOR));
-	let playerIcon = $state<PlayerIconId>(LS.get('player_icon', DEFAULT_PLAYER_ICON));
+	$effect(() => {
+		appContext.user = data.user!;
+	});
+
 	let supportsViewTransitions = $state(false);
 	let isViewTransitioning = $state(false);
 	let settingsMenuState = $state<'closed' | 'open' | 'closing'>('closed');
@@ -48,8 +56,6 @@
 	const isLobbyScreen = $derived(activePath === '/lobby');
 	const isRoomScreen = $derived(Boolean(activeRoomCode));
 	const setupHref = $derived(`/setup?returnTo=${encodeURIComponent(activeRoute)}`);
-	const displayedPlayerName = $derived(playerName.trim() || 'Unknown');
-	const displayedPlayer = $derived({ name: displayedPlayerName, color: playerColor, icon: playerIcon });
 	const theme = $derived(appContext.theme);
 
 	beforeNavigate(navigation => {
@@ -150,10 +156,8 @@
 		if (isPublicPath(path)) return;
 
 		try {
-			const user = await loadStoredUser();
 			if (checkId !== profileCheckId) return;
-			appContext.user = user;
-			if (!isCompleteUserProfile(user)) {
+			if (!isCompleteUserProfile(appContext.user)) {
 				const setupUrl = setupUrlForReturn(url);
 				await goto(`${setupUrl.pathname}${setupUrl.search}${setupUrl.hash}`, { noScroll: true });
 				return;
@@ -263,8 +267,7 @@
 		if (isPublicPath(url.pathname)) return url;
 
 		try {
-			const user = await loadStoredUser();
-			if (isCompleteUserProfile(user)) return url;
+			if (isCompleteUserProfile(appContext.user)) return url;
 		} catch {}
 
 		return setupUrlForReturn(url);
@@ -346,8 +349,8 @@
 							onclick={toggleSettings}
 							type="button"
 						>
-							<span class="user-name">{displayedPlayerName}</span>
-							<Avatar user={displayedPlayer} name={false} />
+							<span class="user-name">{appContext.user.name}</span>
+							<Avatar user={appContext.user} name={false} />
 						</button>
 
 						{#if settingsMenuState !== 'closed'}

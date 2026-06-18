@@ -1,12 +1,13 @@
 import { browser } from '$app/environment';
-import { loadStoredUser } from '$lib/api';
 import type { LayoutLoad } from './$types';
+import { api } from '$lib/api';
 
-export const prerender = true;
 export const ssr = false;
 
 export const load: LayoutLoad = async () => {
 	if (!browser) return { user: null };
-
-	return { user: await loadStoredUser() };
+	const { LS } = await import('$lib/storage');
+	const userId = LS.get('userId');
+	if (!userId) return { user: null };
+	return await api.users.get({ userId });
 };

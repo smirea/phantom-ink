@@ -3,9 +3,8 @@ import { createContext } from 'svelte';
 
 export interface AppContext {
 	theme: 'light' | 'dark';
-	user: User | null;
+	/** the root layout guards against this being null before the setup */
+	user: User & { unsaved?: true };
 }
 
 export const [getAppContext, setAppContext] = createContext<AppContext>();
-
-export const updateAppContext = (diff: Partial<AppContext>) => setAppContext({ ...getAppContext(), ...diff });

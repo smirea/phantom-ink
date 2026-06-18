@@ -1,13 +1,11 @@
 <script lang="ts">
 	import { board, questions, words, type QuestionCard, type WordCard } from '@repo/shared/data';
 	import type { User } from '@repo/shared/onlineGame';
-	import { range, sample, shuffle, uniq } from 'es-toolkit';
+	import { sample, shuffle, uniq } from 'es-toolkit';
 	import { onDestroy } from 'svelte';
 	import { assign, createActor, setup } from 'xstate';
 
 	type Team = 'sun' | 'moon';
-	type ViewMode = 'act' | 'watch' | 'wait';
-	type RelativeActor = 'currentSpirit' | 'otherSpirit' | 'currentMediums' | 'otherMediums';
 
 	const gameStates = [
 		'start',
@@ -71,44 +69,6 @@
 		| { type: 'debugSetState'; state: GameState; team: Team };
 
 	const teams = ['sun', 'moon'] as const;
-	const actors = ['sunSpirit', 'moonSpirit', 'sunMediums', 'moonMediums'] as const;
-	const actorLabels: Record<ActorKey, string> = {
-		sunSpirit: 'sun spirit',
-		moonSpirit: 'moon spirit',
-		sunMediums: 'sun mediums',
-		moonMediums: 'moon mediums',
-	};
-	const roleRows: Array<Record<RelativeActor, ViewMode> & { state: GameState }> = [
-		{ state: 'start', currentSpirit: 'wait', otherSpirit: 'wait', currentMediums: 'wait', otherMediums: 'wait' },
-		{ state: 'setupWord', currentSpirit: 'act', otherSpirit: 'act', currentMediums: 'watch', otherMediums: 'watch' },
-		{
-			state: 'mediumsTurn',
-			currentSpirit: 'watch',
-			otherSpirit: 'watch',
-			currentMediums: 'act',
-			otherMediums: 'watch',
-		},
-		{ state: 'eyeHint', currentSpirit: 'watch', otherSpirit: 'watch', currentMediums: 'act', otherMediums: 'watch' },
-		{ state: 'mediumsAsk', currentSpirit: 'watch', otherSpirit: 'watch', currentMediums: 'act', otherMediums: 'watch' },
-		{
-			state: 'spiritAnswers',
-			currentSpirit: 'act',
-			otherSpirit: 'watch',
-			currentMediums: 'watch',
-			otherMediums: 'watch',
-		},
-		{
-			state: 'mediumsGetClues',
-			currentSpirit: 'watch',
-			otherSpirit: 'watch',
-			currentMediums: 'act',
-			otherMediums: 'watch',
-		},
-		{ state: 'guessing', currentSpirit: 'watch', otherSpirit: 'watch', currentMediums: 'act', otherMediums: 'watch' },
-		{ state: 'nextTurn', currentSpirit: 'wait', otherSpirit: 'wait', currentMediums: 'wait', otherMediums: 'wait' },
-		{ state: 'win', currentSpirit: 'wait', otherSpirit: 'wait', currentMediums: 'wait', otherMediums: 'wait' },
-		{ state: 'lose', currentSpirit: 'wait', otherSpirit: 'wait', currentMediums: 'wait', otherMediums: 'wait' },
-	];
 	const config = {
 		questionsInHand: 7,
 		questionsGivenToSpirit: 2,
@@ -123,7 +83,7 @@
 		},
 		actions: {
 			setupGame: assign(() => createInitialContext()),
-			pickWordCard: assign(({ context }) => ({ wordCard: pickOne(words), word: context.word })),
+			pickWordCard: assign(({ context }) => ({ wordCard: sample(words), word: context.word })),
 			setWord: assign(({ event }) => {
 				if (event.type !== 'pickWord') return {};
 				return { currentTeam: 'sun' as Team, word: sanitizePhrase(event.word) };
@@ -203,10 +163,6 @@
 			setupNextTurn: assign(({ context }) => ({
 				currentTeam: context.debugHold ? context.currentTeam : otherTeam(context.currentTeam),
 			})),
-			debugSetStateContext: assign(({ context, event }) => {
-				if (event.type !== 'debugSetState') return {};
-				return createDebugContext(event.state, event.team || context.currentTeam);
-			}),
 		},
 	}).createMachine({
 		id: 'phantomInk',
@@ -214,11 +170,6 @@
 		initial: 'start',
 		on: {
 			start: { target: '.setupWord', actions: 'setupGame' },
-			debugSetState: gameStates.map(state => ({
-				guard: ({ event }) => event.type === 'debugSetState' && event.state === state,
-				target: `.${state}`,
-				actions: 'debugSetStateContext',
-			})),
 		},
 		states: {
 			start: {},
@@ -341,12 +292,11 @@
 	let currentGuess = $derived(getCurrentGuess(game));
 	let canUseEye = $derived(hasEyeHint(game));
 	let canTakeTurn = $derived(currentTeamState.board.length < board.turns);
-	let activeView = $derived(actorView(currentState, activeActor, currentTeam));
 
 	function createInitialContext(): GameContext {
 		return {
 			currentTeam: 'sun',
-			wordCard: pickOne(words),
+			wordCard: sample(words),
 			word: '',
 			debugHold: false,
 			discardedQuestionsDeck: [],
@@ -359,7 +309,7 @@
 
 	function createTeamState(players: Array<User['id']>): TeamState {
 		return {
-			spirit: pickOne(players),
+			spirit: sample(players),
 			players,
 			questions: [],
 			spiritQuestionPicks: [],
@@ -367,88 +317,6 @@
 			eyeUsedRows: [],
 			board: [],
 		};
-	}
-
-	function createDebugContext(state: GameState, team: Team): GameContext {
-		let context = {
-			...createInitialContext(),
-			currentTeam: team,
-			debugHold: state === 'nextTurn',
-		};
-
-		if (state !== 'start' && state !== 'setupWord') {
-			const word = context.wordCard.words[0];
-			if (!word) throw new Error('Missing word card word');
-			context = { ...context, word: sanitizePhrase(word) };
-		}
-
-		if (state === 'mediumsTurn' || state === 'mediumsAsk') {
-			context = drawQuestionHand(context);
-		}
-
-		if (state === 'eyeHint') {
-			context = seedBoardLength(seedHint(context, otherTeam(team), 'ASH'), team, board[team].hints[0] ?? 0);
-		}
-
-		if (state === 'spiritAnswers') {
-			context = updateTeam(drawQuestionHand(context), team, current => ({
-				...current,
-				spiritQuestionPicks: [questionIdAt(0), questionIdAt(1)],
-			}));
-		}
-
-		if (state === 'mediumsGetClues') {
-			context = seedHint(context, team, 'DOG');
-		}
-
-		if (state === 'win') {
-			context = updateTeam(context, team, current => ({
-				...current,
-				board: [
-					{
-						id: `${team}-0`,
-						type: 'guess',
-						value: context.word,
-						done: true,
-					},
-				],
-			}));
-		}
-
-		if (state === 'lose') {
-			context = teams.reduce((next, team) => seedBoardLength(next, team, board.turns), context);
-		}
-
-		return context;
-
-		function seedBoardLength(context: GameContext, team: Team, length: number): GameContext {
-			return updateTeam(context, team, current => ({
-				...current,
-				board: range(length).map(index => ({
-					id: `${team}-${index}`,
-					type: 'guess',
-					value: 'X',
-					invalid: true,
-				})),
-			}));
-		}
-
-		function seedHint(context: GameContext, team: Team, clue: string): GameContext {
-			return updateTeam(context, team, current => ({
-				...current,
-				board: [
-					...current.board,
-					{
-						id: `${team}-${current.board.length}`,
-						type: 'hint',
-						value: '',
-						fullValue: clue,
-						revealed: 0,
-						questionId: questionIdAt(0),
-					},
-				],
-			}));
-		}
 	}
 
 	function drawQuestionHand(context: GameContext): GameContext {
@@ -575,33 +443,8 @@
 		);
 	}
 
-	function questionIdAt(index: number): QuestionCard['id'] {
-		const id = questions[index]?.id;
-		if (!id) throw new Error('Missing question card');
-		return id;
-	}
-
-	function pickOne<T>(items: readonly T[]): T {
-		const item = sample(items);
-		if (item === undefined) throw new Error('Cannot pick from an empty list');
-		return item;
-	}
-
 	function otherTeam(team: Team): Team {
 		return team === 'sun' ? 'moon' : 'sun';
-	}
-
-	function actorView(state: GameState, actor: ActorKey, team: Team): ViewMode {
-		const isSpirit = actor.endsWith('Spirit');
-		const isCurrent = actor.startsWith(team);
-		const role: RelativeActor = isSpirit
-			? isCurrent
-				? 'currentSpirit'
-				: 'otherSpirit'
-			: isCurrent
-				? 'currentMediums'
-				: 'otherMediums';
-		return roleRows.find(row => row.state === state)?.[role] ?? 'wait';
 	}
 
 	function waitMessage(state: GameState): string {
@@ -631,6 +474,10 @@
 		actor.send({ type: 'guessLetter', letter: guessLetter });
 		guessLetter = '';
 	}
+
+	const isState = (...states: (typeof snapshot.value)[]) => states.some(s => s === snapshot.value);
+
+	// const isActing = $derived(snapshot.context.currentTeam ===)
 </script>
 
 <div class="debug-game">
@@ -666,129 +513,8 @@
 		<button onclick={() => actor.send({ type: 'start' })}>{snapshot.matches('start') ? 'Start' : 'Reset'}</button>
 	</header>
 
-	<nav class="actor-tabs" aria-label="Actor views">
-		{#each actors as actorKey}
-			<button class:active-tab={actorKey === activeActor} onclick={() => (activeActor = actorKey)} type="button">
-				{actorLabels[actorKey]} ({actorView(currentState, actorKey, currentTeam)})
-			</button>
-		{/each}
-	</nav>
-
-	<section class="actor-view">
-		{#if activeView === 'act'}
-			{#if snapshot.matches('setupWord')}
-				<p class="muted-line">{game.wordCard.words.join(' / ')}</p>
-			{:else if snapshot.matches('eyeHint')}
-				<div class="list">
-					{#each revealableClues as clue}
-						<span class="choice-preview">
-							{clue.team}: {clue.value || 'blank'} ({clue.revealed ?? 0}/{clue.fullValue?.length ?? 0})
-						</span>
-					{/each}
-				</div>
-			{:else if snapshot.matches('mediumsAsk')}
-				<div class="question-grid">
-					{#each currentQuestions as q}
-						<label class:chosen={pickedQuestionIds.includes(q.id)}>
-							<input
-								type="checkbox"
-								checked={pickedQuestionIds.includes(q.id)}
-								onchange={() => {
-									if (pickedQuestionIds.includes(q.id)) {
-										pickedQuestionIds = pickedQuestionIds.filter(questionId => questionId !== q.id);
-									} else {
-										pickedQuestionIds =
-											pickedQuestionIds.length >= config.questionsGivenToSpirit
-												? [pickedQuestionIds[1], q.id]
-												: [...pickedQuestionIds, q.id];
-									}
-								}}
-							/>
-							<span>{q.title}</span>
-							<small>{q.question}</small>
-						</label>
-					{/each}
-				</div>
-			{:else if snapshot.matches('spiritAnswers')}
-				<select bind:value={answerQuestionId}>
-					<option value=""></option>
-					{#each spiritQuestions as q}
-						<option value={q.id}>{q.title}: {q.question}</option>
-					{/each}
-				</select>
-				<input bind:value={clueText} placeholder="clue" />
-			{:else if snapshot.matches('mediumsGetClues')}
-				<p class="mono">
-					{currentClue?.value || 'blank'} ({currentClue?.revealed ?? 0}/{currentClue?.fullValue?.length ?? 0})
-				</p>
-			{:else if snapshot.matches('guessing')}
-				<p class="mono">{currentGuess?.value || 'blank'}</p>
-				<input
-					bind:value={guessLetter}
-					maxlength="1"
-					placeholder="letter"
-					onkeydown={event => event.key === 'Enter' && submitGuessLetter()}
-				/>
-			{/if}
-		{:else if activeView === 'watch'}
-			<p class="placeholder-snippet">watch</p>
-		{:else}
-			<p>{waitMessage(currentState)}</p>
-		{/if}
-	</section>
-
 	<div class="action-dock">
-		<div class="action-buttons">
-			{#if snapshot.matches('start')}
-				<button onclick={() => actor.send({ type: 'start' })}>Start</button>
-			{:else if activeView === 'act'}
-				{#if snapshot.matches('setupWord')}
-					{#each game.wordCard.words as word}
-						<button onclick={() => actor.send({ type: 'pickWord', word })}>{word}</button>
-					{/each}
-				{:else if snapshot.matches('mediumsTurn')}
-					<button disabled={!canUseEye} onclick={() => actor.send({ type: 'eyeHint' })}>Use Eye</button>
-					<button disabled={!canTakeTurn} onclick={() => actor.send({ type: 'ask' })}>Ask</button>
-					<button disabled={!canTakeTurn} onclick={() => actor.send({ type: 'guess' })}>Guess</button>
-				{:else if snapshot.matches('eyeHint')}
-					{#each revealableClues as clue}
-						<button onclick={() => actor.send({ type: 'pickHint', clueId: clue.id })}>
-							{clue.team}: {clue.value || 'blank'}
-						</button>
-					{/each}
-				{:else if snapshot.matches('mediumsAsk')}
-					<button
-						disabled={pickedQuestionIds.length !== config.questionsGivenToSpirit}
-						onclick={() => {
-							const [first, second] = pickedQuestionIds;
-							if (!first || !second) return;
-							actor.send({ type: 'pickQuestions', questionIds: [first, second] });
-							pickedQuestionIds = [];
-						}}
-					>
-						Give to Spirit
-					</button>
-				{:else if snapshot.matches('spiritAnswers')}
-					<button
-						disabled={!clueText.trim()}
-						onclick={() => {
-							const questionId = answerQuestionId || currentTeamState.spiritQuestionPicks[0];
-							if (!questionId || !clueText.trim()) return;
-							actor.send({ type: 'answer', questionId, clue: clueText });
-							answerQuestionId = '';
-							clueText = '';
-						}}
-					>
-						Submit Clue
-					</button>
-				{:else if snapshot.matches('mediumsGetClues')}
-					<button onclick={() => actor.send({ type: 'getClue' })}>Get Letter</button>
-					<button onclick={() => actor.send({ type: 'silencio' })}>Silencio</button>
-				{:else if snapshot.matches('guessing')}
-					<button disabled={!guessLetter.trim()} onclick={submitGuessLetter}>Submit Letter</button>
-				{/if}
-			{/if}
-		</div>
+		<div class="action-buttons">todo</div>
 	</div>
 </div>
 
@@ -801,7 +527,6 @@
 	}
 
 	button,
-	input,
 	select {
 		border: 1px solid var(--app-border);
 		border-radius: 2px;
@@ -826,26 +551,7 @@
 		justify-content: space-between;
 	}
 
-	p {
-		margin: 0;
-	}
-
-	small {
-		color: var(--app-muted);
-		font-size: 0.8rem;
-	}
-
-	.muted-line {
-		color: var(--app-muted);
-	}
-
-	.choice-preview {
-		display: inline-flex;
-		padding: 0.25rem 0;
-	}
-
-	.team-toggle,
-	.actor-tabs {
+	.team-toggle {
 		display: flex;
 		gap: 0.4rem;
 		flex-wrap: wrap;
