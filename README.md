@@ -22,6 +22,7 @@ Rooms use four-letter codes. Client identity is stored in localStorage, namespac
 
 ```sh
 bun install
+bun run db push
 bun run dev
 ```
 

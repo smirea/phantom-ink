@@ -2,7 +2,6 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { asc, desc, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
-import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import env from '@repo/shared/env';
 import {
 	applyOnlineRoomAction,
@@ -23,41 +22,13 @@ import {
 	type UserRecord,
 	type UserResponse,
 } from '@repo/shared/onlineGame';
+import { roomActionsTable, roomsTable, usersTable } from './db/schema';
 
 const uiBuildPath = new URL('../../ui/build/', import.meta.url);
 const databaseUrl = process.env.DATABASE_URL ?? new URL('../../../.data/phantom-ink.sqlite', import.meta.url).pathname;
 const sseHeartbeatMs = 5_000;
 const presenceTimeoutMs = 30_000;
 const serverStartedAt = Date.now();
-
-const usersTable = sqliteTable('users', {
-	id: integer('id').primaryKey({ autoIncrement: true }),
-	clientKey: text('client_key'),
-	name: text('name').notNull(),
-	color: text('color').notNull().default('ectoplasm'),
-	icon: text('icon').notNull().default('ghost'),
-	createdAt: text('created_at').notNull(),
-	updatedAt: text('updated_at').notNull(),
-});
-
-const roomsTable = sqliteTable('rooms', {
-	code: text('code').primaryKey(),
-	createdAt: text('created_at').notNull(),
-	updatedAt: text('updated_at').notNull(),
-});
-
-const roomActionsTable = sqliteTable('room_actions', {
-	id: integer('id').primaryKey({ autoIncrement: true }),
-	roomCode: text('room_code')
-		.notNull()
-		.references(() => roomsTable.code),
-	userId: integer('user_id')
-		.notNull()
-		.references(() => usersTable.id),
-	type: text('type').notNull(),
-	payload: text('payload').notNull(),
-	createdAt: text('created_at').notNull(),
-});
 
 mkdirSync(dirname(databaseUrl), { recursive: true });
 
@@ -68,38 +39,6 @@ const db = drizzle({
 
 db.run('PRAGMA journal_mode = WAL');
 db.run('PRAGMA foreign_keys = ON');
-db.run(`
-	CREATE TABLE IF NOT EXISTS users (
-		id integer PRIMARY KEY AUTOINCREMENT,
-		client_key text,
-		name text NOT NULL,
-		color text NOT NULL DEFAULT 'ectoplasm',
-		icon text NOT NULL DEFAULT 'ghost',
-		created_at text NOT NULL,
-		updated_at text NOT NULL
-	);
-`);
-db.run(`
-	CREATE TABLE IF NOT EXISTS rooms (
-		code text PRIMARY KEY,
-		created_at text NOT NULL,
-		updated_at text NOT NULL
-	);
-`);
-db.run(`
-	CREATE TABLE IF NOT EXISTS room_actions (
-		id integer PRIMARY KEY AUTOINCREMENT,
-		room_code text NOT NULL,
-		user_id integer NOT NULL,
-		type text NOT NULL,
-		payload text NOT NULL,
-		created_at text NOT NULL,
-		FOREIGN KEY (room_code) REFERENCES rooms(code),
-		FOREIGN KEY (user_id) REFERENCES users(id)
-	);
-`);
-db.run('CREATE UNIQUE INDEX IF NOT EXISTS users_client_key_idx ON users(client_key) WHERE client_key IS NOT NULL');
-db.run('CREATE INDEX IF NOT EXISTS room_actions_room_code_id_idx ON room_actions(room_code, id)');
 
 type UserRow = typeof usersTable.$inferSelect;
 type RoomRow = typeof roomsTable.$inferSelect;
@@ -114,14 +53,6 @@ const roomClients = new Map<string, Set<RoomClient>>();
 const roomStateCache = new Map<string, OnlineRoomState>();
 const userPresence = new Map<number, number>();
 const encoder = new TextEncoder();
-
-const userColumns = db.all<{ name: string }>('PRAGMA table_info(users)');
-if (!userColumns.some(column => column.name === 'color')) {
-	db.run("ALTER TABLE users ADD COLUMN color text NOT NULL DEFAULT 'ectoplasm'");
-}
-if (!userColumns.some(column => column.name === 'icon')) {
-	db.run("ALTER TABLE users ADD COLUMN icon text NOT NULL DEFAULT 'ghost'");
-}
 
 class HttpError extends Error {
 	constructor(
