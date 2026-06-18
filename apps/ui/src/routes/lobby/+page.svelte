@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Avatar from '$lib/Avatar.svelte';
+	import InkButton from '$lib/InkButton.svelte';
 	import { api } from '$lib/api';
 	import { getAppContext } from '$lib/appContext';
 	import { createRoomCode } from '$lib/roomCodes';
@@ -253,10 +254,12 @@
 </svelte:head>
 
 <section class="lobby-screen">
-	<button
+	<InkButton
 		class="new-seance-button"
 		disabled={isCreating || Boolean(joiningCode)}
 		onclick={startNewSeance}
+		primary
+		size="lg"
 		type="button"
 	>
 		{#if isCreating}
@@ -264,8 +267,8 @@
 		{:else}
 			<Plus size={26} strokeWidth={2.5} />
 		{/if}
-		<span>Start a new séance</span>
-	</button>
+		<span>Convene a new séance</span>
+	</InkButton>
 
 	{#if nearbySouls.length}
 		<div class:collapsible={nearbyCollapsible} class="nearby-souls">
@@ -362,41 +365,16 @@
 		min-width: 0;
 	}
 
-	.new-seance-button {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
+	:global(.new-seance-button) {
 		gap: 0.6rem;
+		width: 100%;
 		min-height: 4rem;
-		border: 1px solid var(--app-accent-strong);
-		border-radius: 0.5rem;
 		background:
 			linear-gradient(180deg, color-mix(in oklab, var(--app-accent) 86%, white 14%), var(--app-accent)),
 			var(--app-accent);
-		color: var(--app-accent-ink);
-		cursor: pointer;
-		font: inherit;
 		font-size: clamp(1.1rem, 4.8vw, 1.45rem);
 		font-weight: 950;
-		letter-spacing: 0;
-		line-height: 1;
 		padding: 0.85rem 1rem;
-		transition:
-			filter 200ms ease,
-			transform 180ms ease;
-	}
-
-	.new-seance-button:hover:not(:disabled) {
-		transform: translateY(-2px);
-	}
-
-	.new-seance-button:active:not(:disabled) {
-		transform: translateY(1px) scale(0.985);
-	}
-
-	.new-seance-button:disabled {
-		cursor: default;
-		opacity: 0.72;
 	}
 
 	.lobby-list {
