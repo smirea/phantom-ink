@@ -7,7 +7,7 @@ import {
 	type PlayerIconId,
 	type RoomDirectoryListing,
 	type RoomViewState,
-	type UserRecord,
+	type User,
 } from '@repo/shared/onlineGame';
 import type { AppRouterClient } from '@repo/shared/rpc';
 import { consumeEventIterator, createORPCClient } from '@orpc/client';
@@ -30,7 +30,7 @@ export function getStoredUserId(): number | null {
 	return typeof userId === 'number' && Number.isInteger(userId) && userId > 0 ? userId : null;
 }
 
-export async function loadStoredUser(): Promise<UserRecord | null> {
+export async function loadStoredUser(): Promise<User | null> {
 	const userId = getStoredUserId();
 	const clientKey = readStoredClientKey();
 	if (!userId && !clientKey) return null;
@@ -47,11 +47,7 @@ export async function loadStoredUser(): Promise<UserRecord | null> {
 	return payload.user;
 }
 
-export async function ensureUser(profile: {
-	name: string;
-	color: PlayerColorId;
-	icon: PlayerIconId;
-}): Promise<UserRecord> {
+export async function ensureUser(profile: { name: string; color: PlayerColorId; icon: PlayerIconId }): Promise<User> {
 	const payload = await api.users.ensure({
 		userId: getStoredUserId(),
 		clientKey: getStoredClientKey(),
@@ -82,7 +78,7 @@ export async function getRoomDirectory(): Promise<RoomDirectoryListing[]> {
 	return payload.rooms;
 }
 
-export async function getOnlineUsers(): Promise<UserRecord[]> {
+export async function getOnlineUsers(): Promise<User[]> {
 	const userId = getStoredUserId();
 	const clientKey = readStoredClientKey();
 

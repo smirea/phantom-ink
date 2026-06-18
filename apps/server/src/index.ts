@@ -16,11 +16,11 @@ import {
 	selectRoomViewState,
 	type OnlineRoomAction,
 	type OnlineRoomState,
-	type RoomResponse,
-	type UserRecord,
+	type User,
 } from '@repo/shared/onlineGame';
 import { appContract } from '@repo/shared/rpc';
-import { roomActionsTable, roomsTable, usersTable } from './db/schema';
+import { publicUserColumns, roomActionsTable, roomsTable, usersTable } from '@repo/shared/db/schema';
+import type { RoomActionRow, RoomRow, UserInsert, UserRow } from '@repo/shared/db/schema';
 
 const uiBuildPath = new URL('../../ui/build/', import.meta.url);
 const databaseUrl = process.env.DATABASE_URL ?? new URL('../../../.data/phantom-ink.sqlite', import.meta.url).pathname;
@@ -38,10 +38,6 @@ const db = drizzle({
 db.run('PRAGMA journal_mode = WAL');
 db.run('PRAGMA foreign_keys = ON');
 
-type UserRow = typeof usersTable.$inferSelect;
-type RoomRow = typeof roomsTable.$inferSelect;
-type RoomActionRow = typeof roomActionsTable.$inferSelect;
-
 type RoomClient = {
 	enqueue: (state?: OnlineRoomState) => void;
 	close: () => void;
@@ -49,7 +45,7 @@ type RoomClient = {
 
 const roomClients = new Map<string, Set<RoomClient>>();
 const roomStateCache = new Map<string, OnlineRoomState>();
-const userPresence = new Map<number, number>();
+const userPresence = new Map<User['id'], number>();
 
 const os = implement(appContract);
 
@@ -61,7 +57,10 @@ const router = os.router({
 		})),
 		me: os.users.me.handler(({ input }) => {
 			const user = getUserByIdOrClientKey(numberParam(input.userId), input.clientKey);
-			return { user: user ? userRecord(user) : null };
+			return { user: user ? getUser(user.id) : null };
+		}),
+		get: os.users.get.handler(({ input }) => {
+			return { user: getUser(requireUserId(input.userId)) };
 		}),
 		currentRoom: os.users.currentRoom.handler(({ input }) => {
 			pruneInactiveLobbyRooms();
@@ -102,21 +101,20 @@ const router = os.router({
 			pruneInactiveLobbyRooms();
 			const code = requireRoomCode(input.code);
 			const userId = requireUserId(input.userId);
-			const user = getUserRow(userId);
+			const user = getUser(userId);
 			if (!user) throw new ORPCError('NOT_FOUND', { message: 'User not found' });
 
-			const record = userRecord(user);
-			touchUserPresence(record.id);
-			leaveOtherRooms(code, record);
-			const state = appendRoomAction(code, record.id, {
+			touchUserPresence(user.id);
+			leaveOtherRooms(code, user);
+			const state = appendRoomAction(code, user.id, {
 				type: 'join',
-				actorId: playerIdForUser(record.id),
-				userId: record.id,
-				name: record.name,
-				color: record.color,
-				icon: record.icon,
+				actorId: playerIdForUser(user.id),
+				userId: user.id,
+				name: user.name,
+				color: user.color,
+				icon: user.icon,
 			});
-			return roomResponse(code, record.id, state);
+			return roomResponse(code, user.id, state);
 		}),
 		action: os.rooms.action.handler(({ input }) => {
 			pruneInactiveLobbyRooms();
@@ -162,12 +160,12 @@ function nowIso(): string {
 	return new Date().toISOString();
 }
 
-function numberParam(value: unknown): number | null {
+function numberParam(value: unknown): User['id'] | null {
 	const number = typeof value === 'number' ? value : Number(value);
 	return Number.isInteger(number) && number > 0 ? number : null;
 }
 
-function requireUserId(value: unknown): number {
+function requireUserId(value: unknown): User['id'] {
 	const userId = numberParam(value);
 	if (!userId) throw new ORPCError('BAD_REQUEST', { message: 'userId is required' });
 	return userId;
@@ -184,18 +182,14 @@ function sanitizeClientKey(value: string | null | undefined): string | null {
 	return key ? key.slice(0, 128) : null;
 }
 
-function userRecord(user: UserRow): UserRecord {
-	return {
-		id: user.id,
-		name: sanitizePlayerName(user.name) ?? 'Soul',
-		color: sanitizePlayerColor(user.color),
-		icon: sanitizePlayerIcon(user.icon),
-	};
-}
-
-function getUserRow(userId: number | null): UserRow | null {
+function getUserRow(userId: User['id'] | null): UserRow | null {
 	if (!userId) return null;
 	return db.select().from(usersTable).where(eq(usersTable.id, userId)).get() ?? null;
+}
+
+function getUser(userId: User['id'] | null): User | null {
+	if (!userId) return null;
+	return db.select(publicUserColumns).from(usersTable).where(eq(usersTable.id, userId)).get() ?? null;
 }
 
 function getUserByClientKey(clientKey: string | null): UserRow | null {
@@ -203,17 +197,17 @@ function getUserByClientKey(clientKey: string | null): UserRow | null {
 	return db.select().from(usersTable).where(eq(usersTable.clientKey, clientKey)).get() ?? null;
 }
 
-function getUserByIdOrClientKey(userId: number | null, clientKeyValue: string | null | undefined): UserRow | null {
+function getUserByIdOrClientKey(userId: User['id'] | null, clientKeyValue: string | null | undefined): UserRow | null {
 	return getUserRow(userId) ?? getUserByClientKey(sanitizeClientKey(clientKeyValue));
 }
 
 function ensureUser(
-	userId: number | null,
+	userId: User['id'] | null,
 	clientKeyValue: string | null | undefined,
 	rawName: string | null | undefined,
 	rawColor?: string | null,
 	rawIcon?: string | null,
-): UserRecord {
+): User {
 	const name = sanitizePlayerName(rawName ?? '') ?? 'Soul';
 	const color = sanitizePlayerColor(rawColor);
 	const icon = sanitizePlayerIcon(rawIcon);
@@ -230,21 +224,23 @@ function ensureUser(
 			existingIcon !== icon ||
 			(clientKey && !existing.clientKey)
 		) {
-			const changes: Partial<typeof usersTable.$inferInsert> = { name, color, icon, updatedAt: timestamp };
+			const changes: Partial<UserInsert> = { name, color, icon, updatedAt: timestamp };
 			if (clientKey && !existing.clientKey) changes.clientKey = clientKey;
 			db.update(usersTable).set(changes).where(eq(usersTable.id, existing.id)).run();
 		}
-		return { id: existing.id, name, color, icon };
+		const user = getUser(existing.id);
+		if (!user) throw new Error('Unable to load user');
+		return user;
 	}
 
 	try {
 		const inserted = db
 			.insert(usersTable)
 			.values({ clientKey, name, color, icon, createdAt: timestamp, updatedAt: timestamp })
-			.returning()
+			.returning(publicUserColumns)
 			.get();
 		if (!inserted) throw new Error('Unable to create user');
-		return userRecord(inserted);
+		return inserted;
 	} catch (error) {
 		const existingByKey = getUserByClientKey(clientKey);
 		if (existingByKey) return ensureUser(existingByKey.id, clientKey, name, color, icon);
@@ -256,19 +252,19 @@ function getRooms(): RoomRow[] {
 	return db.select().from(roomsTable).orderBy(desc(roomsTable.updatedAt)).all();
 }
 
-function touchUserPresence(userId: number, now = Date.now()): void {
+function touchUserPresence(userId: User['id'], now = Date.now()): void {
 	userPresence.set(userId, now);
 }
 
-function getOnlineUsers(excludedUserId: number | null, now = Date.now()): UserRecord[] {
+function getOnlineUsers(excludedUserId: User['id'] | null, now = Date.now()): User[] {
 	pruneExpiredPresence(now);
 
-	const users: UserRecord[] = [];
+	const users: User[] = [];
 	for (const userId of userPresence.keys()) {
 		if (userId === excludedUserId) continue;
 
-		const user = getUserRow(userId);
-		if (user) users.push(userRecord(user));
+		const user = getUser(userId);
+		if (user) users.push(user);
 	}
 
 	return users.sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
@@ -303,7 +299,7 @@ function pruneExpiredPresence(now: number): void {
 	}
 }
 
-function isUserOnline(userId: number, now: number): boolean {
+function isUserOnline(userId: User['id'], now: number): boolean {
 	return now - (userPresence.get(userId) ?? serverStartedAt) <= presenceTimeoutMs;
 }
 
@@ -367,7 +363,7 @@ function loadRoomState(code: string): OnlineRoomState {
 	return state;
 }
 
-function appendRoomAction(code: string, userId: number, action: OnlineRoomAction): OnlineRoomState {
+function appendRoomAction(code: string, userId: User['id'], action: OnlineRoomAction): OnlineRoomState {
 	ensureRoom(code);
 	if (action.actorId !== playerIdForUser(userId)) throw new ORPCError('FORBIDDEN', { message: 'Wrong actor' });
 
@@ -391,7 +387,7 @@ function appendRoomAction(code: string, userId: number, action: OnlineRoomAction
 	return next;
 }
 
-function leaveOtherRooms(targetCode: string, user: UserRecord): void {
+function leaveOtherRooms(targetCode: string, user: User): void {
 	const playerId = playerIdForUser(user.id);
 	for (const room of getRooms()) {
 		if (room.code === targetCode) continue;
@@ -403,7 +399,7 @@ function leaveOtherRooms(targetCode: string, user: UserRecord): void {
 	}
 }
 
-function findCurrentRoomForUser(userId: number): string | null {
+function findCurrentRoomForUser(userId: User['id']): string | null {
 	const playerId = playerIdForUser(userId);
 	for (const room of getRooms()) {
 		const state = loadRoomState(room.code);
@@ -413,7 +409,7 @@ function findCurrentRoomForUser(userId: number): string | null {
 	return null;
 }
 
-function roomResponse(code: string, userId: number | null, state = loadRoomState(code)): RoomResponse {
+function roomResponse(code: string, userId: User['id'] | null, state = loadRoomState(code)) {
 	return {
 		room: selectRoomViewState(state, userId, 'connected'),
 	};
@@ -421,10 +417,10 @@ function roomResponse(code: string, userId: number | null, state = loadRoomState
 
 async function* streamRoom(
 	code: string,
-	userId: number | null,
+	userId: User['id'] | null,
 	signal?: AbortSignal,
-): AsyncGenerator<RoomResponse, void, void> {
-	const queue: RoomResponse[] = [];
+): AsyncGenerator<ReturnType<typeof roomResponse>, void, void> {
+	const queue: ReturnType<typeof roomResponse>[] = [];
 	let wake: (() => void) | undefined;
 	let closed = false;
 

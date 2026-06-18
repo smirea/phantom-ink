@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import type { PlayerColorId, PlayerIconId } from '../playerProfile';
 
 export const usersTable = sqliteTable(
 	'users',
@@ -7,8 +8,8 @@ export const usersTable = sqliteTable(
 		id: integer('id').primaryKey({ autoIncrement: true }),
 		clientKey: text('client_key'),
 		name: text('name').notNull(),
-		color: text('color', { mode: 'text', length: 16 }).notNull(),
-		icon: text('icon', { mode: 'text', length: 16 }).notNull(),
+		color: text('color', { mode: 'text', length: 16 }).$type<PlayerColorId>().notNull(),
+		icon: text('icon', { mode: 'text', length: 16 }).$type<PlayerIconId>().notNull(),
 		createdAt: text('created_at').notNull(),
 		updatedAt: text('updated_at').notNull(),
 	},
@@ -18,6 +19,13 @@ export const usersTable = sqliteTable(
 			.where(sql`${table.clientKey} is not null`),
 	],
 );
+
+export const publicUserColumns = {
+	id: usersTable.id,
+	name: usersTable.name,
+	color: usersTable.color,
+	icon: usersTable.icon,
+} as const;
 
 export const roomsTable = sqliteTable('rooms', {
 	code: text('code').primaryKey(),
@@ -41,3 +49,9 @@ export const roomActionsTable = sqliteTable(
 	},
 	table => [index('room_actions_room_code_id_idx').on(table.roomCode, table.id)],
 );
+
+export type UserRow = typeof usersTable.$inferSelect;
+export type UserInsert = typeof usersTable.$inferInsert;
+export type User = Pick<UserRow, keyof typeof publicUserColumns>;
+export type RoomRow = typeof roomsTable.$inferSelect;
+export type RoomActionRow = typeof roomActionsTable.$inferSelect;

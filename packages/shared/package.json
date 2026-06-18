@@ -5,13 +5,16 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./env": "./src/env.ts",
+		"./db/schema": "./src/db/schema.ts",
 		"./game": "./src/game.ts",
 		"./onlineGame": "./src/onlineGame.ts",
+		"./playerProfile": "./src/playerProfile.ts",
 		"./rpc": "./src/rpc.ts",
 		"./package.json": "./package.json"
 	},
 	"dependencies": {
 		"@orpc/contract": "^1.14.6",
+		"drizzle-orm": "^0.45.2",
 		"zod": "^4.4.3"
 	}
 }

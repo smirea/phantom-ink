@@ -1,9 +1,9 @@
-import type { UserRecord } from '@repo/shared/onlineGame';
+import type { User } from '@repo/shared/onlineGame';
 import { createContext } from 'svelte';
 
 export interface AppContext {
 	theme: 'light' | 'dark';
-	user: UserRecord | null;
+	user: User | null;
 }
 
 export const [getAppContext, setAppContext] = createContext<AppContext>();

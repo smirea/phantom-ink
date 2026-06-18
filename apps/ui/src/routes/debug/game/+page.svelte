@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { board, questions, words, type QuestionCard, type WordCard } from '@repo/shared/data';
-	import type { UserRecord } from '@repo/shared/onlineGame';
+	import type { User } from '@repo/shared/onlineGame';
 	import { range, sample, shuffle, uniq } from 'es-toolkit';
 	import { onDestroy } from 'svelte';
 	import { assign, createActor, setup } from 'xstate';
@@ -38,8 +38,8 @@
 	};
 
 	interface TeamState {
-		spirit: UserRecord['id'];
-		players: Array<UserRecord['id']>;
+		spirit: User['id'];
+		players: Array<User['id']>;
 		questions: Array<QuestionCard['id']>;
 		spiritQuestionPicks: Array<QuestionCard['id']>;
 		spiritQuestionDiscards: Array<QuestionCard['id']>;
@@ -357,7 +357,7 @@
 		};
 	}
 
-	function createTeamState(players: Array<UserRecord['id']>): TeamState {
+	function createTeamState(players: Array<User['id']>): TeamState {
 		return {
 			spirit: pickOne(players),
 			players,

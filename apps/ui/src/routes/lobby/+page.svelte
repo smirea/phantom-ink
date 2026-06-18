@@ -5,7 +5,7 @@
 	import { LS } from '$lib/storage';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { type RoomDirectoryListing, type UserRecord } from '@repo/shared/onlineGame';
+	import { type RoomDirectoryListing, type User } from '@repo/shared/onlineGame';
 	import { cubicOut, quintOut } from 'svelte/easing';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
@@ -15,7 +15,7 @@
 	import type { TransitionConfig } from 'svelte/transition';
 
 	let rooms = $state<RoomDirectoryListing[]>([]);
-	let nearbySouls = $state<UserRecord[]>([]);
+	let nearbySouls = $state<User[]>([]);
 	let expandedRooms = $state<Set<string>>(new Set());
 	let collapsibleRooms = $state<Set<string>>(new Set());
 	let nearbyExpanded = $state(false);

@@ -1,64 +1,45 @@
 import { eventIterator, oc, type as orpcType } from '@orpc/contract';
 import type { ContractRouterClient } from '@orpc/contract';
-import type {
-	CurrentRoomResponse,
-	CurrentUserResponse,
-	DirectoryResponse,
-	OnlinePresenceResponse,
-	OnlineRoomAction,
-	RoomResponse,
-	UserResponse,
-} from './onlineGame';
+import type { OnlineRoomAction, RoomDirectoryListing, RoomViewState, User } from './onlineGame';
 
 export interface UserLookupInput {
-	userId?: number | null;
+	userId?: User['id'] | null;
 	clientKey?: string | null;
 }
 
 export interface EnsureUserInput extends UserLookupInput {
-	name?: string | null;
-	color?: string | null;
-	icon?: string | null;
+	name?: User['name'] | null;
+	color?: User['color'] | null;
+	icon?: User['icon'] | null;
 }
 
 export interface RoomInput {
 	code: string;
-	userId?: number | null;
+	userId?: User['id'] | null;
 }
-
-export type JoinRoomInput = RoomInput;
 
 export interface RoomActionInput extends RoomInput {
 	action: OnlineRoomAction;
 }
 
-export interface StatusResponse {
-	ok: true;
-	now: string;
-}
-
-export interface PresencePingResponse {
-	ok: true;
-	timeoutMs: number;
-}
-
 export const appContract = {
-	status: oc.output(orpcType<StatusResponse>()),
+	status: oc.output(orpcType<{ ok: true; now: string }>()),
 	users: {
-		ensure: oc.input(orpcType<EnsureUserInput>()).output(orpcType<UserResponse>()),
-		me: oc.input(orpcType<UserLookupInput>()).output(orpcType<CurrentUserResponse>()),
-		currentRoom: oc.input(orpcType<UserLookupInput>()).output(orpcType<CurrentRoomResponse>()),
+		ensure: oc.input(orpcType<EnsureUserInput>()).output(orpcType<{ user: User }>()),
+		me: oc.input(orpcType<UserLookupInput>()).output(orpcType<{ user: User | null }>()),
+		get: oc.input(orpcType<{ userId: User['id'] }>()).output(orpcType<{ user: User | null }>()),
+		currentRoom: oc.input(orpcType<UserLookupInput>()).output(orpcType<{ roomCode: string | null }>()),
 	},
 	presence: {
-		ping: oc.input(orpcType<UserLookupInput>()).output(orpcType<PresencePingResponse>()),
-		online: oc.input(orpcType<UserLookupInput>()).output(orpcType<OnlinePresenceResponse>()),
+		ping: oc.input(orpcType<UserLookupInput>()).output(orpcType<{ ok: true; timeoutMs: number }>()),
+		online: oc.input(orpcType<UserLookupInput>()).output(orpcType<{ users: User[] }>()),
 	},
 	rooms: {
-		list: oc.output(orpcType<DirectoryResponse>()),
-		get: oc.input(orpcType<RoomInput>()).output(orpcType<RoomResponse>()),
-		join: oc.input(orpcType<JoinRoomInput>()).output(orpcType<RoomResponse>()),
-		action: oc.input(orpcType<RoomActionInput>()).output(orpcType<RoomResponse>()),
-		events: oc.input(orpcType<RoomInput>()).output(eventIterator(orpcType<RoomResponse>())),
+		list: oc.output(orpcType<{ rooms: RoomDirectoryListing[] }>()),
+		get: oc.input(orpcType<RoomInput>()).output(orpcType<{ room: RoomViewState }>()),
+		join: oc.input(orpcType<RoomInput>()).output(orpcType<{ room: RoomViewState }>()),
+		action: oc.input(orpcType<RoomActionInput>()).output(orpcType<{ room: RoomViewState }>()),
+		events: oc.input(orpcType<RoomInput>()).output(eventIterator(orpcType<{ room: RoomViewState }>())),
 	},
 };
 
