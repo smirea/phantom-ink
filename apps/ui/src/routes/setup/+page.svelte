@@ -140,7 +140,8 @@
 	<form class="setup-form" onsubmit={submit}>
 		<InkButton
 			aria-label="Random icon and color"
-			class={`dice-button ${tapTarget === 'dice' ? 'tapped' : ''}`}
+			data-setup-control="randomize"
+			data-tapped={tapTarget === 'dice' ? 'true' : undefined}
 			disabled={isSubmitting}
 			ghost
 			icon={Dices}
@@ -168,7 +169,8 @@
 
 		<InkButton
 			aria-label="Continue to lobby"
-			class={`continue-button ${tapTarget === 'continue' ? 'tapped' : ''}`}
+			data-setup-control="continue"
+			data-tapped={tapTarget === 'continue' ? 'true' : undefined}
 			disabled={!canSubmit}
 			icon={ArrowRight}
 			iconSize={34}
@@ -304,8 +306,7 @@
 		width: min(100%, 34rem);
 	}
 
-	:global(.setup-form .ink-button.dice-button),
-	:global(.setup-form .ink-button.continue-button) {
+	:global(.setup-form .ink-button[data-setup-control]) {
 		width: var(--picker-size);
 		height: var(--picker-size);
 		min-height: 0;
@@ -349,11 +350,13 @@
 		outline-offset: 4px;
 	}
 
-	:global(.setup-form .ink-button.primary.continue-button:hover:not(:disabled)) {
+	:global(.setup-form .ink-button[data-variant='primary'][data-setup-control='continue']:hover:not(:disabled)) {
 		transform: translateX(2px);
 	}
 
-	:global(.setup-form .ink-button.primary.continue-button:hover:not(:disabled) .ink-button-icon) {
+	:global(
+		.setup-form .ink-button[data-variant='primary'][data-setup-control='continue']:hover:not(:disabled) .ink-button-icon
+	) {
 		transform: translateX(2px);
 	}
 

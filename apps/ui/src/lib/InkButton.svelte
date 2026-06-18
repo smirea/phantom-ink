@@ -34,19 +34,8 @@
 		type?: ButtonType;
 	} = $props();
 
-	const className = $derived(
-		[
-			'ink-button',
-			primary ? 'primary' : '',
-			ghost ? 'ghost' : '',
-			loading ? 'loading' : '',
-			fill ? 'fill' : '',
-			size,
-			cls,
-		]
-			.filter(Boolean)
-			.join(' '),
-	);
+	const variant = $derived(primary ? 'primary' : ghost ? 'ghost' : 'default');
+	const className = $derived(['ink-button', cls].filter(Boolean).join(' '));
 	const DisplayIcon = $derived(loading ? LoaderCircle : Icon);
 	const isDisabled = $derived(disabled || loading);
 	const resolvedIconSize = $derived(iconSize ?? (size === 'lg' ? 26 : size === 'sm' ? 17 : 20));
@@ -58,10 +47,20 @@
 	}
 </script>
 
-<button {...rest} {type} aria-busy={loading || undefined} disabled={isDisabled} class={className}>
+<button
+	{...rest}
+	{type}
+	aria-busy={loading || undefined}
+	data-fill={fill ? 'true' : undefined}
+	data-loading={loading ? 'true' : undefined}
+	data-size={size}
+	data-variant={variant}
+	disabled={isDisabled}
+	class={className}
+>
 	{#if DisplayIcon}
 		<span
-			class:loading
+			data-loading={loading ? 'true' : undefined}
 			class="ink-button-icon"
 			style={`--ink-button-icon-size: ${resolvedIconCssSize}`}
 			aria-hidden="true"
@@ -104,29 +103,29 @@
 			transform 180ms ease;
 	}
 
-	.ink-button.fill {
+	.ink-button[data-fill='true'] {
 		width: 100%;
 	}
 
-	.ink-button.sm {
+	.ink-button[data-size='sm'] {
 		min-height: 2rem;
 		padding: 0 0.65rem;
 		font-size: 0.78rem;
 	}
 
-	.ink-button.md {
+	.ink-button[data-size='md'] {
 		min-height: 2.5rem;
 		padding: 0 0.9rem;
 		font-size: 0.9rem;
 	}
 
-	.ink-button.lg {
+	.ink-button[data-size='lg'] {
 		min-height: 3rem;
 		padding: 0 1.05rem;
 		font-size: 0.98rem;
 	}
 
-	.ink-button.ghost {
+	.ink-button[data-variant='ghost'] {
 		border-color: color-mix(in oklab, var(--app-border) 70%, transparent);
 		border-radius: 0.5rem;
 		background: color-mix(in oklab, var(--app-panel) 62%, transparent);
@@ -135,7 +134,7 @@
 		overflow: visible;
 	}
 
-	.ink-button.ghost::after {
+	.ink-button[data-variant='ghost']::after {
 		position: absolute;
 		inset: -0.28rem;
 		border: 1px solid currentColor;
@@ -145,7 +144,7 @@
 		content: '';
 	}
 
-	.ink-button.primary {
+	.ink-button[data-variant='primary'] {
 		border-color: color-mix(in oklab, var(--app-accent) 54%, var(--app-border) 46%);
 		background:
 			radial-gradient(
@@ -193,7 +192,7 @@
 		height: 100%;
 	}
 
-	.ink-button-icon.loading {
+	.ink-button-icon[data-loading='true'] {
 		animation: ink-button-spin 850ms linear infinite;
 	}
 
@@ -203,14 +202,14 @@
 		transform: translateY(-1px);
 	}
 
-	.ink-button.ghost:hover:not(:disabled) {
+	.ink-button[data-variant='ghost']:hover:not(:disabled) {
 		border-color: color-mix(in oklab, var(--app-border) 70%, transparent);
 		box-shadow: none;
 		color: var(--app-text);
 		transform: translateY(-2px);
 	}
 
-	.ink-button.primary:hover:not(:disabled) {
+	.ink-button[data-variant='primary']:hover:not(:disabled) {
 		border-color: color-mix(in oklab, var(--app-accent) 64%, var(--app-border) 36%);
 		background-position:
 			4% -5%,
@@ -229,7 +228,7 @@
 		animation: ink-button-primary-pulse 1700ms ease-in-out infinite;
 	}
 
-	.ink-button.primary:active:not(:disabled) {
+	.ink-button[data-variant='primary']:active:not(:disabled) {
 		background-position:
 			2% -2%,
 			98% 106%,
@@ -251,16 +250,16 @@
 		transform: translateY(1px) scale(0.99);
 	}
 
-	.ink-button.ghost:active:not(:disabled) {
+	.ink-button[data-variant='ghost']:active:not(:disabled) {
 		box-shadow: none;
 		transform: translateY(1px) scale(0.94);
 	}
 
-	.ink-button.ghost.tapped {
+	.ink-button[data-variant='ghost'][data-tapped='true'] {
 		animation: ink-button-ghost-tap 420ms cubic-bezier(0.16, 1, 0.3, 1);
 	}
 
-	.ink-button.ghost.tapped::after {
+	.ink-button[data-variant='ghost'][data-tapped='true']::after {
 		animation: ink-button-ghost-ring 420ms ease-out;
 	}
 
@@ -392,10 +391,10 @@
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.ink-button.primary:hover:not(:disabled),
-		.ink-button.primary:active:not(:disabled),
-		.ink-button.ghost.tapped,
-		.ink-button.ghost.tapped::after {
+		.ink-button[data-variant='primary']:hover:not(:disabled),
+		.ink-button[data-variant='primary']:active:not(:disabled),
+		.ink-button[data-variant='ghost'][data-tapped='true'],
+		.ink-button[data-variant='ghost'][data-tapped='true']::after {
 			animation: none;
 		}
 	}
