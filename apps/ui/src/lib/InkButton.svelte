@@ -1,11 +1,15 @@
 <script lang="ts">
+	import VoteBadge from '$lib/VoteBadge.svelte';
+	import { getAppContext } from '$lib/appContext';
 	import type { Snippet } from 'svelte';
 	import type { HTMLButtonAttributes } from 'svelte/elements';
 	import type { LucideIcon } from '@lucide/svelte';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+	import type { User } from '@repo/shared/onlineGame';
 
 	type ButtonSize = 'sm' | 'md' | 'lg';
 	type ButtonType = 'button' | 'submit' | 'reset';
+	type VotingState = { voted: User[]; missing?: User[] };
 
 	let {
 		children,
@@ -20,6 +24,8 @@
 		primary = false,
 		size = 'md',
 		type = 'button',
+		voteLabel,
+		voting,
 		...rest
 	}: Omit<HTMLButtonAttributes, 'type'> & {
 		children?: Snippet;
@@ -32,8 +38,11 @@
 		size?: ButtonSize;
 		fill?: boolean;
 		type?: ButtonType;
+		voteLabel?: string;
+		voting?: VotingState;
 	} = $props();
 
+	const appContext = getAppContext();
 	const variant = $derived(primary ? 'primary' : ghost ? 'ghost' : 'default');
 	const className = $derived(['ink-button', cls].filter(Boolean).join(' '));
 	const DisplayIcon = $derived(loading ? LoaderCircle : Icon);
@@ -41,37 +50,75 @@
 	const resolvedIconSize = $derived(iconSize ?? (size === 'lg' ? 26 : size === 'sm' ? 17 : 20));
 	const resolvedIconCssSize = $derived(formatCssSize(resolvedIconSize));
 	const resolvedIconStrokeWidth = $derived(iconStrokeWidth ?? (size === 'lg' ? 2.5 : 2.3));
+	const selfHasVoted = $derived(Boolean(voting?.voted.some(user => user.id === appContext.user.id)));
 
 	function formatCssSize(value: number | string): string {
 		return typeof value === 'number' ? `${value}px` : value;
 	}
 </script>
 
-<button
-	{...rest}
-	{type}
-	aria-busy={loading || undefined}
-	data-fill={fill ? 'true' : undefined}
-	data-loading={loading ? 'true' : undefined}
-	data-size={size}
-	data-variant={variant}
-	disabled={isDisabled}
-	class={className}
->
-	{#if DisplayIcon}
-		<span
-			data-loading={loading ? 'true' : undefined}
-			class="ink-button-icon"
-			style={`--ink-button-icon-size: ${resolvedIconCssSize}`}
-			aria-hidden="true"
-		>
-			<DisplayIcon size={resolvedIconSize} strokeWidth={resolvedIconStrokeWidth} />
-		</span>
-	{/if}
-	{@render children?.()}
-</button>
+{#snippet ButtonElement()}
+	<button
+		{...rest}
+		{type}
+		aria-busy={loading || undefined}
+		data-fill={fill ? 'true' : undefined}
+		data-loading={loading ? 'true' : undefined}
+		data-size={size}
+		data-variant={variant}
+		disabled={isDisabled}
+		class={className}
+	>
+		{#if DisplayIcon}
+			<span
+				data-loading={loading ? 'true' : undefined}
+				class="ink-button-icon"
+				style={`--ink-button-icon-size: ${resolvedIconCssSize}`}
+				aria-hidden="true"
+			>
+				<DisplayIcon size={resolvedIconSize} strokeWidth={resolvedIconStrokeWidth} />
+			</span>
+		{/if}
+		{@render children?.()}
+	</button>
+{/snippet}
+
+{#if voting}
+	<span
+		class="ink-button-vote-host"
+		data-fill={fill ? 'true' : undefined}
+		data-self-voted={selfHasVoted ? 'true' : undefined}
+	>
+		{@render ButtonElement()}
+		<VoteBadge {voting} label={voteLabel} />
+	</span>
+{:else}
+	{@render ButtonElement()}
+{/if}
 
 <style>
+	.ink-button-vote-host {
+		position: relative;
+		display: inline-block;
+		min-width: 0;
+		--vote-badge-opacity: 0;
+		--vote-badge-pointer-events: none;
+		--vote-badge-scale: 0.92;
+	}
+
+	.ink-button-vote-host[data-fill='true'] {
+		display: block;
+		width: 100%;
+	}
+
+	.ink-button-vote-host:hover,
+	.ink-button-vote-host:focus-within,
+	.ink-button-vote-host[data-self-voted='true'] {
+		--vote-badge-opacity: 1;
+		--vote-badge-pointer-events: auto;
+		--vote-badge-scale: 1;
+	}
+
 	.ink-button {
 		position: relative;
 		display: inline-flex;

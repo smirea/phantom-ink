@@ -1,20 +1,24 @@
 <script lang="ts">
 	import Avatar from '$lib/Avatar.svelte';
-	import { type RoomMemberView, type RoomVoteSummary } from '@repo/shared/onlineGame';
+	import { type RoomMemberView, type RoomVoteSummary, type User } from '@repo/shared/onlineGame';
 	import Check from '@lucide/svelte/icons/check';
 	import Minus from '@lucide/svelte/icons/minus';
 	import ScrollText from '@lucide/svelte/icons/scroll-text';
 	import { clamp, compact } from 'es-toolkit';
 	import { onMount, tick } from 'svelte';
 
+	type VotingState = { voted: User[]; missing?: User[] };
+
 	let {
 		summary,
-		members,
+		members = [],
 		label = 'Votes',
+		voting,
 	}: {
-		summary: RoomVoteSummary | null | undefined;
-		members: RoomMemberView[];
+		summary?: RoomVoteSummary | null | undefined;
+		members?: RoomMemberView[];
 		label?: string;
+		voting?: VotingState;
 	} = $props();
 
 	let isOpen = $state(false);
@@ -26,10 +30,12 @@
 	let flashTimer: ReturnType<typeof setTimeout> | undefined;
 	let flashFrame: number | undefined;
 
-	const currentVotes = $derived(summary?.currentVotes ?? 0);
-	const requiredVotes = $derived(summary?.requiredVotes ?? 0);
-	const voters = $derived(compact((summary?.voterIds ?? []).map(memberForId)));
-	const missing = $derived(compact((summary?.missingPlayerIds ?? []).map(memberForId)));
+	const summaryVoters = $derived(compact((summary?.voterIds ?? []).map(memberForId)));
+	const summaryMissing = $derived(compact((summary?.missingPlayerIds ?? []).map(memberForId)));
+	const voters = $derived(voting?.voted ?? summaryVoters);
+	const missing = $derived(voting?.missing ?? summaryMissing);
+	const currentVotes = $derived(voting ? voters.length : (summary?.currentVotes ?? 0));
+	const requiredVotes = $derived(voting ? voters.length + missing.length : (summary?.requiredVotes ?? 0));
 
 	$effect(() => {
 		if (lastCount === null) {

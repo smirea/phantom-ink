@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import Avatar from '$lib/Avatar.svelte';
-	import VoteBadge from '$lib/VoteBadge.svelte';
+	import InkButton from '$lib/InkButton.svelte';
 	import { api } from '$lib/api';
 	import { getAppContext } from '$lib/appContext';
 	import { parseRoomCode } from '$lib/roomCodes';
@@ -13,6 +13,7 @@
 		type RoomViewState,
 		type RoomVoteSummary,
 		type Team,
+		type User,
 		type WordMode,
 	} from '@repo/shared/onlineGame';
 	import Check from '@lucide/svelte/icons/check';
@@ -45,6 +46,8 @@
 	const displayedWordVoteLabel = $derived(
 		(selfWordVoteMode ?? targetWordMode) === 'custom' ? 'Custom words' : 'Standard words',
 	);
+	const readyVoting = $derived(votingFor(readyVote));
+	const displayedWordVoting = $derived(votingFor(displayedWordVote));
 	const fallbackSelfPlayerId = $derived(appContext.user.id > 0 ? playerIdForUser(appContext.user.id) : null);
 	const selfIsReady = $derived(Boolean(self && readyVote?.voterIds.includes(self.id)));
 	const canUseLobbyControls = $derived(
@@ -99,10 +102,6 @@
 		return room?.votes.find(vote => vote.action === action) ?? null;
 	}
 
-	function hasSelfPendingVote(summary: RoomVoteSummary | null): boolean {
-		return Boolean(self && summary && !summary.consensus && summary.voterIds.includes(self.id));
-	}
-
 	function hasOtherPendingVote(summary: RoomVoteSummary | null): boolean {
 		return Boolean(
 			self && summary && !summary.consensus && summary.currentVotes > 0 && !summary.voterIds.includes(self.id),
@@ -122,6 +121,29 @@
 
 	function wordVoteForMode(mode: WordMode): RoomVoteSummary | null {
 		return mode === 'custom' ? customVote : standardVote;
+	}
+
+	function votingFor(summary: RoomVoteSummary | null): { voted: User[]; missing?: User[] } | undefined {
+		if (!summary) return undefined;
+		const voted = usersForPlayerIds(summary.voterIds);
+		const missing = usersForPlayerIds(summary.missingPlayerIds);
+		return missing.length ? { voted, missing } : { voted };
+	}
+
+	function usersForPlayerIds(playerIds: readonly string[]): User[] {
+		return playerIds.flatMap(playerId => {
+			const member = members.find(member => member.id === playerId);
+			return member ? [memberToUser(member)] : [];
+		});
+	}
+
+	function memberToUser(member: RoomMemberView): User {
+		return {
+			id: member.userId,
+			name: member.name,
+			color: member.color,
+			icon: member.icon,
+		};
 	}
 
 	async function switchTeam(team: Team) {
@@ -214,16 +236,20 @@
 			<div
 				class:otherVoted={hasOtherPendingWordVote(displayedWordVote)}
 				class:selfVoted={Boolean(selfWordVoteMode)}
-				class="word-toggle-wrap vote-host"
+				class="word-toggle-wrap"
+				data-checked={displayedWordMode === 'custom' ? 'true' : undefined}
 			>
-				<button
+				<InkButton
 					aria-checked={displayedWordMode === 'custom'}
-					class:checked={displayedWordMode === 'custom'}
 					class="word-toggle"
+					data-checked={displayedWordMode === 'custom' ? 'true' : undefined}
 					disabled={!canUseLobbyControls || pendingAction === `word:${targetWordMode}`}
+					ghost
 					onclick={() => void voteWordMode(targetWordMode)}
 					role="checkbox"
 					type="button"
+					voteLabel={displayedWordVoteLabel}
+					voting={displayedWordVoting}
 				>
 					<span class="checkbox-mark">
 						{#if pendingAction === `word:${targetWordMode}`}
@@ -233,8 +259,7 @@
 						{/if}
 					</span>
 					<span>Use your own words</span>
-				</button>
-				<VoteBadge summary={displayedWordVote} {members} label={displayedWordVoteLabel} />
+				</InkButton>
 			</div>
 		</div>
 
@@ -270,23 +295,23 @@
 		{/if}
 
 		<div class="ready-dock">
-			<div class:selfVoted={hasSelfPendingVote(readyVote)} class="ready-action vote-host">
-				<VoteBadge summary={readyVote} {members} label="Ready" />
-				<button
-					class:ready={selfIsReady}
+			<div class="ready-action">
+				<InkButton
+					class="ready-button"
 					disabled={!canUseLobbyControls || Boolean(room?.startProblem) || pendingAction === 'ready'}
+					fill
+					icon={selfIsReady ? Check : CircleDashed}
+					iconSize={24}
+					iconStrokeWidth={selfIsReady ? 2.7 : 2.4}
+					loading={pendingAction === 'ready'}
 					onclick={voteReady}
+					primary
 					type="button"
+					voteLabel="Ready"
+					voting={readyVoting}
 				>
-					{#if pendingAction === 'ready'}
-						<LoaderCircle class="spin" size={23} strokeWidth={2.4} />
-					{:else if selfIsReady}
-						<Check size={24} strokeWidth={2.7} />
-					{:else}
-						<CircleDashed size={24} strokeWidth={2.4} />
-					{/if}
-					<span>{readyButtonLabel}</span>
-				</button>
+					{readyButtonLabel}
+				</InkButton>
 			</div>
 		</div>
 	{/if}
@@ -358,20 +383,6 @@
 		min-width: 0;
 	}
 
-	.vote-host {
-		--vote-badge-opacity: 0;
-		--vote-badge-pointer-events: none;
-		--vote-badge-scale: 0.92;
-	}
-
-	.vote-host:hover,
-	.vote-host:focus-within,
-	.vote-host.selfVoted {
-		--vote-badge-opacity: 1;
-		--vote-badge-pointer-events: auto;
-		--vote-badge-scale: 1;
-	}
-
 	.word-toggle-wrap {
 		position: relative;
 		display: inline-flex;
@@ -379,35 +390,27 @@
 		overflow: visible;
 	}
 
-	.word-toggle {
-		display: inline-flex;
-		align-items: center;
+	.word-toggle-wrap :global(.ink-button-vote-host) {
+		display: inline-block;
+		min-width: 0;
+	}
+
+	.word-toggle-wrap :global(.ink-button.word-toggle) {
 		gap: 0.62rem;
 		min-height: 3rem;
-		border: 1px solid color-mix(in oklab, var(--app-border) 72%, transparent);
+		border-color: color-mix(in oklab, var(--app-border) 72%, transparent);
 		border-radius: 0.45rem;
 		background: color-mix(in oklab, var(--app-input) 54%, transparent);
 		color: var(--app-text);
-		cursor: pointer;
-		font: inherit;
 		font-size: clamp(1rem, 2.2vw, 1.28rem);
 		font-weight: 950;
-		line-height: 1;
 		padding: 0 2.9rem 0 0.85rem;
-		transition:
-			background 180ms ease,
-			border-color 180ms ease,
-			transform 180ms ease;
 	}
 
-	.word-toggle:hover:not(:disabled),
-	.word-toggle.checked {
+	.word-toggle-wrap :global(.ink-button.word-toggle:hover:not(:disabled)),
+	.word-toggle-wrap :global(.ink-button.word-toggle[data-checked='true']) {
 		border-color: color-mix(in oklab, var(--app-accent) 58%, var(--app-border));
 		background: color-mix(in oklab, var(--app-accent) 12%, var(--app-input));
-	}
-
-	.word-toggle:active:not(:disabled) {
-		transform: translateY(1px) scale(0.99);
 	}
 
 	.checkbox-mark {
@@ -421,12 +424,12 @@
 		background: color-mix(in oklab, var(--app-panel) 72%, transparent);
 	}
 
-	.word-toggle.checked .checkbox-mark {
+	.word-toggle-wrap[data-checked='true'] .checkbox-mark {
 		border-color: #78d88d;
 		background: #78d88d;
 	}
 
-	.word-toggle-wrap.selfVoted .word-toggle {
+	.word-toggle-wrap.selfVoted :global(.ink-button.word-toggle) {
 		border-color: color-mix(in oklab, #d85b68 74%, var(--app-border));
 		background: color-mix(in oklab, #d85b68 13%, var(--app-input));
 	}
@@ -633,33 +636,18 @@
 		font-weight: 850;
 	}
 
-	.ready-action > button {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
+	.ready-action :global(.ink-button.ready-button) {
 		gap: 0.4rem;
-		width: 100%;
-		border: 1px solid color-mix(in oklab, var(--app-accent) 58%, var(--app-border));
+		justify-content: center;
+		min-height: 3.2rem;
 		border-radius: 0.45rem;
-		background: color-mix(in oklab, var(--app-accent) 14%, var(--app-input));
-		color: var(--app-text);
-		cursor: pointer;
-		font: inherit;
 		font-size: 1.05rem;
 		font-weight: 950;
-		min-height: 3.2rem;
 		padding: 0 3rem 0 0.9rem;
-		transition:
-			background 180ms ease,
-			border-color 180ms ease,
-			box-shadow 180ms ease,
-			transform 180ms ease;
 	}
 
-	.ready-action > button:hover:not(:disabled) {
-		border-color: color-mix(in oklab, var(--app-accent) 72%, var(--app-border));
-		background: color-mix(in oklab, var(--app-accent) 18%, var(--app-input));
-		box-shadow: 0 0 0 1px color-mix(in oklab, var(--app-accent) 16%, transparent);
+	.ready-action :global(.ink-button.ready-button .ink-button-icon) {
+		color: currentColor;
 	}
 
 	button:disabled {
@@ -696,12 +684,6 @@
 		display: grid;
 		gap: 0.35rem;
 		overflow: visible;
-	}
-
-	.ready-action > button.ready {
-		background: linear-gradient(180deg, color-mix(in oklab, #78d88d 80%, white 20%), #78d88d), #78d88d;
-		border-color: #78d88d;
-		color: #102014;
 	}
 
 	.room-error {
@@ -781,7 +763,8 @@
 		}
 
 		.word-toggle-wrap,
-		.word-toggle {
+		.word-toggle-wrap :global(.ink-button-vote-host),
+		.word-toggle-wrap :global(.ink-button.word-toggle) {
 			width: 100%;
 		}
 	}
