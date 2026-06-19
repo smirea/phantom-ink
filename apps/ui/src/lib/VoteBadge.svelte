@@ -369,14 +369,10 @@
 	.vote-badge[data-mode='avatar'] {
 		justify-content: center;
 		width: 100%;
-		min-height: 1.52rem;
 		min-width: 0;
-		border-color: transparent;
-		background: transparent;
-		box-shadow: none;
 		cursor: default;
 		overflow: visible;
-		padding: 0;
+		padding: 0 0.42rem;
 	}
 
 	.vote-badge:hover,
@@ -384,13 +380,6 @@
 		background: color-mix(in oklab, var(--app-accent) 18%, var(--app-panel));
 		border-color: var(--app-accent);
 		transform: translateY(-1px);
-	}
-
-	.vote-badge[data-mode='avatar']:hover,
-	.vote-badge[data-mode='avatar'][aria-expanded='true'] {
-		background: transparent;
-		border-color: transparent;
-		transform: none;
 	}
 
 	.vote-badge.flash {
