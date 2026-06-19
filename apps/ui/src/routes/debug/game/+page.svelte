@@ -37,6 +37,7 @@
 
 	interface TeamState {
 		spirit: User['id'];
+		players: Array<User['id']>;
 		questions: Array<QuestionCard['id']>;
 		spiritQuestionPicks: Array<QuestionCard['id']>;
 		board: BoardEntry[];
@@ -73,10 +74,6 @@
 		questionsGivenToSpirit: 2,
 		alphabet: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''),
 	} as const;
-	const teamPlayers = {
-		sun: [0, 1, 2],
-		moon: [3, 4, 5],
-	} satisfies Record<Team, Array<User['id']>>;
 
 	type VoteType = 'pickWord' | 'mediumAction' | 'pickQuestions' | 'clue' | 'guessLetter' | 'pickHint';
 	type VoteConfig = {
@@ -153,11 +150,12 @@
 		if (!canSeeVote(state, voteId)) return false;
 
 		if (votingConfig[voteId].mode === 'anySpirit') {
-			const team = teamPlayers.sun.includes(id) ? ctx.teams.sun : ctx.teams.moon;
+			const team = ctx.teams.sun.players.includes(id) ? ctx.teams.sun : ctx.teams.moon;
 			return team.spirit === id;
 		}
 
-		return teamPlayers[ctx.currentTeam].includes(id) && ctx.teams[ctx.currentTeam].spirit !== id;
+		const team = ctx.teams[ctx.currentTeam];
+		return team.players.includes(id) && team.spirit !== id;
 	}
 
 	const gameMachine = setup({
@@ -372,16 +370,17 @@
 			word: '',
 			discardedQuestionsDeck: [],
 			teams: {
-				sun: createTeamState('sun'),
-				moon: createTeamState('moon'),
+				sun: createTeamState([0, 1, 2]),
+				moon: createTeamState([3, 4, 5]),
 			},
 			voting: {},
 		};
 	}
 
-	function createTeamState(team: Team): TeamState {
+	function createTeamState(players: Array<User['id']>): TeamState {
 		return {
-			spirit: sample(teamPlayers[team]),
+			spirit: sample(players),
+			players,
 			questions: [],
 			spiritQuestionPicks: [],
 			board: [],
@@ -637,7 +636,7 @@
 		<div class="board-row">
 			{#each teams as team}
 				<div class="flex gap-2" class:flex-row-reverse={team === 'moon'}>
-					{#each teamPlayers[team] as userId}
+					{#each game.teams[team].players as userId}
 						<Avatar
 							user={playerData.find(x => x.id === userId)!}
 							onclick={() => (debugUser = userId)}
