@@ -1265,11 +1265,11 @@
 	button.board-cell[data-hint-target='true']::after,
 	.board-cell[data-guess-target='true']::after {
 		position: absolute;
-		inset: -0.16rem;
+		inset: 0.08rem;
 		border: 1px solid color-mix(in oklab, var(--cell-pulse-color) 72%, transparent);
-		border-radius: 0.48rem;
+		border-radius: 0.3rem;
 		box-shadow:
-			0 0 0.65rem color-mix(in oklab, var(--cell-pulse-color) 24%, transparent),
+			inset 0 0 0.85rem color-mix(in oklab, var(--cell-pulse-color) 18%, transparent),
 			inset 0 0 0.5rem color-mix(in oklab, var(--cell-pulse-color) 12%, transparent);
 		pointer-events: none;
 		content: '';
