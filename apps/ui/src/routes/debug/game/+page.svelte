@@ -1,7 +1,10 @@
 <script lang="ts">
+	import Avatar from '$lib/Avatar.svelte';
+	import InkButton from '$lib/InkButton.svelte';
+	import { Eye } from '@lucide/svelte';
 	import { board, questions, words, type QuestionCard, type WordCard } from '@repo/shared/data';
 	import type { User } from '@repo/shared/onlineGame';
-	import { sample, shuffle, uniq } from 'es-toolkit';
+	import { range, sample, shuffle, uniq } from 'es-toolkit';
 	import { onDestroy } from 'svelte';
 	import { assign, createActor, setup } from 'xstate';
 
@@ -32,6 +35,8 @@
 		invalid?: boolean;
 		questionId?: QuestionCard['id'];
 	};
+	type VoteAction = 'ask' | 'eyeHint' | 'guess';
+	type VoteState = { votes: User['id'][]; participating: User['id'][]; required: number };
 
 	interface TeamState {
 		spirit: User['id'];
@@ -41,13 +46,13 @@
 		spiritQuestionDiscards: Array<QuestionCard['id']>;
 		eyeUsedRows: number[];
 		board: BoardEntry[];
+		voting: Record<VoteAction, VoteState>;
 	}
 
 	interface GameContext {
 		currentTeam: Team;
 		wordCard: WordCard;
 		word: string;
-		debugHold: boolean;
 		discardedQuestionsDeck: Array<QuestionCard['id']>;
 		teams: Record<Team, TeamState>;
 	}
@@ -64,6 +69,7 @@
 		| { type: 'answer'; questionId: QuestionCard['id']; clue: string }
 		| { type: 'silencio' }
 		| { type: 'getClue' }
+		| { type: 'vote'; action: VoteAction; playerId: User['id'] }
 		| { type: 'debugSetState'; state: GameState; team: Team };
 
 	const teams = ['sun', 'moon'] as const;
@@ -156,8 +162,29 @@
 				if (event.type !== 'guessLetter') return {};
 				return updateLastGuess(context, event.letter, true);
 			}),
+			recordVote: assign(({ context, event }) => {
+				if (event.type !== 'vote') return {};
+
+				return updateTeam(context, context.currentTeam, team => {
+					const current = team.voting[event.action];
+					if (!current.participating.includes(event.playerId)) return team;
+
+					const votes = current.votes.includes(event.playerId)
+						? current.votes.filter(id => id !== event.playerId)
+						: [...current.votes, event.playerId];
+
+					return {
+						...team,
+						voting: {
+							...team.voting,
+							[event.action]: { ...current, votes },
+						},
+					};
+				});
+			}),
+			resetVotes: assign(({ context }) => resetTeamVotes(context, context.currentTeam)),
 			setupNextTurn: assign(({ context }) => ({
-				currentTeam: context.debugHold ? context.currentTeam : otherTeam(context.currentTeam),
+				currentTeam: otherTeam(context.currentTeam),
 			})),
 			debugSetTeam: assign(({ event }) => (event.type === 'debugSetState' ? { currentTeam: event.team } : {})),
 		},
@@ -182,11 +209,21 @@
 				},
 			},
 			mediumsTurn: {
-				entry: 'drawQuestionHand',
+				entry: ['drawQuestionHand', 'resetVotes'],
+				always: [
+					{ guard: ({ context }) => hasConsensus(context, 'ask'), target: 'mediumsAsk', actions: 'resetVotes' },
+					{
+						guard: ({ context }) => hasConsensus(context, 'eyeHint') && hasEyeHint(context),
+						target: 'eyeHint',
+						actions: 'resetVotes',
+					},
+					{ guard: ({ context }) => hasConsensus(context, 'guess'), target: 'guessing', actions: 'resetVotes' },
+				],
 				on: {
-					eyeHint: { guard: ({ context }) => hasEyeHint(context), target: 'eyeHint' },
-					guess: 'guessing',
-					ask: 'mediumsAsk',
+					vote: { actions: 'recordVote' },
+					eyeHint: { guard: ({ context }) => hasEyeHint(context), target: 'eyeHint', actions: 'resetVotes' },
+					guess: { target: 'guessing', actions: 'resetVotes' },
+					ask: { target: 'mediumsAsk', actions: 'resetVotes' },
 				},
 			},
 			eyeHint: {
@@ -247,11 +284,10 @@
 				always: [
 					{
 						guard: ({ context }) =>
-							!context.debugHold &&
-							(context.teams.sun.board.length < board.turns || context.teams.moon.board.length < board.turns),
+							context.teams.sun.board.length < board.turns || context.teams.moon.board.length < board.turns,
 						target: 'mediumsTurn',
 					},
-					{ guard: ({ context }) => !context.debugHold, target: 'lose' },
+					{ target: 'lose' },
 				],
 			},
 			win: {},
@@ -276,13 +312,13 @@
 		gameStates.includes(snapshot.value as GameState) ? (snapshot.value as GameState) : 'start',
 	);
 	let currentTeam = $derived(game.currentTeam);
+	let currentVoting = $derived(game.teams[currentTeam].voting);
 
 	function createInitialContext(): GameContext {
 		return {
 			currentTeam: 'sun',
 			wordCard: sample(words),
 			word: '',
-			debugHold: false,
 			discardedQuestionsDeck: [],
 			teams: {
 				sun: createTeamState([0, 1, 2]),
@@ -300,7 +336,20 @@
 			spiritQuestionDiscards: [],
 			eyeUsedRows: [],
 			board: [],
+			voting: createVoting(players),
 		};
+	}
+
+	function createVoting(players: Array<User['id']>): Record<VoteAction, VoteState> {
+		return {
+			ask: createVoteState(players),
+			eyeHint: createVoteState(players),
+			guess: createVoteState(players),
+		};
+	}
+
+	function createVoteState(players: Array<User['id']>): VoteState {
+		return { votes: [], participating: [...players], required: players.length };
 	}
 
 	function drawQuestionHand(context: GameContext): GameContext {
@@ -340,6 +389,10 @@
 				[team]: update(context.teams[team]),
 			},
 		};
+	}
+
+	function resetTeamVotes(context: GameContext, team: Team): GameContext {
+		return updateTeam(context, team, current => ({ ...current, voting: createVoting(current.players) }));
 	}
 
 	function revealClue(context: GameContext, clueId: string): GameContext {
@@ -427,6 +480,29 @@
 		);
 	}
 
+	function hasConsensus(context: GameContext, action: VoteAction): boolean {
+		const vote = context.teams[context.currentTeam].voting[action];
+		return vote.required > 0 && vote.votes.length >= vote.required;
+	}
+
+	function vote(action: VoteAction) {
+		actor.send({ type: 'vote', action, playerId: debugUser });
+	}
+
+	function canVote(action: VoteAction): boolean {
+		if (currentState !== 'mediumsTurn') return false;
+		if (action === 'eyeHint' && !hasEyeHint(game)) return false;
+		return currentVoting[action].participating.includes(debugUser);
+	}
+
+	function votingUsers(voting: VoteState): { voted: User[]; missing?: User[] } {
+		const voted = playerData.filter(user => voting.votes.includes(user.id));
+		const missing = playerData.filter(
+			user => voting.participating.includes(user.id) && !voting.votes.includes(user.id),
+		);
+		return missing.length ? { voted, missing } : { voted };
+	}
+
 	function otherTeam(team: Team): Team {
 		return team === 'sun' ? 'moon' : 'sun';
 	}
@@ -446,6 +522,17 @@
 			.trim()
 			.slice(0, 1);
 	}
+
+	const playerData: User[] = [
+		{ id: 0, name: 'one', color: 'ash', icon: 'angry' },
+		{ id: 1, name: 'two', color: 'bloodink', icon: 'bug' },
+		{ id: 2, name: 'three', color: 'bone', icon: 'cat' },
+		{ id: 3, name: 'four', color: 'brass', icon: 'drama' },
+		{ id: 4, name: 'five', color: 'ectoplasm', icon: 'fish' },
+		{ id: 5, name: 'six', color: 'haunt', icon: 'skull' },
+	];
+
+	let debugUser = $state<User['id']>(sample(playerData).id!);
 </script>
 
 <div class="debug-game">
@@ -478,11 +565,81 @@
 				{/each}
 			</div>
 		</div>
-		<button onclick={() => actor.send({ type: 'start' })}>{snapshot.matches('start') ? 'Start' : 'Reset'}</button>
+		<Avatar user={playerData.find(x => x.id === debugUser)!} />
+		<button onclick={() => actor.send({ type: 'start' })}>
+			{snapshot.matches('start') ? 'Start' : 'Reset'}
+		</button>
 	</header>
 
+	<div class="board">
+		<div class="board-row">
+			{#each teams as team}
+				<div class="flex gap-2" class:flex-row-reverse={team === 'moon'}>
+					{#each game.teams[team].players as playerId}
+						<Avatar
+							user={playerData.find(x => x.id === playerId)!}
+							onclick={() => (debugUser = playerId)}
+							class={game.teams[team].spirit === playerId ? 'underline' : ''}
+						/>
+					{/each}
+				</div>
+			{/each}
+		</div>
+		{#each range(board.turns) as turn}
+			<div class="board-row revere">
+				{#each teams as team}
+					{@const entry = game.teams[team].board[turn]}
+					<div class:flex-row-reverse={team === 'moon'}>
+						{#if board[team].hints.includes(turn)}
+							<Eye size={24} />
+						{:else}
+							<div style="width:24px; height:24px"></div>
+						{/if}
+						<span class:invalid={entry?.invalid} class:done={entry?.done}>
+							{entry?.value || '\u00a0'}
+						</span>
+					</div>
+				{/each}
+			</div>
+		{/each}
+	</div>
+
 	<div class="action-dock">
-		<div class="action-buttons">todo</div>
+		<div class="action-buttons">
+			<InkButton
+				size="lg"
+				primary
+				class="flex-1"
+				disabled={!canVote('ask')}
+				onclick={() => vote('ask')}
+				voteLabel="Ask"
+				voting={votingUsers(currentVoting.ask)}
+			>
+				Ask
+			</InkButton>
+			<InkButton
+				size="lg"
+				primary
+				class="flex-1"
+				disabled={!canVote('eyeHint')}
+				onclick={() => vote('eyeHint')}
+				voteLabel="Hint"
+				voting={votingUsers(currentVoting.eyeHint)}
+			>
+				Hint
+			</InkButton>
+			<InkButton
+				size="lg"
+				primary
+				class="flex-1"
+				disabled={!canVote('guess')}
+				onclick={() => vote('guess')}
+				voteLabel="Guess"
+				voting={votingUsers(currentVoting.guess)}
+			>
+				Guess
+			</InkButton>
+		</div>
 	</div>
 </div>
 
@@ -492,6 +649,20 @@
 		display: grid;
 		gap: 1rem;
 		color: var(--app-text);
+		padding-bottom: 4rem;
+	}
+
+	.board-row {
+		display: flex;
+		align-items: center;
+		border-bottom: 1px solid var(--app-border);
+		& > * {
+			flex: 1 1 0;
+			display: flex;
+			align-items: center;
+			padding: 0.25rem 0;
+			gap: 0.5rem;
+		}
 	}
 
 	button,
@@ -534,27 +705,20 @@
 	}
 
 	.action-dock {
-		position: sticky;
-		bottom: 0;
+		position: absolute;
+		right: -1rem;
+		bottom: -1rem;
+		left: -1rem;
 		z-index: 40;
-		margin-top: 1rem;
 		border-top: 1px solid var(--app-border);
 		background: var(--app-panel);
 		box-shadow: 0 -0.22rem 0.7rem color-mix(in srgb, black 14%, transparent);
-		padding: 0.55rem 1rem 0.65rem;
+		padding: 0.5rem 1rem;
 	}
 
 	.action-buttons {
 		display: flex;
 		gap: 0.5rem;
 		align-items: center;
-		justify-content: flex-end;
-		overflow-x: auto;
-	}
-
-	@media (max-width: 640px) {
-		.action-buttons {
-			justify-content: flex-start;
-		}
 	}
 </style>
