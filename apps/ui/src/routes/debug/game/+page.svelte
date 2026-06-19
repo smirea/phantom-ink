@@ -5,9 +5,10 @@
 	import { board, questions, words, type QuestionCard, type WordCard } from '@repo/shared/data';
 	import type { User } from '@repo/shared/onlineGame';
 	import type { Team } from '@repo/shared/types';
-	import { random, range, sample, sampleSize, shuffle, uniq } from 'es-toolkit';
+	import { range, sample, shuffle, uniq } from 'es-toolkit';
 	import { produce } from 'immer';
 	import { onDestroy } from 'svelte';
+	import { fly } from 'svelte/transition';
 	import { assign, createActor, enqueueActions, setup } from 'xstate';
 
 	const gameStates = [
@@ -551,6 +552,31 @@
 		return String(option).replace(/^\w/, match => match.toUpperCase());
 	}
 
+	function wordRunes(context: GameContext, wordIndex: number): string[] {
+		const seed = seededNumber(`${context.wordCardId}:${wordIndex}`);
+		const length = 6 + (seed % 5);
+		return range(length).map(index => config.runes[(seed + index * 19) % config.runes.length]);
+	}
+
+	function runeStyle(context: GameContext, wordIndex: number, runeIndex: number): string {
+		const seed = seededNumber(`${context.wordCardId}:${wordIndex}:${runeIndex}`);
+		const direction = seed % 2 ? 1 : -1;
+		return [
+			`--rune-delay: -${seed % 2600}ms`,
+			`--rune-duration: ${2400 + (seed % 900)}ms`,
+			`--rune-drift: ${direction}`,
+		].join('; ');
+	}
+
+	function seededNumber(value: string): number {
+		let hash = 2166136261;
+		for (let index = 0; index < value.length; index += 1) {
+			hash ^= value.charCodeAt(index);
+			hash = Math.imul(hash, 16777619);
+		}
+		return hash >>> 0;
+	}
+
 	function boardEntryId(team: Team, index: number): string {
 		return `${team}:${index}`;
 	}
@@ -597,7 +623,7 @@
 	});
 </script>
 
-<div class="debug-game">
+<div class="debug-game" data-state={currentState}>
 	<header class="top-bar">
 		<div class="debug-controls">
 			<select
@@ -667,23 +693,39 @@
 	</div>
 
 	{#if canSeeVote(currentState, 'pickWord')}
-		<div class="pick-word">
-			{#each wordCard(game).words as word, wordIndex}
-				<a onclick={() => actor.send({ type: 'vote', action: 'pickWord', option: wordIndex, userId: debugUser })}>
-					<span>
-						{#if canVote(currentState, game, 'pickWord', debugUser)}
-							{word}
-						{:else}
-							{sampleSize(config.runes, (3 + Math.random() * 10) | 0).join('')}
-						{/if}
-					</span>
-					{#each Object.entries(snapshot.context.voting.pickWord || {}) as [userId, votes]}
-						{#if votes?.includes(wordIndex)}
-							<Avatar user={playerData.find(x => x.id === Number(userId))!} name="before" />
-						{/if}
-					{/each}
-				</a>
-			{/each}
+		{@const canPickWord = canVote(currentState, game, 'pickWord', debugUser)}
+		<div class="pick-word-stage">
+			<div class="pick-word" data-can-vote={canPickWord}>
+				{#each wordCard(game).words as word, wordIndex}
+					{@const voteState = optionVoteState(currentState, game, 'pickWord', wordIndex)}
+					<button
+						class="word-option"
+						data-voted={voteState.voted.includes(debugUser)}
+						disabled={!canPickWord}
+						onclick={() => actor.send({ type: 'vote', action: 'pickWord', option: wordIndex, userId: debugUser })}
+						type="button"
+					>
+						<span class="word-option-label">
+							{#if canPickWord}
+								<span class="word-text">{word}</span>
+							{:else}
+								<span class="rune-word">
+									{#each wordRunes(game, wordIndex) as rune, runeIndex (`${game.wordCardId}:${wordIndex}:${runeIndex}`)}
+										<span class="rune" style={runeStyle(game, wordIndex, runeIndex)}>{rune}</span>
+									{/each}
+								</span>
+							{/if}
+						</span>
+						<span class="vote-stack">
+							{#each voteState.voted as userId (userId)}
+								<span class="vote-ghost" transition:fly={{ y: 16, duration: 260 }}>
+									<Avatar user={playerData.find(x => x.id === userId)!} name={false} />
+								</span>
+							{/each}
+						</span>
+					</button>
+				{/each}
+			</div>
 		</div>
 	{/if}
 
@@ -788,28 +830,312 @@
 	}
 
 	.pick-word {
-		display: flex;
-		flex-direction: column;
-		border: 1px solid var(--app-border);
-		background-color: red;
-		max-width: 20rem;
-		width: 100%;
+		position: relative;
+		display: grid;
+		gap: 0.55rem;
+		border: 1px solid color-mix(in oklab, var(--app-border) 76%, var(--app-accent) 24%);
+		border-radius: 0.5rem;
+		background:
+			radial-gradient(120% 80% at 12% -8%, color-mix(in oklab, var(--app-sun) 28%, transparent), transparent 48%),
+			radial-gradient(110% 90% at 94% 112%, color-mix(in oklab, var(--app-moon) 32%, transparent), transparent 54%),
+			linear-gradient(160deg, color-mix(in oklab, var(--app-panel) 90%, white 10%), var(--app-panel) 58%),
+			var(--app-panel);
+		box-shadow:
+			0 1.25rem 3rem color-mix(in oklab, black 46%, transparent),
+			0 0.28rem 0 color-mix(in oklab, black 28%, transparent),
+			inset 0 1px 0 color-mix(in oklab, white 12%, transparent),
+			inset 0 -1px 0 color-mix(in oklab, black 34%, transparent);
+		padding: 0.8rem;
+		overflow: hidden;
+		transform: translateY(0) scale(1);
+		transform-style: preserve-3d;
+		transition:
+			border-color 220ms ease,
+			box-shadow 260ms ease,
+			filter 260ms ease,
+			transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+	}
+
+	.pick-word-stage {
+		position: relative;
+		z-index: 3;
+		width: min(100%, 24rem);
 		margin: 0 auto;
+		perspective: 58rem;
+	}
 
-		a {
-			display: flex;
-			align-items: center;
-			background-color: blue;
-			padding: 0.5rem;
-			cursor: pointer;
-			margin: 0.25rem 0.5rem;
+	.debug-game[data-state='setupWord'] {
+		min-height: 34rem;
+	}
 
-			> :first-child {
-				flex: 1 1 0;
-			}
-			> :not(:first-child) {
-				flex: 0 0 auto;
-			}
+	.debug-game[data-state='setupWord'] .pick-word-stage {
+		position: absolute;
+		top: clamp(8.75rem, 25dvh, 10.75rem);
+		left: 50%;
+		width: min(calc(100% - 1rem), 24rem);
+		transform: translateX(-50%);
+	}
+
+	.pick-word-stage:hover .pick-word,
+	.pick-word-stage:focus-within .pick-word {
+		border-color: color-mix(in oklab, var(--app-focus) 54%, var(--app-border) 46%);
+		box-shadow:
+			0 1.7rem 3.6rem color-mix(in oklab, black 52%, transparent),
+			0 0.42rem 0 color-mix(in oklab, black 32%, transparent),
+			0 0 1.4rem color-mix(in oklab, var(--app-accent) 18%, transparent),
+			inset 0 1px 0 color-mix(in oklab, white 16%, transparent),
+			inset 0 -1px 0 color-mix(in oklab, black 38%, transparent);
+		filter: saturate(1.08);
+		transform: translateY(-0.32rem) scale(1.008);
+	}
+
+	.pick-word::before {
+		position: absolute;
+		inset: 0;
+		background:
+			linear-gradient(110deg, transparent 0 24%, color-mix(in oklab, white 12%, transparent) 32%, transparent 42%),
+			repeating-linear-gradient(28deg, color-mix(in oklab, white 4%, transparent) 0 1px, transparent 1px 6px);
+		opacity: 0.45;
+		pointer-events: none;
+		transform: translateZ(1.25rem);
+		content: '';
+	}
+
+	.pick-word::after {
+		position: absolute;
+		inset: auto 0 0;
+		height: 0.45rem;
+		background: linear-gradient(180deg, transparent, color-mix(in oklab, black 38%, transparent));
+		pointer-events: none;
+		content: '';
+	}
+
+	button.word-option {
+		position: relative;
+		z-index: 1;
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		min-height: 3rem;
+		border: 1px solid color-mix(in oklab, var(--app-border) 72%, transparent);
+		border-radius: 0.375rem;
+		background:
+			linear-gradient(180deg, color-mix(in oklab, var(--app-input) 86%, white 8%), var(--app-input)), var(--app-input);
+		box-shadow:
+			0 0.32rem 0.9rem color-mix(in oklab, black 22%, transparent),
+			inset 0 1px 0 color-mix(in oklab, white 8%, transparent);
+		color: var(--app-text);
+		cursor: pointer;
+		font: inherit;
+		padding: 0.62rem 0.8rem;
+		text-align: left;
+		transform: translateZ(0.65rem);
+		transform-style: preserve-3d;
+		transition:
+			background 200ms ease,
+			border-color 200ms ease,
+			box-shadow 220ms ease,
+			color 180ms ease,
+			transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+	}
+
+	button.word-option:hover:not(:disabled),
+	button.word-option:focus-visible {
+		border-color: color-mix(in oklab, var(--app-focus) 58%, var(--app-accent) 42%);
+		background:
+			radial-gradient(90% 120% at 12% 0%, color-mix(in oklab, var(--app-sun) 18%, transparent), transparent 48%),
+			linear-gradient(
+				180deg,
+				color-mix(in oklab, var(--app-input) 78%, var(--app-accent) 22%),
+				color-mix(in oklab, var(--app-input) 88%, black 12%)
+			);
+		box-shadow:
+			0 0.8rem 1.5rem color-mix(in oklab, black 30%, transparent),
+			0 0 0.95rem color-mix(in oklab, var(--app-accent) 18%, transparent),
+			inset 0 1px 0 color-mix(in oklab, white 12%, transparent);
+		transform: translateX(0.18rem) translateZ(1.55rem) scale(1.015);
+	}
+
+	button.word-option:active:not(:disabled) {
+		transform: translateX(0.08rem) translateZ(0.35rem) scale(0.99);
+	}
+
+	button.word-option:disabled {
+		opacity: 1;
+		cursor: default;
+	}
+
+	.pick-word[data-can-vote='false'] .word-option {
+		pointer-events: none;
+	}
+
+	button.word-option[data-voted='true'] {
+		border-color: color-mix(in oklab, var(--app-focus) 62%, var(--app-sun) 38%);
+		box-shadow:
+			0 0.7rem 1.4rem color-mix(in oklab, black 30%, transparent),
+			0 0 1rem color-mix(in oklab, var(--app-focus) 20%, transparent),
+			inset 0 1px 0 color-mix(in oklab, white 14%, transparent);
+		color: var(--logo-word);
+	}
+
+	.word-option-label {
+		display: flex;
+		align-items: center;
+		min-width: 0;
+		flex: 1 1 auto;
+	}
+
+	.word-text {
+		overflow: hidden;
+		font-family: 'Palatino Linotype', Georgia, var(--font-sans), serif;
+		font-size: 1.18rem;
+		font-weight: 800;
+		line-height: 1.05;
+		text-overflow: ellipsis;
+		text-shadow: 0 0.18rem 0.45rem color-mix(in oklab, black 34%, transparent);
+		white-space: nowrap;
+	}
+
+	.vote-stack {
+		display: flex;
+		align-items: flex-end;
+		justify-content: flex-end;
+		height: 1.6rem;
+		min-width: 2.6rem;
+		flex: 0 0 auto;
+		overflow: visible;
+		pointer-events: none;
+	}
+
+	.vote-ghost {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		will-change: opacity, transform;
+	}
+
+	.vote-ghost + .vote-ghost {
+		margin-left: -0.22rem;
+	}
+
+	.vote-ghost :global(.avatar) {
+		font-size: 1.45rem;
+		filter: drop-shadow(0 0.22rem 0.38rem color-mix(in oklab, black 42%, transparent))
+			drop-shadow(0 0 0.5rem color-mix(in oklab, var(--app-focus) 18%, transparent));
+	}
+
+	.rune-word {
+		display: inline-grid;
+		grid-auto-columns: 1ch;
+		grid-auto-flow: column;
+		gap: 0.08em;
+		min-width: 9ch;
+		color: color-mix(in oklab, var(--app-accent-strong) 72%, var(--app-focus) 28%);
+		font-family: var(--font-mono);
+		font-size: 1.22rem;
+		font-weight: 800;
+		line-height: 1;
+		text-shadow:
+			0 0 0.45rem color-mix(in oklab, var(--app-accent) 42%, transparent),
+			0 0.12rem 0.3rem color-mix(in oklab, black 42%, transparent);
+	}
+
+	.rune {
+		display: inline-block;
+		animation: rune-dance calc(var(--rune-duration) * 1.45) ease-in-out infinite;
+		animation-delay: var(--rune-delay);
+		transform-origin: center 58%;
+		will-change: filter, opacity, transform;
+	}
+
+	.rune:nth-child(3n + 2) {
+		animation-name: rune-swap;
+	}
+
+	.rune:nth-child(3n) {
+		animation-name: rune-float;
+	}
+
+	@keyframes rune-dance {
+		0%,
+		100% {
+			filter: brightness(1);
+			opacity: 0.78;
+			transform: translate3d(0, 0, 0.2rem) rotate(0deg);
+		}
+		28% {
+			filter: brightness(1.12);
+			opacity: 0.96;
+			transform: translate3d(calc(var(--rune-drift) * 0.26ch), -0.1rem, 0.45rem) rotate(3deg);
+		}
+		58% {
+			filter: brightness(0.92);
+			opacity: 0.86;
+			transform: translate3d(calc(var(--rune-drift) * -0.2ch), 0.08rem, 0.24rem) rotate(-3deg);
+		}
+	}
+
+	@keyframes rune-swap {
+		0%,
+		100% {
+			filter: brightness(0.95);
+			opacity: 0.76;
+			transform: translate3d(0, 0.04rem, 0.1rem) rotate(0deg);
+		}
+		35% {
+			filter: brightness(1.1);
+			opacity: 0.96;
+			transform: translate3d(calc(var(--rune-drift) * -0.3ch), -0.07rem, 0.44rem) rotate(-4deg);
+		}
+		68% {
+			filter: brightness(1.02);
+			opacity: 0.9;
+			transform: translate3d(calc(var(--rune-drift) * 0.24ch), 0.09rem, 0.28rem) rotate(3deg);
+		}
+	}
+
+	@keyframes rune-float {
+		0%,
+		100% {
+			filter: brightness(1);
+			opacity: 0.8;
+			transform: translate3d(0, 0, 0.2rem) rotate(0deg) scale(1);
+		}
+		42% {
+			filter: brightness(1.12);
+			opacity: 0.96;
+			transform: translate3d(calc(var(--rune-drift) * 0.18ch), -0.14rem, 0.48rem) rotate(3deg) scale(1.04);
+		}
+		72% {
+			filter: brightness(0.9);
+			opacity: 0.82;
+			transform: translate3d(calc(var(--rune-drift) * -0.16ch), 0.07rem, 0.24rem) rotate(-2deg) scale(0.99);
+		}
+	}
+
+	@media (max-width: 460px) {
+		.debug-game[data-state='setupWord'] {
+			min-height: 31rem;
+		}
+
+		.debug-game[data-state='setupWord'] .pick-word-stage {
+			top: 8.5rem;
+			width: min(calc(100% - 0.25rem), 22rem);
+		}
+
+		.pick-word {
+			gap: 0.45rem;
+			padding: 0.65rem;
+		}
+
+		button.word-option {
+			min-height: 2.75rem;
+			padding: 0.56rem 0.65rem;
+		}
+
+		.word-text,
+		.rune-word {
+			font-size: 1.03rem;
 		}
 	}
 </style>
