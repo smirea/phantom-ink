@@ -5,7 +5,7 @@
 	import { board, questions, words, type QuestionCard, type WordCard } from '@repo/shared/data';
 	import type { User } from '@repo/shared/onlineGame';
 	import type { Team } from '@repo/shared/types';
-	import { range, sample, shuffle, uniq } from 'es-toolkit';
+	import { random, range, sample, sampleSize, shuffle, uniq } from 'es-toolkit';
 	import { produce } from 'immer';
 	import { onDestroy } from 'svelte';
 	import { assign, createActor, enqueueActions, setup } from 'xstate';
@@ -73,6 +73,7 @@
 		questionsInHand: 7,
 		questionsGivenToSpirit: 2,
 		alphabet: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''),
+		runes: 'ᚠᚡᚢᚣᚤᚥᚦᚧᚨᚩᚪᚫᚬᚭᚮᚯᚰᚱᚲᚳᚴᚵᚶᚷᚸᚹᚺᚻᚼᚽᚾᚿᛀᛁᛂᛃᛄᛅᛆᛇᛈᛉᛊᛋᛌᛏᛐᛑᛒᛓᛔᛕᛖᛗᛘᛙᛚᛛᛜᛝᛞᛟᛠᛡᛢᛣᛤᛥᛦᛧᛨᛩᛪ'.split(''),
 	} as const;
 
 	type VoteType = 'pickWord' | 'mediumAction' | 'pickQuestions' | 'clue' | 'guessLetter' | 'pickHint';
@@ -667,15 +668,20 @@
 
 	{#if canSeeVote(currentState, 'pickWord')}
 		<div class="pick-word">
-			{#each wordCard(game).words as w}
-				<a>
+			{#each wordCard(game).words as word, wordIndex}
+				<a onclick={() => actor.send({ type: 'vote', action: 'pickWord', option: wordIndex, userId: debugUser })}>
 					<span>
 						{#if canVote(currentState, game, 'pickWord', debugUser)}
-							{w}
+							{word}
 						{:else}
-							‡‡‡‡
+							{sampleSize(config.runes, (3 + Math.random() * 10) | 0).join('')}
 						{/if}
 					</span>
+					{#each Object.entries(snapshot.context.voting.pickWord || {}) as [userId, votes]}
+						{#if votes?.includes(wordIndex)}
+							<Avatar user={playerData.find(x => x.id === Number(userId))!} name="before" />
+						{/if}
+					{/each}
 				</a>
 			{/each}
 		</div>
@@ -786,11 +792,24 @@
 		flex-direction: column;
 		border: 1px solid var(--app-border);
 		background-color: red;
+		max-width: 20rem;
+		width: 100%;
+		margin: 0 auto;
 
 		a {
+			display: flex;
+			align-items: center;
 			background-color: blue;
 			padding: 0.5rem;
-			margin: 0.25rem;
+			cursor: pointer;
+			margin: 0.25rem 0.5rem;
+
+			> :first-child {
+				flex: 1 1 0;
+			}
+			> :not(:first-child) {
+				flex: 0 0 auto;
+			}
 		}
 	}
 </style>
