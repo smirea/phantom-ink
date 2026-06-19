@@ -3,11 +3,11 @@
 	import InkButton from '$lib/InkButton.svelte';
 	import { Eye } from '@lucide/svelte';
 	import { board, questions, words, type QuestionCard, type WordCard } from '@repo/shared/data';
-	import type { Team, User } from '@repo/shared';
-	import { omit, range, sample, shuffle, uniq } from 'es-toolkit';
+	import type { User } from '@repo/shared/onlineGame';
+	import type { Team } from '@repo/shared/types';
+	import { range, sample, shuffle, uniq } from 'es-toolkit';
 	import { onDestroy } from 'svelte';
 	import { assign, createActor, enqueueActions, setup } from 'xstate';
-	import { produce } from 'immer';
 
 	const gameStates = [
 		'start',
@@ -35,6 +35,7 @@
 		questionId?: QuestionCard['id'];
 	};
 	type VoteState = { voted: User['id'][]; eligible: User[]; required: number };
+	type VoteOption = number | string;
 
 	interface TeamState {
 		spirit: User['id'];
@@ -44,7 +45,7 @@
 		spiritQuestionDiscards: Array<QuestionCard['id']>;
 		eyeUsedRows: number[];
 		board: BoardEntry[];
-		voting: Partial<Record<VoteType, Record<User['id'], string[]>>>;
+		voting: Partial<Record<VoteType, Partial<Record<User['id'], VoteOption[]>>>>;
 	}
 
 	interface GameContext {
@@ -67,7 +68,7 @@
 		| { type: 'answer'; questionId: QuestionCard['id']; clue: string }
 		| { type: 'silencio' }
 		| { type: 'getClue' }
-		| { type: 'vote'; action: VoteType; userId: User['id'] }
+		| { type: 'vote'; action: VoteType; option: VoteOption; userId: User['id'] }
 		| { type: 'debugSetState'; state: GameState; team: Team };
 
 	const teams = ['sun', 'moon'] as const;
@@ -91,37 +92,37 @@
 			activeState: 'setupWord',
 			mode: 'anySpirit',
 			count: 1,
-			choices: range(5),
+			choices: (ctx: GameContext) => range(ctx.wordCard.words.length),
 		},
 		mediumAction: {
 			activeState: 'mediumsTurn',
 			mode: 'activeMedium',
 			count: 1,
-			choices: ['ask', 'guess', 'eyeHint'] satisfies Array<GameEvent['type']>,
+			choices: (ctx: GameContext) => (hasEyeHint(ctx) ? ['ask', 'guess', 'eyeHint'] : ['ask', 'guess']),
 		},
 		pickQuestions: {
 			activeState: 'mediumsAsk',
 			mode: 'activeMedium',
 			count: config.questionsGivenToSpirit,
-			choices: range(config.questionsInHand),
+			choices: (ctx: GameContext) => range(ctx.teams[ctx.currentTeam].questions.length),
 		},
 		clue: {
 			activeState: 'mediumsGetClues',
 			mode: 'activeMedium',
 			count: 1,
-			choices: ['getClue', 'silencio'] satisfies Array<GameEvent['type']>,
+			choices: () => ['getClue', 'silencio'],
 		},
 		guessLetter: {
 			activeState: 'guessing',
 			mode: 'activeMedium',
 			count: 1,
-			choices: config.alphabet,
+			choices: () => config.alphabet,
 		},
 		pickHint: {
 			activeState: 'eyeHint',
 			mode: 'activeMedium',
 			count: 1,
-			choices: teams.map(t => range(7).map(i => `${t}:${i}` as const)).flat(),
+			choices: (ctx: GameContext) => getRevealableClues(ctx).map(clue => clue.id),
 		},
 	} satisfies Record<
 		VoteType,
@@ -129,8 +130,7 @@
 			activeState: GameState;
 			mode: 'anySpirit' | 'activeMedium';
 			count: number;
-			choices: string[] | number[];
-			canVote?: (u: User['id']) => boolean;
+			choices: (ctx: GameContext) => VoteOption[];
 		}
 	>;
 
@@ -229,13 +229,16 @@
 			recordVote: enqueueActions(({ self, context, event, enqueue }) => {
 				if (event.type !== 'vote') return {};
 
-				const nextContext = toggleVote(self.getSnapshot().value, context, event.action, event.userId);
-				const concluded = hasConsensus(nextContext, event.action);
-				enqueue.assign(() => (concluded ? clearVote(nextContext, event.action) : nextContext));
-				if (concluded) enqueue.raise({ type: event.action });
+				const state = self.getSnapshot().value as GameState;
+				const nextContext = toggleVote(state, context, event.action, event.userId, event.option);
+				if (nextContext === context) return;
+
+				const nextEvent = consensusEvent(state, nextContext, event.action);
+				enqueue.assign(() => (nextEvent ? clearVote(nextContext, event.action) : nextContext));
+				if (nextEvent) enqueue.raise(nextEvent);
 			}),
 			setupNextTurn: assign(({ context }) => ({
-				currentTeam: otherTeam(context.currentTeam),
+				currentTeam: context.currentTeam === 'sun' ? 'moon' : 'sun',
 			})),
 			debugSetTeam: assign(({ event }) => (event.type === 'debugSetState' ? { currentTeam: event.team } : {})),
 		},
@@ -256,6 +259,7 @@
 			setupWord: {
 				entry: 'pickWordCard',
 				on: {
+					vote: { actions: 'recordVote' },
 					pickWord: { target: 'mediumsTurn', actions: 'setWord' },
 				},
 			},
@@ -270,12 +274,14 @@
 			},
 			eyeHint: {
 				on: {
+					vote: { actions: 'recordVote' },
 					pickHint: { target: 'mediumsTurn', actions: 'giveEyeHint' },
 				},
 			},
 			guessing: {
 				entry: 'startGuess',
 				on: {
+					vote: { actions: 'recordVote' },
 					guessLetter: [
 						{
 							guard: ({ context, event }) =>
@@ -294,6 +300,7 @@
 			},
 			mediumsAsk: {
 				on: {
+					vote: { actions: 'recordVote' },
 					pickQuestions: { target: 'spiritAnswers', actions: 'pickQuestions' },
 				},
 			},
@@ -311,6 +318,7 @@
 					target: 'nextTurn',
 				},
 				on: {
+					vote: { actions: 'recordVote' },
 					getClue: {
 						guard: ({ context }) => {
 							const clue = getCurrentClue(context);
@@ -426,30 +434,40 @@
 		context: GameContext,
 		v: V,
 		userId: User['id'],
-		option: (typeof votingConfig)[V]['choices'][number],
+		option: VoteOption,
 	): GameContext {
-		if (!canVote(s, context, v, userId)) return context;
+		const voteConfig = votingConfig[v];
+		const choices: VoteOption[] = voteConfig.choices(context);
+		if (!canVote(s, context, v, userId) || !choices.includes(option)) return context;
 
 		return updateTeam(context, context.currentTeam, team => {
 			const current = team.voting[v]?.[userId] || [];
-			const o = option as any;
-			const voted = current?.includes(o) ? current.filter(item => item !== o) : [...current, userId];
-			return produce(team, draft => {
-				if (voted.length) {
-					team.voting[v] ||= {};
-					team.voting[v][userId] = voted as any;
-				} else if (team.voting[v]) {
-					delete team.voting[v][userId];
-				}
-			});
+			const voted = current.includes(option)
+				? current.filter(item => item !== option)
+				: [...current, option].slice(-voteConfig.count);
+			const bucket: Partial<Record<User['id'], VoteOption[]>> = { ...team.voting[v] };
+			if (voted.length) {
+				bucket[userId] = voted;
+			} else {
+				delete bucket[userId];
+			}
+
+			return {
+				...team,
+				voting: Object.keys(bucket).length ? { ...team.voting, [v]: bucket } : omitVote(team.voting, v),
+			};
 		});
 	}
 
 	function clearVote(context: GameContext, action: VoteType): GameContext {
 		return updateTeam(context, context.currentTeam, team => {
-			const { [action]: _concluded, ...voting } = team.voting;
-			return { ...team, voting };
+			return { ...team, voting: omitVote(team.voting, action) };
 		});
+	}
+
+	function omitVote(voting: TeamState['voting'], action: VoteType): TeamState['voting'] {
+		const { [action]: _concluded, ...rest } = voting;
+		return rest;
 	}
 
 	function revealClue(context: GameContext, clueId: string): GameContext {
@@ -537,23 +555,65 @@
 		);
 	}
 
-	function hasConsensus(context: GameContext, action: VoteType): boolean {
-		const voting = voteState(context, action);
-		return voting.required > 0 && voting.voted.length >= voting.required;
+	function consensusEvent(state: GameState, context: GameContext, action: VoteType): GameEvent | null {
+		const options = consensusOptions(state, context, action);
+		if (options.length !== votingConfig[action].count) return null;
+
+		const team = context.teams[context.currentTeam];
+		const [option] = options;
+		switch (action) {
+			case 'pickWord':
+				return typeof option === 'number' ? { type: 'pickWord', word: context.wordCard.words[option] } : null;
+			case 'mediumAction':
+				return option === 'ask' || option === 'guess' || option === 'eyeHint' ? { type: option } : null;
+			case 'pickQuestions': {
+				const questionIds = options
+					.filter((value): value is number => typeof value === 'number')
+					.map(index => team.questions[index])
+					.filter((id): id is QuestionCard['id'] => Boolean(id));
+				return questionIds.length === config.questionsGivenToSpirit
+					? { type: 'pickQuestions', questionIds: [questionIds[0], questionIds[1]] }
+					: null;
+			}
+			case 'clue':
+				return option === 'getClue' || option === 'silencio' ? { type: option } : null;
+			case 'guessLetter':
+				return typeof option === 'string' ? { type: 'guessLetter', letter: option } : null;
+			case 'pickHint':
+				return typeof option === 'string' ? { type: 'pickHint', clueId: option } : null;
+		}
 	}
 
-	function vote(action: VoteType) {
-		actor.send({ type: 'vote', action, userId: debugUser });
-	}
-
-	function voteState(s: GameState, context: GameContext, action: VoteType): VoteState {
-		const voted = context.teams[context.currentTeam].voting[action] ?? [];
+	function optionVoteState(s: GameState, context: GameContext, action: VoteType, option: VoteOption): VoteState {
+		const selected = context.teams[context.currentTeam].voting[action] ?? {};
 		const eligible = playerData.filter(user => canVote(s, context, action, user.id));
+		const voted = eligible.filter(user => selected[user.id]?.includes(option)).map(user => user.id);
 		return { voted, eligible, required: eligible.length };
 	}
 
-	function otherTeam(team: Team): Team {
-		return team === 'sun' ? 'moon' : 'sun';
+	function consensusOptions(s: GameState, context: GameContext, action: VoteType): VoteOption[] {
+		const voteConfig = votingConfig[action];
+		const eligible = playerData.filter(user => canVote(s, context, action, user.id));
+		if (!eligible.length) return [];
+
+		const selected = context.teams[context.currentTeam].voting[action] ?? {};
+		if (eligible.some(user => (selected[user.id]?.length ?? 0) < voteConfig.count)) return [];
+
+		const counts = new Map<VoteOption, number>();
+		for (const user of eligible) {
+			for (const option of selected[user.id] ?? []) {
+				counts.set(option, (counts.get(option) ?? 0) + 1);
+			}
+		}
+
+		return votingConfig[action]
+			.choices(context)
+			.filter(option => counts.get(option) === eligible.length)
+			.slice(0, voteConfig.count);
+	}
+
+	function voteLabel(option: VoteOption): string {
+		return String(option).replace(/^\w/, match => match.toUpperCase());
 	}
 
 	function sanitizePhrase(value: string): string {
@@ -587,11 +647,6 @@
 		type: 'debugSetState',
 		state: 'mediumsTurn',
 		team: 'sun',
-	});
-
-	const v = $derived({
-		canSeeVote: (v: VoteType) => canSeeVote(snapshot.value, v),
-		canVote: (v: VoteType, id: User['id']) => canVote(snapshot.value, snapshot.context, v, id),
 	});
 </script>
 
@@ -664,45 +719,25 @@
 		{/each}
 	</div>
 
-	<div class="action-dock" class:hidden={!v.canSeeVote('mediumAction')}>
-		<div class="action-buttons">
-			{#if v.canSeeVote('mediumAction')}
-				<InkButton
-					size="lg"
-					primary
-					class="flex-1"
-					disabled={!v.canVote('mediumAction', debugUser)}
-					onclick={() => vote('ask')}
-					voteLabel="Ask"
-					voting={voteState(game, 'ask')}
-				>
-					Ask
-				</InkButton>
-				<InkButton
-					size="lg"
-					primary
-					class="flex-1"
-					disabled={!v.canVote('mediumAction', debugUser)}
-					onclick={() => vote('eyeHint')}
-					voteLabel="Hint"
-					voting={voteState(game, 'eyeHint')}
-				>
-					Hint
-				</InkButton>
-				<InkButton
-					size="lg"
-					primary
-					class="flex-1"
-					disabled={!v.canVote('mediumAction', debugUser)}
-					onclick={() => vote('guess')}
-					voteLabel="Guess"
-					voting={voteState(game, 'guess')}
-				>
-					Guess
-				</InkButton>
-			{/if}
+	{#if canSeeVote(currentState, 'mediumAction')}
+		<div class="action-dock">
+			<div class="action-buttons">
+				{#each votingConfig.mediumAction.choices(game) as option}
+					<InkButton
+						size="lg"
+						primary
+						class="flex-1"
+						disabled={!canVote(currentState, game, 'mediumAction', debugUser)}
+						onclick={() => actor.send({ type: 'vote', action: 'mediumAction', option, userId: debugUser })}
+						voteLabel={voteLabel(option)}
+						voting={optionVoteState(currentState, game, 'mediumAction', option)}
+					>
+						{voteLabel(option)}
+					</InkButton>
+				{/each}
+			</div>
 		</div>
-	</div>
+	{/if}
 </div>
 
 <style>

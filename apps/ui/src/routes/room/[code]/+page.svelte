@@ -13,10 +13,10 @@
 		type RoomMemberView,
 		type RoomViewState,
 		type RoomVoteSummary,
-		type Team,
 		type User,
 		type WordMode,
 	} from '@repo/shared/onlineGame';
+	import type { Team } from '@repo/shared/types';
 	import Check from '@lucide/svelte/icons/check';
 	import CircleDashed from '@lucide/svelte/icons/circle-dashed';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
