@@ -6,6 +6,7 @@
 	import type { User } from '@repo/shared/onlineGame';
 	import type { Team } from '@repo/shared/types';
 	import { range, sample, shuffle, uniq } from 'es-toolkit';
+	import { produce } from 'immer';
 	import { onDestroy } from 'svelte';
 	import { assign, createActor, enqueueActions, setup } from 'xstate';
 
@@ -78,13 +79,6 @@
 		alphabet: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''),
 	} as const;
 
-	const isYourTurn = (ctx: GameContext, id: User['id']) => ctx.teams[ctx.currentTeam].players.includes(id);
-	const yourTeam = (ctx: GameContext, id: User['id']) =>
-		ctx.teams.sun.players.includes(id) ? ctx.teams.sun : ctx.teams.moon;
-	const youAreSpirit = (ctx: GameContext, id: User['id']) => yourTeam(ctx, id).spirit === id;
-	const youAreMedium = (ctx: GameContext, id: User['id']) => !youAreSpirit(ctx, id);
-	const inState = (...states: GameState[]) => states.some(x => snapshot.value === x);
-
 	type VoteType = 'pickWord' | 'mediumAction' | 'pickQuestions' | 'clue' | 'guessLetter' | 'pickHint';
 
 	const votingConfig = {
@@ -98,7 +92,7 @@
 			activeState: 'mediumsTurn',
 			mode: 'activeMedium',
 			count: 1,
-			choices: (ctx: GameContext) => (hasEyeHint(ctx) ? ['ask', 'guess', 'eyeHint'] : ['ask', 'guess']),
+			choices: (ctx: GameContext) => (hasEyeHint(ctx) ? ['ask', 'eyeHint', 'guess'] : ['ask', 'guess']),
 		},
 		pickQuestions: {
 			activeState: 'mediumsAsk',
@@ -135,12 +129,18 @@
 	>;
 
 	const canSeeVote = (state: GameState, voteId: VoteType) => votingConfig[voteId].activeState === state;
-	const canVote = (state: GameState, ctx: GameContext, voteId: VoteType, id: User['id']) =>
-		canSeeVote(state, voteId) &&
-		{
-			anySpirit: () => youAreSpirit(ctx, id),
-			activeMedium: () => isYourTurn(ctx, id) && youAreMedium(ctx, id),
-		}[votingConfig[voteId].mode]();
+
+	function canVote(state: GameState, ctx: GameContext, voteId: VoteType, id: User['id']): boolean {
+		if (!canSeeVote(state, voteId)) return false;
+
+		if (votingConfig[voteId].mode === 'anySpirit') {
+			const team = ctx.teams.sun.players.includes(id) ? ctx.teams.sun : ctx.teams.moon;
+			return team.spirit === id;
+		}
+
+		const team = ctx.teams[ctx.currentTeam];
+		return team.players.includes(id) && team.spirit !== id;
+	}
 
 	const gameMachine = setup({
 		types: {
@@ -149,7 +149,7 @@
 		},
 		actions: {
 			setupGame: assign(() => createInitialContext()),
-			pickWordCard: assign(({ context }) => ({ wordCard: sample(words), word: context.word })),
+			pickWordCard: assign(() => ({ wordCard: sample(words) })),
 			setWord: assign(({ event }) => {
 				if (event.type !== 'pickWord') return {};
 				return { currentTeam: 'sun' as Team, word: sanitizePhrase(event.word) };
@@ -158,50 +158,44 @@
 			pickQuestions: assign(({ context, event }) => {
 				if (event.type !== 'pickQuestions') return {};
 				const picked = event.questionIds.slice(0, config.questionsGivenToSpirit);
-				return updateTeam(context, context.currentTeam, team => ({
-					...team,
-					questions: team.questions.filter(id => !picked.includes(id)),
-					spiritQuestionPicks: picked,
-					spiritQuestionDiscards: [],
-				}));
+				return produce(context, draft => {
+					const team = draft.teams[draft.currentTeam];
+					team.questions = team.questions.filter(id => !picked.includes(id));
+					team.spiritQuestionPicks = picked;
+					team.spiritQuestionDiscards = [];
+				});
 			}),
 			answerQuestion: assign(({ context, event }) => {
 				if (event.type !== 'answer') return {};
-				const teamKey = context.currentTeam;
-				const team = context.teams[teamKey];
-				const questionId = team.spiritQuestionPicks.includes(event.questionId)
-					? event.questionId
-					: team.spiritQuestionPicks[0];
-				if (!questionId) return {};
+				return produce(context, draft => {
+					const teamKey = draft.currentTeam;
+					const team = draft.teams[teamKey];
+					const questionId = team.spiritQuestionPicks.includes(event.questionId)
+						? event.questionId
+						: team.spiritQuestionPicks[0];
+					if (!questionId) return;
 
-				const clue = sanitizePhrase(event.clue);
-				const nextEntry: BoardEntry = {
-					id: `${teamKey}-${team.board.length}`,
-					type: 'hint',
-					value: '',
-					fullValue: clue,
-					revealed: 0,
-					questionId,
-				};
-
-				return {
-					...updateTeam(context, teamKey, current => ({
-						...current,
-						spiritQuestionDiscards: current.spiritQuestionPicks.filter(id => id !== questionId),
-						spiritQuestionPicks: [],
-						board: [...current.board, nextEntry],
-					})),
-					discardedQuestionsDeck: uniq([...context.discardedQuestionsDeck, ...team.spiritQuestionPicks]),
-				};
+					team.board.push({
+						id: `${teamKey}-${team.board.length}`,
+						type: 'hint',
+						value: '',
+						fullValue: sanitizePhrase(event.clue),
+						revealed: 0,
+						questionId,
+					});
+					team.spiritQuestionDiscards = team.spiritQuestionPicks.filter(id => id !== questionId);
+					draft.discardedQuestionsDeck = uniq([...draft.discardedQuestionsDeck, ...team.spiritQuestionPicks]);
+					team.spiritQuestionPicks = [];
+				});
 			}),
 			giveEyeHint: assign(({ context, event }) => {
 				if (event.type !== 'pickHint') return {};
 				const row = context.teams[context.currentTeam].board.length;
 				const revealed = revealClue(context, event.clueId);
-				return updateTeam(revealed, context.currentTeam, team => ({
-					...team,
-					eyeUsedRows: uniq([...team.eyeUsedRows, row]),
-				}));
+				return produce(revealed, draft => {
+					const team = draft.teams[draft.currentTeam];
+					team.eyeUsedRows = uniq([...team.eyeUsedRows, row]);
+				});
 			}),
 			giveNextLetterClue: assign(({ context }) => {
 				const clue = getCurrentClue(context);
@@ -216,7 +210,9 @@
 					type: 'guess',
 					value: '',
 				};
-				return updateTeam(context, teamKey, current => ({ ...current, board: [...current.board, entry] }));
+				return produce(context, draft => {
+					draft.teams[teamKey].board.push(entry);
+				});
 			}),
 			recordCorrectGuessLetter: assign(({ context, event }) => {
 				if (event.type !== 'guessLetter') return {};
@@ -234,7 +230,13 @@
 				if (nextContext === context) return;
 
 				const nextEvent = consensusEvent(state, nextContext, event.action);
-				enqueue.assign(() => (nextEvent ? clearVote(nextContext, event.action) : nextContext));
+				enqueue.assign(() => {
+					if (!nextEvent) return nextContext;
+
+					return produce(nextContext, draft => {
+						delete draft.teams[draft.currentTeam].voting[event.action];
+					});
+				});
 				if (nextEvent) enqueue.raise(nextEvent);
 			}),
 			setupNextTurn: assign(({ context }) => ({
@@ -248,6 +250,7 @@
 		initial: 'start',
 		on: {
 			start: { target: '.setupWord', actions: 'setupGame' },
+			vote: { actions: 'recordVote' },
 			debugSetState: gameStates.map(state => ({
 				guard: ({ event }) => event.type === 'debugSetState' && event.state === state,
 				target: `.${state}`,
@@ -259,14 +262,12 @@
 			setupWord: {
 				entry: 'pickWordCard',
 				on: {
-					vote: { actions: 'recordVote' },
 					pickWord: { target: 'mediumsTurn', actions: 'setWord' },
 				},
 			},
 			mediumsTurn: {
 				entry: 'drawQuestionHand',
 				on: {
-					vote: { actions: 'recordVote' },
 					eyeHint: { guard: ({ context }) => hasEyeHint(context), target: 'eyeHint' },
 					guess: 'guessing',
 					ask: 'mediumsAsk',
@@ -274,14 +275,12 @@
 			},
 			eyeHint: {
 				on: {
-					vote: { actions: 'recordVote' },
 					pickHint: { target: 'mediumsTurn', actions: 'giveEyeHint' },
 				},
 			},
 			guessing: {
 				entry: 'startGuess',
 				on: {
-					vote: { actions: 'recordVote' },
 					guessLetter: [
 						{
 							guard: ({ context, event }) =>
@@ -300,7 +299,6 @@
 			},
 			mediumsAsk: {
 				on: {
-					vote: { actions: 'recordVote' },
 					pickQuestions: { target: 'spiritAnswers', actions: 'pickQuestions' },
 				},
 			},
@@ -318,7 +316,6 @@
 					target: 'nextTurn',
 				},
 				on: {
-					vote: { actions: 'recordVote' },
 					getClue: {
 						guard: ({ context }) => {
 							const clue = getCurrentClue(context);
@@ -358,11 +355,8 @@
 	});
 
 	const game = $derived(snapshot.context);
-	const currentState = $derived(
-		gameStates.includes(snapshot.value as GameState) ? (snapshot.value as GameState) : 'start',
-	);
+	const currentState = $derived(snapshot.value as GameState);
 	const currentTeamName = $derived(game.currentTeam);
-	const currentTeam = $derived(game.teams[currentTeamName]);
 
 	function createInitialContext(): GameContext {
 		return {
@@ -410,23 +404,10 @@
 			.slice(0, needed)
 			.map(question => question.id);
 
-		return {
-			...updateTeam(context, context.currentTeam, current => ({
-				...current,
-				questions: [...current.questions, ...drawn],
-			})),
-			discardedQuestionsDeck,
-		};
-	}
-
-	function updateTeam(context: GameContext, team: Team, update: (team: TeamState) => TeamState): GameContext {
-		return {
-			...context,
-			teams: {
-				...context.teams,
-				[team]: update(context.teams[team]),
-			},
-		};
+		return produce(context, draft => {
+			draft.discardedQuestionsDeck = discardedQuestionsDeck;
+			draft.teams[draft.currentTeam].questions.push(...drawn);
+		});
 	}
 
 	function toggleVote<V extends VoteType>(
@@ -440,101 +421,67 @@
 		const choices: VoteOption[] = voteConfig.choices(context);
 		if (!canVote(s, context, v, userId) || !choices.includes(option)) return context;
 
-		return updateTeam(context, context.currentTeam, team => {
-			const current = team.voting[v]?.[userId] || [];
+		return produce(context, draft => {
+			const voting = draft.teams[draft.currentTeam].voting;
+			const votes = (voting[v] ??= {}) as Partial<Record<User['id'], VoteOption[]>>;
+			const current = votes[userId] ?? [];
 			const voted = current.includes(option)
 				? current.filter(item => item !== option)
 				: [...current, option].slice(-voteConfig.count);
-			const bucket: Partial<Record<User['id'], VoteOption[]>> = { ...team.voting[v] };
 			if (voted.length) {
-				bucket[userId] = voted;
+				votes[userId] = voted;
 			} else {
-				delete bucket[userId];
+				delete votes[userId];
 			}
 
-			return {
-				...team,
-				voting: Object.keys(bucket).length ? { ...team.voting, [v]: bucket } : omitVote(team.voting, v),
-			};
+			if (!Object.keys(votes).length) {
+				delete voting[v];
+			}
 		});
-	}
-
-	function clearVote(context: GameContext, action: VoteType): GameContext {
-		return updateTeam(context, context.currentTeam, team => {
-			return { ...team, voting: omitVote(team.voting, action) };
-		});
-	}
-
-	function omitVote(voting: TeamState['voting'], action: VoteType): TeamState['voting'] {
-		const { [action]: _concluded, ...rest } = voting;
-		return rest;
 	}
 
 	function revealClue(context: GameContext, clueId: string): GameContext {
-		for (const teamKey of teams) {
-			const index = context.teams[teamKey].board.findIndex(entry => entry.id === clueId);
-			if (index === -1) continue;
-
-			return updateTeam(context, teamKey, team => {
-				const entry = team.board[index];
-				if (!entry || entry.type !== 'hint') return team;
+		return produce(context, draft => {
+			for (const teamKey of teams) {
+				const entry = draft.teams[teamKey].board.find(entry => entry.id === clueId);
+				if (!entry || entry.type !== 'hint') continue;
 
 				const fullValue = entry.fullValue ?? '';
 				const currentRevealed = entry.revealed ?? 0;
 				const revealed = Math.min(currentRevealed + 1, fullValue.length);
 				const value = currentRevealed >= fullValue.length ? `${fullValue}.` : fullValue.slice(0, revealed);
-				const nextEntry = {
-					...entry,
-					revealed,
-					value,
-					done: value.endsWith('.'),
-				};
-
-				return {
-					...team,
-					board: team.board.map((entry, entryIndex) => (entryIndex === index ? nextEntry : entry)),
-				};
-			});
-		}
-
-		return context;
+				entry.revealed = revealed;
+				entry.value = value;
+				entry.done = value.endsWith('.');
+				return;
+			}
+		});
 	}
 
 	function updateLastGuess(context: GameContext, letter: string, invalid = false): GameContext {
-		const teamKey = context.currentTeam;
-		const team = context.teams[teamKey];
-		const index = team.board.length - 1;
-		const entry = team.board[index];
 		const nextLetter = sanitizeGuessLetter(letter);
-		if (!entry || entry.type !== 'guess' || !nextLetter) return context;
+		if (!nextLetter) return context;
 
-		const nextEntry = {
-			...entry,
-			value: `${entry.value}${nextLetter}`,
-			done: !invalid && `${entry.value}${nextLetter}` === context.word,
-			invalid,
-		};
+		return produce(context, draft => {
+			const entry = draft.teams[draft.currentTeam].board.at(-1);
+			if (!entry || entry.type !== 'guess') return;
 
-		return updateTeam(context, teamKey, current => ({
-			...current,
-			board: current.board.map((entry, entryIndex) => (entryIndex === index ? nextEntry : entry)),
-		}));
+			const value = `${entry.value}${nextLetter}`;
+			entry.value = value;
+			entry.done = !invalid && value === draft.word;
+			entry.invalid = invalid;
+		});
 	}
 
 	function nextGuess(context: GameContext, letter: string): { value: string; valid: boolean } {
-		const entry = getCurrentGuess(context);
-		const value = `${entry?.value ?? ''}${sanitizeGuessLetter(letter)}`;
+		const entry = context.teams[context.currentTeam].board.at(-1);
+		const value = `${entry?.type === 'guess' ? entry.value : ''}${sanitizeGuessLetter(letter)}`;
 		return { value, valid: Boolean(value) && context.word.startsWith(value) };
 	}
 
 	function getCurrentClue(context: GameContext): BoardEntry | null {
 		const entry = context.teams[context.currentTeam].board.at(-1);
 		return entry?.type === 'hint' ? entry : null;
-	}
-
-	function getCurrentGuess(context: GameContext): BoardEntry | null {
-		const entry = context.teams[context.currentTeam].board.at(-1);
-		return entry?.type === 'guess' ? entry : null;
 	}
 
 	function getRevealableClues(context: GameContext): Array<BoardEntry & { team: Team }> {
@@ -571,8 +518,9 @@
 					.filter((value): value is number => typeof value === 'number')
 					.map(index => team.questions[index])
 					.filter((id): id is QuestionCard['id'] => Boolean(id));
-				return questionIds.length === config.questionsGivenToSpirit
-					? { type: 'pickQuestions', questionIds: [questionIds[0], questionIds[1]] }
+				const [first, second] = questionIds;
+				return first !== undefined && second !== undefined
+					? { type: 'pickQuestions', questionIds: [first, second] }
 					: null;
 			}
 			case 'clue':
@@ -701,7 +649,7 @@
 			{/each}
 		</div>
 		{#each range(board.turns) as turn}
-			<div class="board-row revere">
+			<div class="board-row">
 				{#each teams as team}
 					{@const entry = game.teams[team].board[turn]}
 					<div class:flex-row-reverse={team === 'moon'}>
