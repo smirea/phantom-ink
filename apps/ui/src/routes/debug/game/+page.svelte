@@ -74,7 +74,7 @@
 		questionsInHand: 7,
 		questionsGivenToSpirit: 2,
 		alphabet: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''),
-		runes: 'ᚠᚡᚢᚣᚤᚥᚦᚧᚨᚩᚪᚫᚬᚭᚮᚯᚰᚱᚲᚳᚴᚵᚶᚷᚸᚹᚺᚻᚼᚽᚾᚿᛀᛁᛂᛃᛄᛅᛆᛇᛈᛉᛊᛋᛌᛏᛐᛑᛒᛓᛔᛕᛖᛗᛘᛙᛚᛛᛜᛝᛞᛟᛠᛡᛢᛣᛤᛥᛦᛧᛨᛩᛪ'.split(''),
+		runes: 'ᚡᚢᚣᚤᚥᚦᚧᚩᚫᚭᚮᚯᚱᚲᚳᚴᚵᚶᚷᚸᚹᚺᚻᚼᚽᚾᚿᛀᛁᛂᛃᛄᛅᛆᛇᛈᛉᛊᛋᛏᛐᛑᛒᛓᛔᛗᛘᛙᛚᛛᛜᛝᛞᛟᛠᛡᛢᛣᛤᛥᛦᛨᛩᛪ'.split(''),
 	} as const;
 
 	type VoteType = 'pickWord' | 'mediumAction' | 'pickQuestions' | 'clue' | 'guessLetter' | 'pickHint';
@@ -552,14 +552,24 @@
 		return String(option).replace(/^\w/, match => match.toUpperCase());
 	}
 
-	function wordRunes(context: GameContext, wordIndex: number): string[] {
-		const seed = seededNumber(`${context.wordCardId}:${wordIndex}`);
-		const length = 6 + (seed % 5);
-		return range(length).map(index => config.runes[(seed + index * 19) % config.runes.length]);
+	function wordRunes(
+		hash: string,
+		{ words = 1, min = 6, max = 20 }: { words?: number; min?: number; max?: number } = {},
+	): string[] {
+		const seed = seededNumber(hash);
+		const length = min + (seed % (max - min));
+		return range(words)
+			.map(() =>
+				range(length)
+					.map(index => config.runes[(seed + index) % config.runes.length])
+					.concat([' ']),
+			)
+			.flat()
+			.slice(0, -1);
 	}
 
-	function runeStyle(context: GameContext, wordIndex: number, runeIndex: number): string {
-		const seed = seededNumber(`${context.wordCardId}:${wordIndex}:${runeIndex}`);
+	function runeStyle(hash: string): string {
+		const seed = seededNumber(hash);
 		const direction = seed % 2 ? 1 : -1;
 		return [
 			`--rune-delay: -${seed % 2600}ms`,
@@ -618,10 +628,25 @@
 
 	actor.send({
 		type: 'debugSetState',
-		state: 'setupWord',
+		state: 'mediumsTurn', // to trigger questions draw
 		team: 'sun',
 	});
+	actor.send({
+		type: 'debugSetState',
+		state: 'mediumsAsk',
+		team: 'sun',
+	});
+
+	const currentTeam = $derived(snapshot.context.teams[snapshot.context.currentTeam]);
 </script>
+
+{#snippet runes(hash: string, config?: Parameters<typeof wordRunes>[1])}
+	<span class="rune-word">
+		{#each wordRunes(hash, config) as rune, runeIndex (runeIndex)}
+			<span class="rune" style={runeStyle(`${hash}:${runeIndex}`)}>{rune}</span>
+		{/each}
+	</span>
+{/snippet}
 
 <div class="debug-game" data-state={currentState}>
 	<header class="top-bar">
@@ -709,11 +734,7 @@
 							{#if canPickWord}
 								<span class="word-text">{word}</span>
 							{:else}
-								<span class="rune-word">
-									{#each wordRunes(game, wordIndex) as rune, runeIndex (`${game.wordCardId}:${wordIndex}:${runeIndex}`)}
-										<span class="rune" style={runeStyle(game, wordIndex, runeIndex)}>{rune}</span>
-									{/each}
-								</span>
+								{@render runes(`${game.wordCardId}:${wordIndex}`)}
 							{/if}
 						</span>
 						<span class="vote-stack">
@@ -726,6 +747,23 @@
 					</button>
 				{/each}
 			</div>
+		</div>
+	{/if}
+
+	{#if canSeeVote(currentState, 'pickQuestions')}
+		<div class="question-selector">
+			{#each currentTeam.questions as qId (qId)}
+				{@const q = questions.find(x => x.id === qId)!}
+				<div class="question-card">
+					{#if canVote(currentState, snapshot.context, 'pickQuestions', debugUser)}
+						<b>{q.title}</b>
+						<div>{q.question}</div>
+					{:else}
+						<b>{@render runes(`${qId}:title`)}</b>
+						<div>{@render runes(`${qId}:question`, { words: sample(range(3, 7)), min: 2, max: 10 })}</div>
+					{/if}
+				</div>
+			{/each}
 		</div>
 	{/if}
 
@@ -1056,6 +1094,32 @@
 
 	.rune:nth-child(3n) {
 		animation-name: rune-float;
+	}
+
+	.question-selector {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.5rem;
+	}
+
+	.question-card {
+		border: 1px solid red;
+		text-align: center;
+		border-radius: 4px;
+		display: flex;
+		flex-direction: column;
+
+		b {
+			font-size: 1.25rem;
+			padding: 0.25rem;
+			font-family: var(--font-fancy);
+			border-bottom: 1px solid red;
+		}
+
+		div {
+			padding: 0.5rem;
+			font-size: 1rem;
+		}
 	}
 
 	@keyframes rune-dance {

@@ -113,7 +113,7 @@
 		width: max-content;
 		max-width: 100%;
 		color: var(--logo-word);
-		font-family: Luminari, 'Palatino Linotype', Georgia, serif;
+		font-family: var(--font-fancy);
 		font-size: clamp(2.8rem, 12vw, 4.35rem);
 		font-weight: 900;
 		letter-spacing: 0;

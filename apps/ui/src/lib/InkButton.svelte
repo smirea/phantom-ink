@@ -207,7 +207,7 @@
 			inset 0 0.9rem 1.4rem color-mix(in oklab, white 3%, transparent),
 			inset 0 -0.7rem 1.1rem color-mix(in oklab, #260a36 26%, transparent);
 		color: var(--app-accent-ink);
-		font-family: Luminari, 'Palatino Linotype', var(--font-sans), Georgia, serif;
+		font-family: var(--font-fancy);
 		font-weight: bold;
 	}
 

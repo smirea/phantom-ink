@@ -1,10 +1,12 @@
+import type { Brand } from './types';
+
 export interface WordCard {
-	id: string;
+	id: Brand<'wordCard'>;
 	words: string[];
 }
 
 export interface QuestionCard {
-	id: string;
+	id: Brand<'questionCard'>;
 	title: string;
 	question: string;
 }
@@ -177,11 +179,15 @@ export const board = {
 
 function makeWordCards(cards: string[][]): WordCard[] {
 	return cards.map((cardWords, index) => ({
-		id: String(index + 1),
+		id: String(index + 1) as Brand<'wordCard'>,
 		words: cardWords.map(word => word.toUpperCase()),
 	}));
 }
 
 function makeQuestionCards(cards: Array<[title: string, question: string]>): QuestionCard[] {
-	return cards.map(([title, question], index) => ({ id: String(index + 1), title, question }));
+	return cards.map(([title, question], index) => ({
+		id: String(index + 1) as Brand<'questionCard'>,
+		title,
+		question,
+	}));
 }
