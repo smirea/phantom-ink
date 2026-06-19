@@ -555,17 +555,13 @@
 	function wordRunes(
 		hash: string,
 		{ words = 1, min = 6, max = 20 }: { words?: number; min?: number; max?: number } = {},
-	): string[] {
+	): string[][] {
 		const seed = seededNumber(hash);
-		const length = min + (seed % (max - min));
-		return range(words)
-			.map(() =>
-				range(length)
-					.map(index => config.runes[(seed + index) % config.runes.length])
-					.concat([' ']),
-			)
-			.flat()
-			.slice(0, -1);
+		return range(words).map(wordIndex => {
+			const wordSeed = seededNumber(`${hash}:${wordIndex}`);
+			const length = min + (wordSeed % (max - min + 1));
+			return range(length).map(index => config.runes[(seed + wordIndex * 23 + index * 7) % config.runes.length]);
+		});
 	}
 
 	function runeStyle(hash: string): string {
@@ -642,8 +638,12 @@
 
 {#snippet runes(hash: string, config?: Parameters<typeof wordRunes>[1])}
 	<span class="rune-word">
-		{#each wordRunes(hash, config) as rune, runeIndex (runeIndex)}
-			<span class="rune" style={runeStyle(`${hash}:${runeIndex}`)}>{rune}</span>
+		{#each wordRunes(hash, config) as runeGroup, groupIndex (groupIndex)}
+			<span class="rune-group">
+				{#each runeGroup as rune, runeIndex (runeIndex)}
+					<span class="rune" style={runeStyle(`${hash}:${groupIndex}:${runeIndex}`)}>{rune}</span>
+				{/each}
+			</span>
 		{/each}
 	</span>
 {/snippet}
@@ -751,18 +751,49 @@
 	{/if}
 
 	{#if canSeeVote(currentState, 'pickQuestions')}
-		<div class="question-selector">
-			{#each currentTeam.questions as qId (qId)}
+		{@const canPickQuestions = canVote(currentState, game, 'pickQuestions', debugUser)}
+		<div class="question-selector" data-can-vote={canPickQuestions}>
+			{#each currentTeam.questions as qId, questionIndex (qId)}
 				{@const q = questions.find(x => x.id === qId)!}
-				<div class="question-card">
-					{#if canVote(currentState, snapshot.context, 'pickQuestions', debugUser)}
-						<b>{q.title}</b>
-						<div>{q.question}</div>
-					{:else}
-						<b>{@render runes(`${qId}:title`)}</b>
-						<div>{@render runes(`${qId}:question`, { words: sample(range(3, 7)), min: 2, max: 10 })}</div>
-					{/if}
-				</div>
+				{@const voteState = optionVoteState(currentState, game, 'pickQuestions', questionIndex)}
+				<button
+					aria-pressed={voteState.voted.includes(debugUser)}
+					class="question-card"
+					data-voted={voteState.voted.includes(debugUser)}
+					disabled={!canPickQuestions}
+					onclick={() =>
+						actor.send({
+							type: 'vote',
+							action: 'pickQuestions',
+							option: questionIndex,
+							userId: debugUser,
+						})}
+					type="button"
+				>
+					<span class="question-title">
+						{#if canPickQuestions}
+							{q.title}
+						{:else}
+							{@render runes(`${qId}:title`, { words: 2, min: 3, max: 8 })}
+						{/if}
+					</span>
+					<span class="question-body">
+						{#if canPickQuestions}
+							{q.question}
+						{:else}
+							{@render runes(`${qId}:question`, { words: 5, min: 3, max: 9 })}
+						{/if}
+					</span>
+					<span class="question-votes" aria-label={`Votes for ${q.title}`}>
+						<span class="vote-stack">
+							{#each voteState.voted as userId (userId)}
+								<span class="vote-ghost" transition:fly={{ y: 16, duration: 260 }}>
+									<Avatar user={playerData.find(x => x.id === userId)!} name={false} />
+								</span>
+							{/each}
+						</span>
+					</span>
+				</button>
 			{/each}
 		</div>
 	{/if}
@@ -917,7 +948,9 @@
 	}
 
 	.pick-word-stage:hover .pick-word,
-	.pick-word-stage:focus-within .pick-word {
+	.pick-word-stage:focus-within .pick-word,
+	button.question-card:hover,
+	button.question-card:focus-visible {
 		border-color: color-mix(in oklab, var(--app-focus) 54%, var(--app-border) 46%);
 		box-shadow:
 			0 1.7rem 3.6rem color-mix(in oklab, black 52%, transparent),
@@ -1065,11 +1098,13 @@
 	}
 
 	.rune-word {
-		display: inline-grid;
-		grid-auto-columns: 1ch;
-		grid-auto-flow: column;
-		gap: 0.08em;
-		min-width: 9ch;
+		display: inline-flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: center;
+		gap: 0.22em 0.38em;
+		max-width: 100%;
+		min-width: 0;
 		color: color-mix(in oklab, var(--app-accent-strong) 72%, var(--app-focus) 28%);
 		font-family: var(--font-mono);
 		font-size: 1.22rem;
@@ -1078,6 +1113,13 @@
 		text-shadow:
 			0 0 0.45rem color-mix(in oklab, var(--app-accent) 42%, transparent),
 			0 0.12rem 0.3rem color-mix(in oklab, black 42%, transparent);
+	}
+
+	.rune-group {
+		display: inline-flex;
+		gap: 0.08em;
+		max-width: 100%;
+		min-width: 0;
 	}
 
 	.rune {
@@ -1098,28 +1140,141 @@
 
 	.question-selector {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 0.5rem;
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+		align-items: stretch;
+		gap: 0.8rem;
+		perspective: 58rem;
 	}
 
-	.question-card {
-		border: 1px solid red;
-		text-align: center;
-		border-radius: 4px;
+	button.question-card {
+		position: relative;
 		display: flex;
 		flex-direction: column;
+		min-height: 13.5rem;
+		border: 1px solid color-mix(in oklab, var(--app-border) 76%, var(--app-accent) 24%);
+		border-radius: 0.5rem;
+		background:
+			radial-gradient(110% 85% at 14% -8%, color-mix(in oklab, var(--app-sun) 18%, transparent), transparent 50%),
+			radial-gradient(120% 100% at 96% 112%, color-mix(in oklab, var(--app-moon) 24%, transparent), transparent 56%),
+			linear-gradient(160deg, color-mix(in oklab, var(--app-panel) 90%, white 10%), var(--app-panel) 58%),
+			var(--app-panel);
+		box-shadow:
+			0 1.25rem 3rem color-mix(in oklab, black 46%, transparent),
+			0 0.28rem 0 color-mix(in oklab, black 28%, transparent),
+			inset 0 1px 0 color-mix(in oklab, white 12%, transparent),
+			inset 0 -1px 0 color-mix(in oklab, black 34%, transparent);
+		color: var(--app-text);
+		cursor: pointer;
+		overflow: hidden;
+		padding: 0;
+		text-align: left;
+		transform: translateY(0) scale(1);
+		transform-style: preserve-3d;
+		transition:
+			border-color 220ms ease,
+			box-shadow 260ms ease,
+			color 180ms ease,
+			filter 260ms ease,
+			transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+	}
 
-		b {
-			font-size: 1.25rem;
-			padding: 0.25rem;
-			font-family: var(--font-fancy);
-			border-bottom: 1px solid red;
-		}
+	button.question-card::before {
+		position: absolute;
+		inset: 0;
+		background:
+			linear-gradient(110deg, transparent 0 24%, color-mix(in oklab, white 11%, transparent) 32%, transparent 42%),
+			repeating-linear-gradient(28deg, color-mix(in oklab, white 4%, transparent) 0 1px, transparent 1px 6px);
+		opacity: 0.4;
+		pointer-events: none;
+		transform: translateZ(1.25rem);
+		content: '';
+	}
 
-		div {
-			padding: 0.5rem;
-			font-size: 1rem;
-		}
+	button.question-card:disabled {
+		cursor: default;
+		opacity: 1;
+	}
+
+	button.question-card:active:not(:disabled) {
+		transform: translateY(-0.08rem) scale(0.995);
+	}
+
+	button.question-card[data-voted='true'] {
+		border-color: color-mix(in oklab, var(--app-focus) 62%, var(--app-sun) 38%);
+		box-shadow:
+			0 1.45rem 3.15rem color-mix(in oklab, black 48%, transparent),
+			0 0 0 1px color-mix(in oklab, var(--app-focus) 26%, transparent),
+			0 0 1.1rem color-mix(in oklab, var(--app-focus) 22%, transparent),
+			0 0.32rem 0 color-mix(in oklab, black 30%, transparent),
+			inset 0 1px 0 color-mix(in oklab, white 14%, transparent);
+		color: var(--logo-word);
+	}
+
+	.question-title,
+	.question-body,
+	.question-votes {
+		position: relative;
+		z-index: 1;
+	}
+
+	.question-title {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 3.2rem;
+		border-bottom: 1px solid color-mix(in oklab, var(--app-border) 76%, transparent);
+		background: color-mix(in oklab, var(--app-input) 44%, transparent);
+		font-family: var(--font-fancy);
+		font-size: 1.18rem;
+		font-weight: 900;
+		line-height: 1.08;
+		padding: 0.7rem 0.85rem 0.62rem;
+		text-align: center;
+		text-shadow: 0 0.18rem 0.42rem color-mix(in oklab, black 34%, transparent);
+		transform: translateZ(0.7rem);
+	}
+
+	button.question-card[data-voted='true'] .question-title {
+		background: color-mix(in oklab, var(--app-focus) 14%, var(--app-input));
+	}
+
+	.question-body {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 7.15rem;
+		flex: 1 1 auto;
+		color: color-mix(in oklab, var(--app-text) 88%, var(--app-muted) 12%);
+		font-size: 0.98rem;
+		font-weight: 650;
+		line-height: 1.28;
+		padding: 0.85rem 0.95rem;
+		text-align: center;
+		text-wrap: balance;
+		transform: translateZ(0.45rem);
+	}
+
+	.question-body .rune-word {
+		font-size: 1.06rem;
+		line-height: 1.28;
+	}
+
+	.question-votes {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 2.35rem;
+		border-top: 1px solid color-mix(in oklab, var(--app-border) 64%, transparent);
+		background: linear-gradient(180deg, color-mix(in oklab, var(--app-input) 24%, transparent), transparent);
+		margin-top: auto;
+		padding: 0.35rem 0.75rem 0.45rem;
+		transform: translateZ(0.75rem);
+	}
+
+	.question-votes .vote-stack {
+		justify-content: center;
+		width: 100%;
+		min-width: 0;
 	}
 
 	@keyframes rune-dance {
