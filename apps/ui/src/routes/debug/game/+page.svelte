@@ -40,7 +40,6 @@
 		questions: Array<QuestionCard['id']>;
 		spiritQuestionPicks: Array<QuestionCard['id']>;
 		board: BoardEntry[];
-		voting: Partial<Record<VoteType, Partial<Record<User['id'], VoteOption[]>>>>;
 	}
 
 	interface GameContext {
@@ -49,6 +48,7 @@
 		word: string;
 		discardedQuestionsDeck: Array<QuestionCard['id']>;
 		teams: Record<Team, TeamState>;
+		voting: Partial<Record<VoteType, Partial<Record<User['id'], VoteOption[]>>>>;
 	}
 
 	type GameEvent =
@@ -64,7 +64,8 @@
 		| { type: 'silencio' }
 		| { type: 'getClue' }
 		| { type: 'vote'; action: VoteType; option: VoteOption; userId: User['id'] }
-		| { type: 'debugSetState'; state: GameState; team: Team };
+		| { type: 'debugSetState'; state: GameState; team: Team }
+		| { type: 'debugSetTeam'; team: Team };
 
 	const teams = ['sun', 'moon'] as const;
 	const config = {
@@ -166,7 +167,6 @@
 		},
 		actions: {
 			setupGame: assign(() => createInitialContext()),
-			pickWordCard: assign(() => ({ wordCardId: sample(words).id })),
 			setWord: assign(({ event }) => {
 				if (event.type !== 'pickWord') return {};
 				return { currentTeam: 'sun' as Team, word: sanitizePhrase(event.word) };
@@ -239,7 +239,7 @@
 					if (!nextEvent) return nextContext;
 
 					return produce(nextContext, draft => {
-						delete draft.teams[draft.currentTeam].voting[event.action];
+						delete draft.voting[event.action];
 					});
 				});
 				if (nextEvent) enqueue.raise(nextEvent);
@@ -247,7 +247,9 @@
 			setupNextTurn: assign(({ context }) => ({
 				currentTeam: context.currentTeam === 'sun' ? 'moon' : 'sun',
 			})),
-			debugSetTeam: assign(({ event }) => (event.type === 'debugSetState' ? { currentTeam: event.team } : {})),
+			debugSetTeam: assign(({ event }) =>
+				event.type === 'debugSetState' || event.type === 'debugSetTeam' ? { currentTeam: event.team } : {},
+			),
 		},
 	}).createMachine({
 		id: 'phantomInk',
@@ -256,6 +258,7 @@
 		on: {
 			start: { target: '.setupWord', actions: 'setupGame' },
 			vote: { actions: 'recordVote' },
+			debugSetTeam: { actions: 'debugSetTeam' },
 			debugSetState: gameStates.map(state => ({
 				guard: ({ event }) => event.type === 'debugSetState' && event.state === state,
 				target: `.${state}`,
@@ -265,7 +268,6 @@
 		states: {
 			start: {},
 			setupWord: {
-				entry: 'pickWordCard',
 				on: {
 					pickWord: { target: 'mediumsTurn', actions: 'setWord' },
 				},
@@ -373,6 +375,7 @@
 				sun: createTeamState('sun'),
 				moon: createTeamState('moon'),
 			},
+			voting: {},
 		};
 	}
 
@@ -382,7 +385,6 @@
 			questions: [],
 			spiritQuestionPicks: [],
 			board: [],
-			voting: {},
 		};
 	}
 
@@ -428,8 +430,7 @@
 		if (!canVote(s, context, v, userId) || !choices.includes(option)) return context;
 
 		return produce(context, draft => {
-			const voting = draft.teams[draft.currentTeam].voting;
-			const votes = (voting[v] ??= {}) as Partial<Record<User['id'], VoteOption[]>>;
+			const votes = (draft.voting[v] ??= {}) as Partial<Record<User['id'], VoteOption[]>>;
 			const current = votes[userId] ?? [];
 			const voted = current.includes(option)
 				? current.filter(item => item !== option)
@@ -441,7 +442,7 @@
 			}
 
 			if (!Object.keys(votes).length) {
-				delete voting[v];
+				delete draft.voting[v];
 			}
 		});
 	}
@@ -519,7 +520,7 @@
 	}
 
 	function optionVoteState(s: GameState, context: GameContext, action: VoteType, option: VoteOption): VoteState {
-		const selected = context.teams[context.currentTeam].voting[action] ?? {};
+		const selected = context.voting[action] ?? {};
 		const eligible = playerData.filter(user => canVote(s, context, action, user.id));
 		const voted = eligible.filter(user => selected[user.id]?.includes(option)).map(user => user.id);
 		return { voted, eligible, required: eligible.length };
@@ -530,7 +531,7 @@
 		const eligible = playerData.filter(user => canVote(s, context, action, user.id));
 		if (!eligible.length) return [];
 
-		const selected = context.teams[context.currentTeam].voting[action] ?? {};
+		const selected = context.voting[action] ?? {};
 		if (eligible.some(user => (selected[user.id]?.length ?? 0) < voteConfig.count)) return [];
 
 		const counts = new Map<VoteOption, number>();
@@ -591,7 +592,7 @@
 
 	actor.send({
 		type: 'debugSetState',
-		state: 'mediumsTurn',
+		state: 'setupWord',
 		team: 'sun',
 	});
 </script>
@@ -618,7 +619,7 @@
 				{#each teams as team}
 					<button
 						class:active-toggle={team === currentTeamName}
-						onclick={() => actor.send({ type: 'debugSetState', state: currentState, team })}
+						onclick={() => actor.send({ type: 'debugSetTeam', team })}
 						type="button"
 					>
 						{team}
@@ -664,6 +665,22 @@
 			</div>
 		{/each}
 	</div>
+
+	{#if canSeeVote(currentState, 'pickWord')}
+		<div class="pick-word">
+			{#each wordCard(game).words as w}
+				<a>
+					<span>
+						{#if canVote(currentState, game, 'pickWord', debugUser)}
+							{w}
+						{:else}
+							‡‡‡‡
+						{/if}
+					</span>
+				</a>
+			{/each}
+		</div>
+	{/if}
 
 	{#if canSeeVote(currentState, 'mediumAction')}
 		<div class="action-dock">
@@ -763,5 +780,18 @@
 		display: flex;
 		gap: 0.5rem;
 		align-items: center;
+	}
+
+	.pick-word {
+		display: flex;
+		flex-direction: column;
+		border: 1px solid var(--app-border);
+		background-color: red;
+
+		a {
+			background-color: blue;
+			padding: 0.5rem;
+			margin: 0.25rem;
+		}
 	}
 </style>
