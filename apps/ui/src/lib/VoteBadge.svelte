@@ -5,16 +5,21 @@
 	import Minus from '@lucide/svelte/icons/minus';
 	import ScrollText from '@lucide/svelte/icons/scroll-text';
 	import { clamp } from 'es-toolkit';
+	import { flip } from 'svelte/animate';
 	import { onMount, tick } from 'svelte';
+	import { fly, scale } from 'svelte/transition';
 
 	type VotingState = { voted: User['id'][]; eligible: User[]; required?: number };
+	type VoteBadgeMode = 'counter' | 'avatar';
 
 	let {
 		label = 'Votes',
+		mode = 'counter',
 		passive = false,
 		voting,
 	}: {
 		label?: string;
+		mode?: VoteBadgeMode;
 		passive?: boolean;
 		voting: VotingState;
 	} = $props();
@@ -23,8 +28,10 @@
 	let isFlashing = $state(false);
 	let lastCount = $state<number | null>(null);
 	let badgeButton = $state<HTMLElement | null>(null);
+	let avatarViewport = $state<HTMLElement | null>(null);
 	let popoverNode = $state<HTMLDivElement | null>(null);
 	let popoverStyle = $state('visibility: hidden;');
+	let avatarGap = $state(4);
 	let flashTimer: ReturnType<typeof setTimeout> | undefined;
 	let flashFrame: number | undefined;
 
@@ -32,6 +39,8 @@
 	const missing = $derived(voting.eligible.filter(user => !voting.voted.includes(user.id)));
 	const currentVotes = $derived(voting.voted.length);
 	const requiredVotes = $derived(voting.required ?? voting.eligible.length);
+	const avatarMode = $derived(mode === 'avatar');
+	const avatarStyle = $derived(`--vote-avatar-gap: ${avatarGap}px;`);
 
 	$effect(() => {
 		if (lastCount === null) {
@@ -53,6 +62,8 @@
 	});
 
 	onMount(() => {
+		let resizeObserver: ResizeObserver | undefined;
+
 		function handleDocumentClick(event: MouseEvent) {
 			if (!isOpen || !(event.target instanceof Node)) return;
 			if (badgeButton?.contains(event.target) || popoverNode?.contains(event.target)) return;
@@ -63,17 +74,32 @@
 			if (isOpen) updatePopoverPosition();
 		}
 
-		document.addEventListener('click', handleDocumentClick, true);
-		window.addEventListener('resize', handleViewportChange);
-		window.addEventListener('scroll', handleViewportChange, true);
+		if (avatarMode) {
+			resizeObserver = new ResizeObserver(() => updateAvatarGap());
+			if (avatarViewport) resizeObserver.observe(avatarViewport);
+			void tick().then(() => updateAvatarGap());
+		}
+
+		if (!passive) {
+			document.addEventListener('click', handleDocumentClick, true);
+			window.addEventListener('resize', handleViewportChange);
+			window.addEventListener('scroll', handleViewportChange, true);
+		}
 
 		return () => {
+			resizeObserver?.disconnect();
 			if (flashFrame !== undefined) cancelAnimationFrame(flashFrame);
 			if (flashTimer) clearTimeout(flashTimer);
 			document.removeEventListener('click', handleDocumentClick, true);
 			window.removeEventListener('resize', handleViewportChange);
 			window.removeEventListener('scroll', handleViewportChange, true);
 		};
+	});
+
+	$effect(() => {
+		const count = voters.length;
+		if (!avatarMode) return;
+		void tick().then(() => updateAvatarGap(count));
 	});
 
 	async function toggle(event: Event) {
@@ -90,15 +116,6 @@
 		updatePopoverPosition();
 	}
 
-	function stopBadgeEvent(event: Event) {
-		event.stopPropagation();
-	}
-
-	function handleBadgeKeydown(event: KeyboardEvent) {
-		if (event.key !== 'Enter' && event.key !== ' ') return;
-		void toggle(event);
-	}
-
 	function updatePopoverPosition() {
 		if (!badgeButton || !popoverNode) return;
 
@@ -113,6 +130,23 @@
 				: topBelow;
 
 		popoverStyle = `left: ${left}px; top: ${top}px;`;
+	}
+
+	function updateAvatarGap(count = voters.length) {
+		if (!avatarViewport) return;
+
+		if (count <= 1) {
+			avatarGap = 4;
+			return;
+		}
+
+		const avatarSize = 22;
+		const defaultGap = 4;
+		const minGap = -8;
+		const available = avatarViewport.clientWidth;
+		const naturalWidth = count * avatarSize + (count - 1) * defaultGap;
+		avatarGap =
+			naturalWidth <= available ? defaultGap : Math.max(minGap, (available - count * avatarSize) / (count - 1));
 	}
 
 	function portal(node: HTMLElement) {
@@ -162,38 +196,61 @@
 	{/if}
 {/snippet}
 
-{#if passive}
-	<span class:open={isOpen} class="vote-wrap" data-passive="true">
-		<span
-			bind:this={badgeButton}
-			aria-expanded={isOpen}
-			aria-label={`${label}: ${currentVotes} of ${requiredVotes}`}
-			class:flash={isFlashing}
-			class="vote-badge"
-			onclick={toggle}
-			onkeydown={handleBadgeKeydown}
-			onpointerdown={stopBadgeEvent}
-			role="button"
-			tabindex="0"
-		>
-			<ScrollText size={14} strokeWidth={2.4} />
-			<span>{currentVotes}/{requiredVotes}</span>
+{#snippet AvatarVotes()}
+	<span bind:this={avatarViewport} class="vote-avatar-viewport" style={avatarStyle}>
+		<span class="vote-avatar-pack" class:flash={isFlashing}>
+			{#each voters as member (member.id)}
+				<span
+					animate:flip={{ duration: 260 }}
+					class="vote-avatar"
+					in:fly={{ y: 11, duration: 240 }}
+					out:scale={{ duration: 170, start: 0.72 }}
+				>
+					<Avatar user={member} name={false} />
+				</span>
+			{/each}
 		</span>
-		{@render Popover()}
+	</span>
+{/snippet}
+
+{#snippet BadgeContent()}
+	{#if avatarMode}
+		{@render AvatarVotes()}
+	{:else}
+		<ScrollText size={14} strokeWidth={2.4} />
+		<span>{currentVotes}/{requiredVotes}</span>
+	{/if}
+{/snippet}
+
+{#if passive}
+	<span class="vote-wrap" data-empty={avatarMode && !voters.length ? 'true' : undefined} data-mode={mode}>
+		<span
+			aria-label={`${label}: ${currentVotes} of ${requiredVotes}`}
+			class:flash={isFlashing && !avatarMode}
+			class="vote-badge"
+			data-mode={mode}
+		>
+			{@render BadgeContent()}
+		</span>
 	</span>
 {:else}
-	<div class:open={isOpen} class="vote-wrap">
+	<div
+		class:open={isOpen}
+		class="vote-wrap"
+		data-empty={avatarMode && !voters.length ? 'true' : undefined}
+		data-mode={mode}
+	>
 		<button
 			bind:this={badgeButton}
 			aria-expanded={isOpen}
 			aria-label={`${label}: ${currentVotes} of ${requiredVotes}`}
-			class:flash={isFlashing}
+			class:flash={isFlashing && !avatarMode}
 			class="vote-badge"
+			data-mode={mode}
 			onclick={toggle}
 			type="button"
 		>
-			<ScrollText size={14} strokeWidth={2.4} />
-			<span>{currentVotes}/{requiredVotes}</span>
+			{@render BadgeContent()}
 		</button>
 
 		{@render Popover()}
@@ -201,6 +258,54 @@
 {/if}
 
 <style>
+	.vote-avatar-viewport {
+		display: flex;
+		justify-content: center;
+		width: 100%;
+		overflow: visible;
+		pointer-events: none;
+	}
+
+	.vote-avatar-pack {
+		display: inline-flex;
+		align-items: flex-end;
+		justify-content: center;
+		min-width: 0;
+		max-width: 100%;
+	}
+
+	.vote-avatar {
+		display: inline-grid;
+		place-items: center;
+		width: 1.38rem;
+		height: 1.38rem;
+		flex: 0 0 auto;
+		margin-left: var(--vote-avatar-gap);
+		will-change: opacity, transform;
+	}
+
+	.vote-avatar:first-child {
+		margin-left: 0;
+	}
+
+	.vote-avatar :global(.avatar) {
+		display: inline-grid;
+		place-items: center;
+		width: 1.38rem;
+		height: 1.38rem;
+		filter: drop-shadow(0 0.2rem 0.34rem color-mix(in oklab, black 42%, transparent))
+			drop-shadow(0 0 0.45rem color-mix(in oklab, var(--app-focus) 20%, transparent));
+	}
+
+	.vote-avatar :global(.avatar svg) {
+		width: 1.08rem;
+		height: 1.08rem;
+	}
+
+	.vote-avatar-pack.flash {
+		animation: vote-avatar-flash 520ms cubic-bezier(0.16, 1, 0.3, 1);
+	}
+
 	.vote-wrap {
 		position: absolute;
 		top: 0;
@@ -218,6 +323,22 @@
 		opacity: 1;
 		pointer-events: auto;
 		transform: translate(50%, -50%) scale(1);
+	}
+
+	.vote-wrap[data-mode='avatar'] {
+		display: flex;
+		justify-content: center;
+		width: calc(100% - 0.7rem);
+		min-width: 1.8rem;
+		max-width: 7.25rem;
+		opacity: 1;
+		pointer-events: none;
+		transform: translate(50%, -66%) scale(1);
+	}
+
+	.vote-wrap[data-mode='avatar'][data-empty='true'] {
+		opacity: 0;
+		transform: translate(50%, -58%) scale(0.9);
 	}
 
 	.vote-badge {
@@ -245,18 +366,17 @@
 			transform 160ms ease;
 	}
 
-	.vote-wrap[data-passive='true'] .vote-badge {
-		cursor: pointer;
-	}
-
-	.vote-wrap[data-passive='true'] {
-		pointer-events: auto;
-	}
-
-	.vote-wrap[data-passive='true']:hover,
-	.vote-wrap[data-passive='true'].open {
-		opacity: 1;
-		transform: translate(50%, -50%) scale(1);
+	.vote-badge[data-mode='avatar'] {
+		justify-content: center;
+		width: 100%;
+		min-height: 1.52rem;
+		min-width: 0;
+		border-color: transparent;
+		background: transparent;
+		box-shadow: none;
+		cursor: default;
+		overflow: visible;
+		padding: 0;
 	}
 
 	.vote-badge:hover,
@@ -264,6 +384,13 @@
 		background: color-mix(in oklab, var(--app-accent) 18%, var(--app-panel));
 		border-color: var(--app-accent);
 		transform: translateY(-1px);
+	}
+
+	.vote-badge[data-mode='avatar']:hover,
+	.vote-badge[data-mode='avatar'][aria-expanded='true'] {
+		background: transparent;
+		border-color: transparent;
+		transform: none;
 	}
 
 	.vote-badge.flash {
@@ -338,6 +465,23 @@
 		color: var(--app-muted);
 		font-size: 0.8rem;
 		font-weight: 800;
+	}
+
+	@keyframes vote-avatar-flash {
+		0% {
+			filter: brightness(0.9);
+			transform: translateY(0.18rem) scale(0.92);
+		}
+
+		48% {
+			filter: brightness(1.2);
+			transform: translateY(-0.08rem) scale(1.08);
+		}
+
+		100% {
+			filter: brightness(1);
+			transform: translateY(0) scale(1);
+		}
 	}
 
 	@keyframes vote-flash {

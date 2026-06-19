@@ -22,6 +22,7 @@
 		iconStrokeWidth,
 		loading = false,
 		primary = false,
+		selfVoted,
 		size = 'md',
 		type = 'button',
 		voteLabel,
@@ -35,6 +36,7 @@
 		loading?: boolean;
 		ghost?: boolean;
 		primary?: boolean;
+		selfVoted?: boolean;
 		size?: ButtonSize;
 		fill?: boolean;
 		type?: ButtonType;
@@ -50,7 +52,7 @@
 	const resolvedIconSize = $derived(iconSize ?? (size === 'lg' ? 26 : size === 'sm' ? 17 : 20));
 	const resolvedIconCssSize = $derived(formatCssSize(resolvedIconSize));
 	const resolvedIconStrokeWidth = $derived(iconStrokeWidth ?? (size === 'lg' ? 2.5 : 2.3));
-	const selfHasVoted = $derived(Boolean(voting?.voted.includes(appContext.user.id)));
+	const selfHasVoted = $derived(selfVoted ?? Boolean(voting?.voted.includes(appContext.user.id)));
 
 	function formatCssSize(value: number | string): string {
 		return typeof value === 'number' ? `${value}px` : value;
@@ -85,7 +87,7 @@
 	{/if}
 	{@render children?.()}
 	{#if voting}
-		<VoteBadge {voting} label={voteLabel} passive />
+		<VoteBadge {voting} label={voteLabel} mode="avatar" passive />
 	{/if}
 </button>
 
@@ -269,6 +271,36 @@
 		filter: saturate(1.03) brightness(0.95);
 		transform: scale(0.99);
 		animation: ink-button-primary-tap 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+	}
+
+	.ink-button[data-self-voted='true'] {
+		border-color: color-mix(in oklab, var(--app-focus) 62%, var(--app-accent) 38%);
+		box-shadow:
+			0 0 0 1px rgba(217, 194, 140, 0.28),
+			0 0 0.85rem rgba(217, 194, 140, 0.32),
+			0 0.5rem 1.2rem rgba(168, 135, 183, 0.2);
+		color: var(--logo-word);
+		transition:
+			background 180ms ease,
+			background-position 360ms ease,
+			border-color 180ms ease,
+			color 180ms ease,
+			opacity 180ms ease,
+			transform 180ms ease;
+	}
+
+	.ink-button[data-variant='primary'][data-self-voted='true'] {
+		border-color: color-mix(in oklab, var(--app-focus) 68%, var(--app-accent) 32%);
+		box-shadow:
+			inset 0 0 0 1px rgba(255, 255, 255, 0.15),
+			inset 0 0.9rem 1.4rem rgba(255, 255, 255, 0.05),
+			inset 0 -0.72rem 1.16rem rgba(38, 10, 54, 0.28),
+			0 0 0 1px rgba(217, 194, 140, 0.32),
+			0 0 0.95rem rgba(217, 194, 140, 0.38),
+			0 0.7rem 1.35rem rgba(168, 135, 183, 0.22);
+		animation: none;
+		color: var(--logo-word);
+		filter: saturate(1.08) brightness(1.03);
 	}
 
 	.ink-button:active:not(:disabled) {

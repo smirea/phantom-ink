@@ -733,14 +733,16 @@
 		<div class="action-dock">
 			<div class="action-buttons">
 				{#each votingConfig.mediumAction.choices(game) as option}
+					{@const voteState = optionVoteState(currentState, game, 'mediumAction', option)}
 					<InkButton
 						size="lg"
 						primary
 						class="flex-1"
 						disabled={!canVote(currentState, game, 'mediumAction', debugUser)}
 						onclick={() => actor.send({ type: 'vote', action: 'mediumAction', option, userId: debugUser })}
+						selfVoted={voteState.voted.includes(debugUser)}
 						voteLabel={voteLabel(option)}
-						voting={optionVoteState(currentState, game, 'mediumAction', option)}
+						voting={voteState}
 					>
 						{voteLabel(option)}
 					</InkButton>
