@@ -6,7 +6,7 @@
 	import type { User } from '@repo/shared/onlineGame';
 	import { range, sample, shuffle, uniq } from 'es-toolkit';
 	import { onDestroy } from 'svelte';
-	import { assign, createActor, setup } from 'xstate';
+	import { assign, createActor, enqueueActions, setup } from 'xstate';
 
 	type Team = 'sun' | 'moon';
 
@@ -36,7 +36,7 @@
 		questionId?: QuestionCard['id'];
 	};
 	type VoteAction = 'ask' | 'eyeHint' | 'guess';
-	type VoteState = { voted: User['id'][]; eligible: User['id'][]; required: number };
+	type VoteState = { voted: User['id'][]; eligible: User[]; required: number };
 
 	interface TeamState {
 		spirit: User['id'];
@@ -46,7 +46,7 @@
 		spiritQuestionDiscards: Array<QuestionCard['id']>;
 		eyeUsedRows: number[];
 		board: BoardEntry[];
-		voting: Record<VoteAction, VoteState>;
+		voting: Partial<Record<GameEvent['type'], User['id'][]>>;
 	}
 
 	interface GameContext {
@@ -78,30 +78,33 @@
 		questionsGivenToSpirit: 2,
 	} as const;
 
-	const isYourTurn = () => currentTeam.players.includes(debugUser);
-	const yourTeam = () =>
-		snapshot.context.teams.sun.players.includes(debugUser) ? snapshot.context.teams.sun : snapshot.context.teams.moon;
-	const youAreSpirit = () => yourTeam().spirit === debugUser;
-	const youAreMedium = () => !youAreSpirit();
+	const isYourTurn = (id: User['id']) => currentTeam.players.includes(id);
+	const yourTeam = (id: User['id']) =>
+		snapshot.context.teams.sun.players.includes(id) ? snapshot.context.teams.sun : snapshot.context.teams.moon;
+	const youAreSpirit = (id: User['id']) => yourTeam(id).spirit === id;
+	const youAreMedium = (id: User['id']) => !youAreSpirit(id);
 	const inState = (...states: (typeof snapshot.value)[]) => states.some(x => snapshot.value === x);
 
 	const votingConfig = {
 		pickWord: [() => inState('setupWord'), youAreSpirit],
 
-		ask: [() => inState('mediumsTurn'), () => youAreMedium() && isYourTurn()],
-		pickQuestions: [() => inState('mediumsAsk'), () => youAreMedium() && isYourTurn()],
-		getClue: [() => inState('mediumsGetClues'), () => youAreMedium() && isYourTurn()],
-		silencio: [() => inState('mediumsGetClues'), () => youAreMedium() && isYourTurn()],
+		ask: [() => inState('mediumsTurn'), id => youAreMedium(id) && isYourTurn(id)],
+		pickQuestions: [() => inState('mediumsAsk'), id => youAreMedium(id) && isYourTurn(id)],
+		getClue: [() => inState('mediumsGetClues'), id => youAreMedium(id) && isYourTurn(id)],
+		silencio: [() => inState('mediumsGetClues'), id => youAreMedium(id) && isYourTurn(id)],
 
-		guess: [() => inState('mediumsTurn'), () => youAreMedium() && isYourTurn()],
-		guessLetter: [() => inState('guessing'), () => youAreMedium() && isYourTurn()],
+		guess: [() => inState('mediumsTurn'), id => youAreMedium(id) && isYourTurn(id)],
+		guessLetter: [() => inState('guessing'), id => youAreMedium(id) && isYourTurn(id)],
 
-		eyeHint: [() => inState('mediumsTurn'), () => youAreMedium() && isYourTurn()],
-		pickHint: [() => inState('eyeHint'), () => youAreMedium() && isYourTurn()],
-	} satisfies Partial<Record<GameEvent['type'], [isActive: () => boolean, canVote?: () => boolean]>>;
+		eyeHint: [() => inState('mediumsTurn'), id => youAreMedium(id) && isYourTurn(id)],
+		pickHint: [() => inState('eyeHint'), id => youAreMedium(id) && isYourTurn(id)],
+	} satisfies Partial<
+		Record<GameEvent['type'], [isActive: (u: User['id']) => boolean, canVote?: (u: User['id']) => boolean]>
+	>;
 
-	const canSeeVote = (voteId: keyof typeof votingConfig) => votingConfig[voteId][0]();
-	const canVote = (voteId: keyof typeof votingConfig) => canSeeVote(voteId) && votingConfig[voteId][1]();
+	const canSeeVote = (voteId: keyof typeof votingConfig, id: User['id']) => votingConfig[voteId][0]();
+	const canVote = (voteId: keyof typeof votingConfig, id: User['id']) =>
+		canSeeVote(voteId, id) && votingConfig[voteId][1](id);
 
 	const gameMachine = setup({
 		types: {
@@ -187,27 +190,14 @@
 				if (event.type !== 'guessLetter') return {};
 				return updateLastGuess(context, event.letter, true);
 			}),
-			recordVote: assign(({ context, event }) => {
+			recordVote: enqueueActions(({ context, event, enqueue }) => {
 				if (event.type !== 'vote') return {};
 
-				return updateTeam(context, context.currentTeam, team => {
-					const current = team.voting[event.action];
-					if (!current.eligible.includes(event.playerId)) return team;
-
-					const votes = current.voted.includes(event.playerId)
-						? current.voted.filter(id => id !== event.playerId)
-						: [...current.voted, event.playerId];
-
-					return {
-						...team,
-						voting: {
-							...team.voting,
-							[event.action]: { ...current, votes },
-						},
-					};
-				});
+				const nextContext = toggleVote(context, event.action, event.playerId);
+				const concluded = hasConsensus(nextContext, event.action);
+				enqueue.assign(() => (concluded ? clearVote(nextContext, event.action) : nextContext));
+				if (concluded) enqueue.raise({ type: event.action });
 			}),
-			resetVotes: assign(({ context }) => resetTeamVotes(context, context.currentTeam)),
 			setupNextTurn: assign(({ context }) => ({
 				currentTeam: otherTeam(context.currentTeam),
 			})),
@@ -234,21 +224,12 @@
 				},
 			},
 			mediumsTurn: {
-				entry: ['drawQuestionHand', 'resetVotes'],
-				always: [
-					{ guard: ({ context }) => hasConsensus(context, 'ask'), target: 'mediumsAsk', actions: 'resetVotes' },
-					{
-						guard: ({ context }) => hasConsensus(context, 'eyeHint') && hasEyeHint(context),
-						target: 'eyeHint',
-						actions: 'resetVotes',
-					},
-					{ guard: ({ context }) => hasConsensus(context, 'guess'), target: 'guessing', actions: 'resetVotes' },
-				],
+				entry: 'drawQuestionHand',
 				on: {
 					vote: { actions: 'recordVote' },
-					eyeHint: { guard: ({ context }) => hasEyeHint(context), target: 'eyeHint', actions: 'resetVotes' },
-					guess: { target: 'guessing', actions: 'resetVotes' },
-					ask: { target: 'mediumsAsk', actions: 'resetVotes' },
+					eyeHint: { guard: ({ context }) => hasEyeHint(context), target: 'eyeHint' },
+					guess: 'guessing',
+					ask: 'mediumsAsk',
 				},
 			},
 			eyeHint: {
@@ -361,20 +342,8 @@
 			spiritQuestionDiscards: [],
 			eyeUsedRows: [],
 			board: [],
-			voting: createVoting(players),
+			voting: {},
 		};
-	}
-
-	function createVoting(players: Array<User['id']>): Record<VoteAction, VoteState> {
-		return {
-			ask: createVoteState(players),
-			eyeHint: createVoteState(players),
-			guess: createVoteState(players),
-		};
-	}
-
-	function createVoteState(players: Array<User['id']>): VoteState {
-		return { voted: [], eligible: [...players], required: players.length };
 	}
 
 	function drawQuestionHand(context: GameContext): GameContext {
@@ -416,8 +385,27 @@
 		};
 	}
 
-	function resetTeamVotes(context: GameContext, team: Team): GameContext {
-		return updateTeam(context, team, current => ({ ...current, voting: createVoting(current.players) }));
+	function toggleVote(context: GameContext, action: VoteAction, playerId: User['id']): GameContext {
+		if (!canVote(action, playerId)) return context;
+
+		return updateTeam(context, context.currentTeam, team => {
+			const current = team.voting[action] ?? [];
+			const voted = current.includes(playerId) ? current.filter(id => id !== playerId) : [...current, playerId];
+			return {
+				...team,
+				voting: {
+					...team.voting,
+					[action]: voted,
+				},
+			};
+		});
+	}
+
+	function clearVote(context: GameContext, action: VoteAction): GameContext {
+		return updateTeam(context, context.currentTeam, team => {
+			const { [action]: _concluded, ...voting } = team.voting;
+			return { ...team, voting };
+		});
 	}
 
 	function revealClue(context: GameContext, clueId: string): GameContext {
@@ -506,20 +494,22 @@
 	}
 
 	function hasConsensus(context: GameContext, action: VoteAction): boolean {
-		const vote = context.teams[context.currentTeam].voting[action];
-		return vote.required > 0 && vote.voted.length >= vote.required;
+		const voting = voteState(context, action);
+		return voting.required > 0 && voting.voted.length >= voting.required;
 	}
 
 	function vote(action: VoteAction) {
 		actor.send({ type: 'vote', action, playerId: debugUser });
 	}
 
-	function votingUsers(voting: VoteState): { voted: User['id'][]; eligible: User[]; required: number } {
-		return {
-			voted: voting.voted,
-			eligible: playerData.filter(user => voting.eligible.includes(user.id)),
-			required: voting.required,
-		};
+	function voteState(context: GameContext, action: VoteAction): VoteState {
+		const voted = context.teams[context.currentTeam].voting[action] ?? [];
+		const eligible = playerData.filter(user => canVote(action, user.id));
+		return { voted, eligible, required: eligible.length };
+	}
+
+	function votingUsers(action: VoteAction): VoteState {
+		return voteState(game, action);
 	}
 
 	function otherTeam(team: Team): Team {
@@ -623,43 +613,46 @@
 		{/each}
 	</div>
 
-	<div class="action-dock" class:hidden={!canSeeVote('ask') && !canSeeVote('eyeHint') && !canSeeVote('guess')}>
+	<div
+		class="action-dock"
+		class:hidden={!canSeeVote('ask', debugUser) && !canSeeVote('eyeHint', debugUser) && !canSeeVote('guess', debugUser)}
+	>
 		<div class="action-buttons">
-			{#if canSeeVote('ask')}
+			{#if canSeeVote('ask', debugUser)}
 				<InkButton
 					size="lg"
 					primary
 					class="flex-1"
-					disabled={!canVote('ask')}
+					disabled={!canVote('ask', debugUser)}
 					onclick={() => vote('ask')}
 					voteLabel="Ask"
-					voting={votingUsers(currentTeam.voting.ask)}
+					voting={votingUsers('ask')}
 				>
 					Ask
 				</InkButton>
 			{/if}
-			{#if canSeeVote('eyeHint')}
+			{#if canSeeVote('eyeHint', debugUser)}
 				<InkButton
 					size="lg"
 					primary
 					class="flex-1"
-					disabled={!canVote('eyeHint')}
+					disabled={!canVote('eyeHint', debugUser)}
 					onclick={() => vote('eyeHint')}
 					voteLabel="Hint"
-					voting={votingUsers(currentTeam.voting.eyeHint)}
+					voting={votingUsers('eyeHint')}
 				>
 					Hint
 				</InkButton>
 			{/if}
-			{#if canSeeVote('guess')}
+			{#if canSeeVote('guess', debugUser)}
 				<InkButton
 					size="lg"
 					primary
 					class="flex-1"
-					disabled={!canVote('guess')}
+					disabled={!canVote('guess', debugUser)}
 					onclick={() => vote('guess')}
 					voteLabel="Guess"
-					voting={votingUsers(currentTeam.voting.guess)}
+					voting={votingUsers('guess')}
 				>
 					Guess
 				</InkButton>
