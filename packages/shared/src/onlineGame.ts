@@ -5,7 +5,6 @@ import {
 	normalizeGameState,
 	type PhantomInkGameAction,
 	type PhantomInkGameState,
-	type Team,
 } from './game';
 import {
 	DEFAULT_PLAYER_COLOR,
@@ -16,8 +15,8 @@ import {
 	type PlayerIconId,
 } from './playerProfile';
 import type { User } from './db/schema';
+import type { Team } from './types';
 
-export type { Team } from './game';
 export type * from './db/schema';
 export {
 	DEFAULT_PLAYER_COLOR,

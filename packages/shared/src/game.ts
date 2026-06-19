@@ -1,8 +1,6 @@
 import { maxBy } from 'es-toolkit';
+import type { Team } from './types';
 
-export const TEAMS = ['sun', 'moon'] as const;
-
-export type Team = (typeof TEAMS)[number];
 export type GameStatus = 'setup' | 'playing' | 'complete';
 
 export interface BoardTemplateRow {

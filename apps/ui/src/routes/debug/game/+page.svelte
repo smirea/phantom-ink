@@ -3,12 +3,11 @@
 	import InkButton from '$lib/InkButton.svelte';
 	import { Eye } from '@lucide/svelte';
 	import { board, questions, words, type QuestionCard, type WordCard } from '@repo/shared/data';
-	import type { User } from '@repo/shared/onlineGame';
-	import { range, sample, shuffle, uniq } from 'es-toolkit';
+	import type { Team, User } from '@repo/shared';
+	import { omit, range, sample, shuffle, uniq } from 'es-toolkit';
 	import { onDestroy } from 'svelte';
 	import { assign, createActor, enqueueActions, setup } from 'xstate';
-
-	type Team = 'sun' | 'moon';
+	import { produce } from 'immer';
 
 	const gameStates = [
 		'start',
@@ -35,7 +34,6 @@
 		invalid?: boolean;
 		questionId?: QuestionCard['id'];
 	};
-	type VoteAction = 'ask' | 'eyeHint' | 'guess';
 	type VoteState = { voted: User['id'][]; eligible: User[]; required: number };
 
 	interface TeamState {
@@ -46,7 +44,7 @@
 		spiritQuestionDiscards: Array<QuestionCard['id']>;
 		eyeUsedRows: number[];
 		board: BoardEntry[];
-		voting: Partial<Record<GameEvent['type'], User['id'][]>>;
+		voting: Partial<Record<VoteType, Record<User['id'], string[]>>>;
 	}
 
 	interface GameContext {
@@ -69,42 +67,80 @@
 		| { type: 'answer'; questionId: QuestionCard['id']; clue: string }
 		| { type: 'silencio' }
 		| { type: 'getClue' }
-		| { type: 'vote'; action: VoteAction; playerId: User['id'] }
+		| { type: 'vote'; action: VoteType; userId: User['id'] }
 		| { type: 'debugSetState'; state: GameState; team: Team };
 
 	const teams = ['sun', 'moon'] as const;
 	const config = {
 		questionsInHand: 7,
 		questionsGivenToSpirit: 2,
+		alphabet: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''),
 	} as const;
 
-	const isYourTurn = (id: User['id']) => currentTeam.players.includes(id);
-	const yourTeam = (id: User['id']) =>
-		snapshot.context.teams.sun.players.includes(id) ? snapshot.context.teams.sun : snapshot.context.teams.moon;
-	const youAreSpirit = (id: User['id']) => yourTeam(id).spirit === id;
-	const youAreMedium = (id: User['id']) => !youAreSpirit(id);
-	const inState = (...states: (typeof snapshot.value)[]) => states.some(x => snapshot.value === x);
+	const isYourTurn = (ctx: GameContext, id: User['id']) => ctx.teams[ctx.currentTeam].players.includes(id);
+	const yourTeam = (ctx: GameContext, id: User['id']) =>
+		ctx.teams.sun.players.includes(id) ? ctx.teams.sun : ctx.teams.moon;
+	const youAreSpirit = (ctx: GameContext, id: User['id']) => yourTeam(ctx, id).spirit === id;
+	const youAreMedium = (ctx: GameContext, id: User['id']) => !youAreSpirit(ctx, id);
+	const inState = (...states: GameState[]) => states.some(x => snapshot.value === x);
+
+	type VoteType = 'pickWord' | 'mediumAction' | 'pickQuestions' | 'clue' | 'guessLetter' | 'pickHint';
 
 	const votingConfig = {
-		pickWord: [() => inState('setupWord'), youAreSpirit],
-
-		ask: [() => inState('mediumsTurn'), id => youAreMedium(id) && isYourTurn(id)],
-		pickQuestions: [() => inState('mediumsAsk'), id => youAreMedium(id) && isYourTurn(id)],
-		getClue: [() => inState('mediumsGetClues'), id => youAreMedium(id) && isYourTurn(id)],
-		silencio: [() => inState('mediumsGetClues'), id => youAreMedium(id) && isYourTurn(id)],
-
-		guess: [() => inState('mediumsTurn'), id => youAreMedium(id) && isYourTurn(id)],
-		guessLetter: [() => inState('guessing'), id => youAreMedium(id) && isYourTurn(id)],
-
-		eyeHint: [() => inState('mediumsTurn'), id => youAreMedium(id) && isYourTurn(id)],
-		pickHint: [() => inState('eyeHint'), id => youAreMedium(id) && isYourTurn(id)],
-	} satisfies Partial<
-		Record<GameEvent['type'], [isActive: (u: User['id']) => boolean, canVote?: (u: User['id']) => boolean]>
+		pickWord: {
+			activeState: 'setupWord',
+			mode: 'anySpirit',
+			count: 1,
+			choices: range(5),
+		},
+		mediumAction: {
+			activeState: 'mediumsTurn',
+			mode: 'activeMedium',
+			count: 1,
+			choices: ['ask', 'guess', 'eyeHint'] satisfies Array<GameEvent['type']>,
+		},
+		pickQuestions: {
+			activeState: 'mediumsAsk',
+			mode: 'activeMedium',
+			count: config.questionsGivenToSpirit,
+			choices: range(config.questionsInHand),
+		},
+		clue: {
+			activeState: 'mediumsGetClues',
+			mode: 'activeMedium',
+			count: 1,
+			choices: ['getClue', 'silencio'] satisfies Array<GameEvent['type']>,
+		},
+		guessLetter: {
+			activeState: 'guessing',
+			mode: 'activeMedium',
+			count: 1,
+			choices: config.alphabet,
+		},
+		pickHint: {
+			activeState: 'eyeHint',
+			mode: 'activeMedium',
+			count: 1,
+			choices: teams.map(t => range(7).map(i => `${t}:${i}` as const)).flat(),
+		},
+	} satisfies Record<
+		VoteType,
+		{
+			activeState: GameState;
+			mode: 'anySpirit' | 'activeMedium';
+			count: number;
+			choices: string[] | number[];
+			canVote?: (u: User['id']) => boolean;
+		}
 	>;
 
-	const canSeeVote = (voteId: keyof typeof votingConfig, id: User['id']) => votingConfig[voteId][0]();
-	const canVote = (voteId: keyof typeof votingConfig, id: User['id']) =>
-		canSeeVote(voteId, id) && votingConfig[voteId][1](id);
+	const canSeeVote = (state: GameState, voteId: VoteType) => votingConfig[voteId].activeState === state;
+	const canVote = (state: GameState, ctx: GameContext, voteId: VoteType, id: User['id']) =>
+		canSeeVote(state, voteId) &&
+		{
+			anySpirit: () => youAreSpirit(ctx, id),
+			activeMedium: () => isYourTurn(ctx, id) && youAreMedium(ctx, id),
+		}[votingConfig[voteId].mode]();
 
 	const gameMachine = setup({
 		types: {
@@ -190,10 +226,10 @@
 				if (event.type !== 'guessLetter') return {};
 				return updateLastGuess(context, event.letter, true);
 			}),
-			recordVote: enqueueActions(({ context, event, enqueue }) => {
+			recordVote: enqueueActions(({ self, context, event, enqueue }) => {
 				if (event.type !== 'vote') return {};
 
-				const nextContext = toggleVote(context, event.action, event.playerId);
+				const nextContext = toggleVote(self.getSnapshot().value, context, event.action, event.userId);
 				const concluded = hasConsensus(nextContext, event.action);
 				enqueue.assign(() => (concluded ? clearVote(nextContext, event.action) : nextContext));
 				if (concluded) enqueue.raise({ type: event.action });
@@ -385,23 +421,31 @@
 		};
 	}
 
-	function toggleVote(context: GameContext, action: VoteAction, playerId: User['id']): GameContext {
-		if (!canVote(action, playerId)) return context;
+	function toggleVote<V extends VoteType>(
+		s: GameState,
+		context: GameContext,
+		v: V,
+		userId: User['id'],
+		option: (typeof votingConfig)[V]['choices'][number],
+	): GameContext {
+		if (!canVote(s, context, v, userId)) return context;
 
 		return updateTeam(context, context.currentTeam, team => {
-			const current = team.voting[action] ?? [];
-			const voted = current.includes(playerId) ? current.filter(id => id !== playerId) : [...current, playerId];
-			return {
-				...team,
-				voting: {
-					...team.voting,
-					[action]: voted,
-				},
-			};
+			const current = team.voting[v]?.[userId] || [];
+			const o = option as any;
+			const voted = current?.includes(o) ? current.filter(item => item !== o) : [...current, userId];
+			return produce(team, draft => {
+				if (voted.length) {
+					team.voting[v] ||= {};
+					team.voting[v][userId] = voted as any;
+				} else if (team.voting[v]) {
+					delete team.voting[v][userId];
+				}
+			});
 		});
 	}
 
-	function clearVote(context: GameContext, action: VoteAction): GameContext {
+	function clearVote(context: GameContext, action: VoteType): GameContext {
 		return updateTeam(context, context.currentTeam, team => {
 			const { [action]: _concluded, ...voting } = team.voting;
 			return { ...team, voting };
@@ -493,23 +537,19 @@
 		);
 	}
 
-	function hasConsensus(context: GameContext, action: VoteAction): boolean {
+	function hasConsensus(context: GameContext, action: VoteType): boolean {
 		const voting = voteState(context, action);
 		return voting.required > 0 && voting.voted.length >= voting.required;
 	}
 
-	function vote(action: VoteAction) {
-		actor.send({ type: 'vote', action, playerId: debugUser });
+	function vote(action: VoteType) {
+		actor.send({ type: 'vote', action, userId: debugUser });
 	}
 
-	function voteState(context: GameContext, action: VoteAction): VoteState {
+	function voteState(s: GameState, context: GameContext, action: VoteType): VoteState {
 		const voted = context.teams[context.currentTeam].voting[action] ?? [];
-		const eligible = playerData.filter(user => canVote(action, user.id));
+		const eligible = playerData.filter(user => canVote(s, context, action, user.id));
 		return { voted, eligible, required: eligible.length };
-	}
-
-	function votingUsers(action: VoteAction): VoteState {
-		return voteState(game, action);
 	}
 
 	function otherTeam(team: Team): Team {
@@ -541,7 +581,18 @@
 		{ id: 5, name: 'six', color: 'haunt', icon: 'skull' },
 	];
 
-	let debugUser = $state<User['id']>(sample(playerData).id!);
+	let debugUser = $state<User['id']>(playerData[0].id);
+
+	actor.send({
+		type: 'debugSetState',
+		state: 'mediumsTurn',
+		team: 'sun',
+	});
+
+	const v = $derived({
+		canSeeVote: (v: VoteType) => canSeeVote(snapshot.value, v),
+		canVote: (v: VoteType, id: User['id']) => canVote(snapshot.value, snapshot.context, v, id),
+	});
 </script>
 
 <div class="debug-game">
@@ -553,7 +604,7 @@
 				onchange={event =>
 					actor.send({
 						type: 'debugSetState',
-						state: (event.currentTarget as HTMLSelectElement).value as GameState,
+						state: event.currentTarget.value as GameState,
 						team: currentTeamName,
 					})}
 			>
@@ -584,11 +635,11 @@
 		<div class="board-row">
 			{#each teams as team}
 				<div class="flex gap-2" class:flex-row-reverse={team === 'moon'}>
-					{#each game.teams[team].players as playerId}
+					{#each game.teams[team].players as userId}
 						<Avatar
-							user={playerData.find(x => x.id === playerId)!}
-							onclick={() => (debugUser = playerId)}
-							class={game.teams[team].spirit === playerId ? 'underline' : ''}
+							user={playerData.find(x => x.id === userId)!}
+							onclick={() => (debugUser = userId)}
+							class={game.teams[team].spirit === userId ? 'underline' : ''}
 						/>
 					{/each}
 				</div>
@@ -613,46 +664,39 @@
 		{/each}
 	</div>
 
-	<div
-		class="action-dock"
-		class:hidden={!canSeeVote('ask', debugUser) && !canSeeVote('eyeHint', debugUser) && !canSeeVote('guess', debugUser)}
-	>
+	<div class="action-dock" class:hidden={!v.canSeeVote('mediumAction')}>
 		<div class="action-buttons">
-			{#if canSeeVote('ask', debugUser)}
+			{#if v.canSeeVote('mediumAction')}
 				<InkButton
 					size="lg"
 					primary
 					class="flex-1"
-					disabled={!canVote('ask', debugUser)}
+					disabled={!v.canVote('mediumAction', debugUser)}
 					onclick={() => vote('ask')}
 					voteLabel="Ask"
-					voting={votingUsers('ask')}
+					voting={voteState(game, 'ask')}
 				>
 					Ask
 				</InkButton>
-			{/if}
-			{#if canSeeVote('eyeHint', debugUser)}
 				<InkButton
 					size="lg"
 					primary
 					class="flex-1"
-					disabled={!canVote('eyeHint', debugUser)}
+					disabled={!v.canVote('mediumAction', debugUser)}
 					onclick={() => vote('eyeHint')}
 					voteLabel="Hint"
-					voting={votingUsers('eyeHint')}
+					voting={voteState(game, 'eyeHint')}
 				>
 					Hint
 				</InkButton>
-			{/if}
-			{#if canSeeVote('guess', debugUser)}
 				<InkButton
 					size="lg"
 					primary
 					class="flex-1"
-					disabled={!canVote('guess', debugUser)}
+					disabled={!v.canVote('mediumAction', debugUser)}
 					onclick={() => vote('guess')}
 					voteLabel="Guess"
-					voting={votingUsers('guess')}
+					voting={voteState(game, 'guess')}
 				>
 					Guess
 				</InkButton>

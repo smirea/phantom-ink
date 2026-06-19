@@ -26,7 +26,8 @@
 		"ui:preview": "bun --filter @repo/ui preview"
 	},
 	"dependencies": {
-		"es-toolkit": "^1.47.1"
+		"es-toolkit": "^1.47.1",
+		"immer": "^11.1.8"
 	},
 	"devDependencies": {
 		"@types/bun": "^1.3.14",
