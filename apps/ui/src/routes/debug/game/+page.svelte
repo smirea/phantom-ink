@@ -78,6 +78,13 @@
 	} satisfies Record<Team, Array<User['id']>>;
 
 	type VoteType = 'pickWord' | 'mediumAction' | 'pickQuestions' | 'clue' | 'guessLetter' | 'pickHint';
+	type VoteConfig = {
+		activeState: GameState;
+		mode: 'anySpirit' | 'activeMedium';
+		count: number;
+		choices: (ctx: GameContext) => VoteOption[];
+		event: (ctx: GameContext, options: VoteOption[]) => GameEvent | null;
+	};
 
 	const votingConfig = {
 		pickWord: {
@@ -85,46 +92,59 @@
 			mode: 'anySpirit',
 			count: 1,
 			choices: (ctx: GameContext) => range(wordCard(ctx).words.length),
+			event: (ctx: GameContext, [option]: VoteOption[]) =>
+				typeof option === 'number' ? { type: 'pickWord', word: wordCard(ctx).words[option] } : null,
 		},
 		mediumAction: {
 			activeState: 'mediumsTurn',
 			mode: 'activeMedium',
 			count: 1,
 			choices: (ctx: GameContext) => (hasEyeHint(ctx) ? ['ask', 'eyeHint', 'guess'] : ['ask', 'guess']),
+			event: (_ctx: GameContext, [option]: VoteOption[]) =>
+				option === 'ask' || option === 'guess' || option === 'eyeHint' ? { type: option } : null,
 		},
 		pickQuestions: {
 			activeState: 'mediumsAsk',
 			mode: 'activeMedium',
 			count: config.questionsGivenToSpirit,
 			choices: (ctx: GameContext) => range(ctx.teams[ctx.currentTeam].questions.length),
+			event: (ctx: GameContext, options: VoteOption[]) => {
+				const team = ctx.teams[ctx.currentTeam];
+				const questionIds = options
+					.filter((value): value is number => typeof value === 'number')
+					.map(index => team.questions[index])
+					.filter((id): id is QuestionCard['id'] => Boolean(id));
+				const [first, second] = questionIds;
+				return first !== undefined && second !== undefined
+					? { type: 'pickQuestions', questionIds: [first, second] }
+					: null;
+			},
 		},
 		clue: {
 			activeState: 'mediumsGetClues',
 			mode: 'activeMedium',
 			count: 1,
 			choices: () => ['getClue', 'silencio'],
+			event: (_ctx: GameContext, [option]: VoteOption[]) =>
+				option === 'getClue' || option === 'silencio' ? { type: option } : null,
 		},
 		guessLetter: {
 			activeState: 'guessing',
 			mode: 'activeMedium',
 			count: 1,
 			choices: () => config.alphabet,
+			event: (_ctx: GameContext, [option]: VoteOption[]) =>
+				typeof option === 'string' ? { type: 'guessLetter', letter: option } : null,
 		},
 		pickHint: {
 			activeState: 'eyeHint',
 			mode: 'activeMedium',
 			count: 1,
 			choices: revealableClueIds,
+			event: (_ctx: GameContext, [option]: VoteOption[]) =>
+				typeof option === 'string' ? { type: 'pickHint', clueId: option } : null,
 		},
-	} satisfies Record<
-		VoteType,
-		{
-			activeState: GameState;
-			mode: 'anySpirit' | 'activeMedium';
-			count: number;
-			choices: (ctx: GameContext) => VoteOption[];
-		}
-	>;
+	} satisfies Record<VoteType, VoteConfig>;
 
 	const canSeeVote = (state: GameState, voteId: VoteType) => votingConfig[voteId].activeState === state;
 
@@ -495,32 +515,7 @@
 
 	function consensusEvent(state: GameState, context: GameContext, action: VoteType): GameEvent | null {
 		const options = consensusOptions(state, context, action);
-		if (options.length !== votingConfig[action].count) return null;
-
-		const team = context.teams[context.currentTeam];
-		const [option] = options;
-		switch (action) {
-			case 'pickWord':
-				return typeof option === 'number' ? { type: 'pickWord', word: wordCard(context).words[option] } : null;
-			case 'mediumAction':
-				return option === 'ask' || option === 'guess' || option === 'eyeHint' ? { type: option } : null;
-			case 'pickQuestions': {
-				const questionIds = options
-					.filter((value): value is number => typeof value === 'number')
-					.map(index => team.questions[index])
-					.filter((id): id is QuestionCard['id'] => Boolean(id));
-				const [first, second] = questionIds;
-				return first !== undefined && second !== undefined
-					? { type: 'pickQuestions', questionIds: [first, second] }
-					: null;
-			}
-			case 'clue':
-				return option === 'getClue' || option === 'silencio' ? { type: option } : null;
-			case 'guessLetter':
-				return typeof option === 'string' ? { type: 'guessLetter', letter: option } : null;
-			case 'pickHint':
-				return typeof option === 'string' ? { type: 'pickHint', clueId: option } : null;
-		}
+		return options.length === votingConfig[action].count ? votingConfig[action].event(context, options) : null;
 	}
 
 	function optionVoteState(s: GameState, context: GameContext, action: VoteType, option: VoteOption): VoteState {
