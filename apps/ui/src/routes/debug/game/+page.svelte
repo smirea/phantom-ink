@@ -250,8 +250,7 @@
 			})),
 			debugSetTeam: assign(({ context, event }) => {
 				if (event.type !== 'debugSetState' && event.type !== 'debugSetTeam') return {};
-				const nextContext = { ...context, currentTeam: event.team };
-				return setupDebugState(nextContext, event.state);
+				return { ...context, currentTeam: event.team };
 			}),
 		},
 	}).createMachine({
@@ -375,56 +374,40 @@
 			word: '',
 			discardedQuestionsDeck: [],
 			teams: {
-				sun: createTeamState([0, 1, 2]),
-				moon: createTeamState([3, 4, 5]),
+				sun: createTeamState(
+					[0, 1, 2],
+					[
+						{
+							type: 'clue',
+							value: 'cucum',
+							fullValue: 'cucumber',
+						},
+					],
+				),
+				moon: createTeamState(
+					[3, 4, 5],
+					[
+						{
+							type: 'clue',
+							value: 'toma',
+							fullValue: 'tomato',
+							hint: 'a',
+						},
+					],
+				),
 			},
 			voting: {},
 		};
 	}
 
-	function createTeamState(players: Array<User['id']>): TeamState {
+	function createTeamState(players: Array<User['id']>, board: BoardEntry[] = []): TeamState {
 		return {
 			spirit: sample(players),
 			players,
 			questions: [],
 			spiritQuestionPicks: [],
-			board: [],
+			board,
 		};
-	}
-
-	function setupDebugState(context: GameContext, state: GameState): GameContext {
-		if (state !== 'eyeHint') return context;
-
-		return produce(context, draft => {
-			for (const team of teams) {
-				const count = team === draft.currentTeam ? board[team].hints[0] : 3;
-				draft.teams[team].board = debugHintBoard(team).slice(0, count);
-			}
-			delete draft.voting.pickHint;
-		});
-	}
-
-	function debugHintBoard(team: Team): BoardEntry[] {
-		const start = team === 'sun' ? 0 : 3;
-		const values =
-			team === 'sun'
-				? [
-						['BRI', 'BRIGHT'],
-						['COLD', 'COLDIRON'],
-						['ASH', 'ASHEN'],
-					]
-				: [
-						['LOW', 'LOWTIDE'],
-						['RING', 'RINGING'],
-						['FOG', 'FOGBOUND'],
-					];
-
-		return values.map(([value, fullValue], index) => ({
-			type: 'clue',
-			value,
-			fullValue,
-			questionId: questions[start + index].id,
-		}));
 	}
 
 	function wordCard(context: GameContext): WordCard {
@@ -696,12 +679,30 @@
 
 	actor.send({
 		type: 'debugSetState',
+		state: 'setupWord',
+		team: 'sun',
+	});
+	actor.send({
+		type: 'pickWord',
+		word: 'potato',
+	});
+	actor.send({
+		type: 'debugSetState',
 		state: 'mediumsTurn', // to trigger questions draw
 		team: 'sun',
 	});
 	actor.send({
 		type: 'debugSetState',
 		state: 'mediumsAsk',
+		team: 'sun',
+	});
+	actor.send({
+		type: 'pickQuestions',
+		questionIds: [questions[5].id, questions[1].id],
+	});
+	actor.send({
+		type: 'debugSetState',
+		state: 'guessing',
 		team: 'sun',
 	});
 
@@ -1123,8 +1124,11 @@
 		background: transparent;
 		color: inherit;
 		font: inherit;
-		padding: 0.25rem 0;
+		font-size: 1.125rem;
+		letter-spacing: 2px;
+		padding: 0.5rem 0;
 		text-align: left;
+		text-transform: uppercase;
 	}
 
 	button.board-cell {
@@ -1782,15 +1786,12 @@
 	}
 
 	.guess-stage {
-		border: 1px solid color-mix(in oklab, var(--app-border) 76%, var(--app-accent) 24%);
-		border-radius: 0.5rem;
+		border-top: 1px solid color-mix(in oklab, var(--app-border) 76%, var(--app-accent) 24%);
 		background:
 			radial-gradient(120% 80% at 50% -10%, color-mix(in oklab, var(--app-moon) 20%, transparent), transparent 56%),
 			color-mix(in oklab, var(--app-panel) 94%, transparent);
-		box-shadow:
-			0 1.25rem 3rem color-mix(in oklab, black 42%, transparent),
-			inset 0 1px 0 color-mix(in oklab, white 8%, transparent);
-		padding: 0.8rem;
+		padding: 1rem;
+		margin: 0 -1rem;
 	}
 
 	.guess-display {
@@ -1852,14 +1853,14 @@
 
 	.ansi-keyboard {
 		display: grid;
-		gap: 0.42rem;
+		gap: 0.375rem;
 		font-family: var(--font-mono);
 	}
 
 	.keyboard-row {
 		display: flex;
 		justify-content: center;
-		gap: 0.36rem;
+		gap: 0.375rem;
 	}
 
 	button.key-button {
