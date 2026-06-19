@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Avatar from '$lib/Avatar.svelte';
 	import InkButton from '$lib/InkButton.svelte';
+	import { playerColorPreset } from '$lib/playerPresentation';
 	import { Eye } from '@lucide/svelte';
 	import { board, questions, words, type QuestionCard, type WordCard } from '@repo/shared/data';
 	import type { User } from '@repo/shared/onlineGame';
@@ -67,13 +68,13 @@
 		| { type: 'getClue' }
 		| { type: 'vote'; action: VoteType; option: VoteOption; userId: User['id'] }
 		| { type: 'debugSetState'; state: GameState; team: Team }
-		| { type: 'debugSetTeam'; team: Team };
+		| { type: 'debugSetTeam'; state: GameState; team: Team };
 
 	const teams = ['sun', 'moon'] as const;
 	const config = {
 		questionsInHand: 7,
 		questionsGivenToSpirit: 2,
-		alphabet: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''),
+		keyboardRows: ['QWERTYUIOP'.split(''), 'ASDFGHJKL'.split(''), 'ZXCVBNM'.split(''), [' ']],
 		runes: 'ᚡᚢᚣᚤᚥᚦᚧᚩᚫᚭᚮᚯᚱᚲᚳᚴᚵᚶᚷᚸᚹᚺᚻᚼᚽᚾᚿᛀᛁᛂᛃᛄᛅᛆᛇᛈᛉᛊᛋᛏᛐᛑᛒᛓᛔᛗᛘᛙᛚᛛᛜᛝᛞᛟᛠᛡᛢᛣᛤᛥᛦᛨᛩᛪ'.split(''),
 	} as const;
 
@@ -124,7 +125,7 @@
 			activeState: 'mediumsGetClues',
 			mode: 'activeMedium',
 			count: 1,
-			choices: () => ['getClue', 'silencio'],
+			choices: (_ctx: GameContext) => ['getClue', 'silencio'],
 			event: (_ctx: GameContext, [option]: VoteOption[]) =>
 				option === 'getClue' || option === 'silencio' ? { type: option } : null,
 		},
@@ -132,7 +133,7 @@
 			activeState: 'guessing',
 			mode: 'activeMedium',
 			count: 1,
-			choices: () => config.alphabet,
+			choices: (_ctx: GameContext) => config.keyboardRows.flat(),
 			event: (_ctx: GameContext, [option]: VoteOption[]) =>
 				typeof option === 'string' ? { type: 'guessLetter', letter: option } : null,
 		},
@@ -247,9 +248,11 @@
 			setupNextTurn: assign(({ context }) => ({
 				currentTeam: context.currentTeam === 'sun' ? 'moon' : 'sun',
 			})),
-			debugSetTeam: assign(({ event }) =>
-				event.type === 'debugSetState' || event.type === 'debugSetTeam' ? { currentTeam: event.team } : {},
-			),
+			debugSetTeam: assign(({ context, event }) => {
+				if (event.type !== 'debugSetState' && event.type !== 'debugSetTeam') return {};
+				const nextContext = { ...context, currentTeam: event.team };
+				return setupDebugState(nextContext, event.state);
+			}),
 		},
 	}).createMachine({
 		id: 'phantomInk',
@@ -387,6 +390,41 @@
 			spiritQuestionPicks: [],
 			board: [],
 		};
+	}
+
+	function setupDebugState(context: GameContext, state: GameState): GameContext {
+		if (state !== 'eyeHint') return context;
+
+		return produce(context, draft => {
+			for (const team of teams) {
+				const count = team === draft.currentTeam ? board[team].hints[0] : 3;
+				draft.teams[team].board = debugHintBoard(team).slice(0, count);
+			}
+			delete draft.voting.pickHint;
+		});
+	}
+
+	function debugHintBoard(team: Team): BoardEntry[] {
+		const start = team === 'sun' ? 0 : 3;
+		const values =
+			team === 'sun'
+				? [
+						['BRI', 'BRIGHT'],
+						['COLD', 'COLDIRON'],
+						['ASH', 'ASHEN'],
+					]
+				: [
+						['LOW', 'LOWTIDE'],
+						['RING', 'RINGING'],
+						['FOG', 'FOGBOUND'],
+					];
+
+		return values.map(([value, fullValue], index) => ({
+			type: 'clue',
+			value,
+			fullValue,
+			questionId: questions[start + index].id,
+		}));
 	}
 
 	function wordCard(context: GameContext): WordCard {
@@ -549,7 +587,41 @@
 	}
 
 	function voteLabel(option: VoteOption): string {
+		if (option === ' ') return 'Space';
 		return String(option).replace(/^\w/, match => match.toUpperCase());
+	}
+
+	function player(userId: User['id']): User {
+		return playerData.find(user => user.id === userId)!;
+	}
+
+	function playerColor(userId: User['id']): string {
+		return playerColorPreset(player(userId).color).value;
+	}
+
+	function canAnswerSpirit(context: GameContext, id: User['id']): boolean {
+		return context.teams[context.currentTeam].spirit === id;
+	}
+
+	function hasUserVote(context: GameContext, action: VoteType, id: User['id']): boolean {
+		return Boolean(context.voting[action]?.[id]?.length);
+	}
+
+	function answerClue(questionId: QuestionCard['id']) {
+		const clue = clueDrafts[questionId]?.trim();
+		if (!clue) return;
+
+		actor.send({ type: 'answer', questionId, clue });
+	}
+
+	function currentClueQuestion(context: GameContext): QuestionCard | null {
+		const clue = getCurrentClue(context);
+		return clue?.questionId ? questions.find(question => question.id === clue.questionId)! : null;
+	}
+
+	function currentGuess(context: GameContext): string {
+		const entry = context.teams[context.currentTeam].board.at(-1);
+		return entry?.type === 'guess' ? entry.value : '';
 	}
 
 	function wordRunes(
@@ -607,7 +679,6 @@
 		return value
 			.toUpperCase()
 			.replace(/[^A-Z ]/g, '')
-			.trim()
 			.slice(0, 1);
 	}
 
@@ -621,6 +692,7 @@
 	];
 
 	let debugUser = $state<User['id']>(playerData[0].id);
+	let clueDrafts = $state<Record<string, string>>({});
 
 	actor.send({
 		type: 'debugSetState',
@@ -648,6 +720,39 @@
 	</span>
 {/snippet}
 
+{#snippet VoteStack(voteState: VoteState)}
+	<span class="vote-stack">
+		{#each voteState.voted as userId (userId)}
+			<span class="vote-ghost" transition:fly={{ y: 16, duration: 260 }}>
+				<Avatar user={player(userId)} name={false} />
+			</span>
+		{/each}
+	</span>
+{/snippet}
+
+{#snippet VoteDots(voteState: VoteState)}
+	<span class="vote-dots">
+		{#each voteState.voted as userId (userId)}
+			<span
+				aria-hidden="true"
+				class="vote-dot"
+				style:--vote-color={playerColor(userId)}
+				transition:fly={{ y: 8, duration: 220 }}
+			></span>
+		{/each}
+	</span>
+{/snippet}
+
+{#snippet TallyAvatars(voteState: VoteState)}
+	<span class="tally-avatars">
+		{#each voteState.voted as userId (userId)}
+			<span class="tally-avatar" transition:fly={{ y: 8, duration: 220 }}>
+				<Avatar user={player(userId)} name={false} />
+			</span>
+		{/each}
+	</span>
+{/snippet}
+
 <div class="debug-game" data-state={currentState}>
 	<header class="top-bar">
 		<div class="debug-controls">
@@ -670,7 +775,7 @@
 				{#each teams as team}
 					<button
 						class:active-toggle={team === currentTeamName}
-						onclick={() => actor.send({ type: 'debugSetTeam', team })}
+						onclick={() => actor.send({ type: 'debugSetTeam', state: currentState, team })}
 						type="button"
 					>
 						{team}
@@ -678,7 +783,7 @@
 				{/each}
 			</div>
 		</div>
-		<Avatar user={playerData.find(x => x.id === debugUser)!} />
+		<Avatar user={player(debugUser)} />
 		<button onclick={() => actor.send({ type: 'start' })}>
 			{snapshot.matches('start') ? 'Start' : 'Reset'}
 		</button>
@@ -690,7 +795,7 @@
 				<div class="flex gap-2" class:flex-row-reverse={team === 'moon'}>
 					{#each game.teams[team].players as userId}
 						<Avatar
-							user={playerData.find(x => x.id === userId)!}
+							user={player(userId)}
 							onclick={() => (debugUser = userId)}
 							class={game.teams[team].spirit === userId ? 'underline' : ''}
 						/>
@@ -702,20 +807,55 @@
 			<div class="board-row">
 				{#each teams as team}
 					{@const entry = game.teams[team].board[turn]}
-					<div class:flex-row-reverse={team === 'moon'}>
-						{#if board[team].hints.includes(turn)}
-							<Eye size={24} />
-						{:else}
-							<div style="width:24px; height:24px"></div>
-						{/if}
-						<span class:invalid={isBoardEntryInvalid(game, entry)} class:done={isBoardEntryDone(game, entry)}>
-							{entry?.value || '\u00a0'}
-						</span>
-					</div>
+					{@const clueId = boardEntryId(team, turn)}
+					{@const canPickHintCell =
+						canSeeVote(currentState, 'pickHint') && entry?.type === 'clue' && !isBoardEntryDone(game, entry)}
+					{#if canPickHintCell}
+						{@const voteState = optionVoteState(currentState, game, 'pickHint', clueId)}
+						{@const canUseHintCell = canVote(currentState, game, 'pickHint', debugUser)}
+						<button
+							aria-pressed={voteState.voted.includes(debugUser)}
+							class="board-cell"
+							class:flex-row-reverse={team === 'moon'}
+							data-hint-target={canUseHintCell && !hasUserVote(game, 'pickHint', debugUser) ? 'true' : undefined}
+							data-voted={voteState.voted.includes(debugUser)}
+							disabled={!canUseHintCell}
+							onclick={() => actor.send({ type: 'vote', action: 'pickHint', option: clueId, userId: debugUser })}
+							type="button"
+						>
+							{#if board[team].hints.includes(turn)}
+								<Eye size={24} />
+							{:else}
+								<div class="board-eye-space"></div>
+							{/if}
+							<span class:invalid={isBoardEntryInvalid(game, entry)} class:done={isBoardEntryDone(game, entry)}>
+								{entry.value || '\u00a0'}
+							</span>
+							{@render VoteDots(voteState)}
+						</button>
+					{:else}
+						<div class="board-cell" class:flex-row-reverse={team === 'moon'}>
+							{#if board[team].hints.includes(turn)}
+								<Eye size={24} />
+							{:else}
+								<div class="board-eye-space"></div>
+							{/if}
+							<span class:invalid={isBoardEntryInvalid(game, entry)} class:done={isBoardEntryDone(game, entry)}>
+								{entry?.value || '\u00a0'}
+							</span>
+						</div>
+					{/if}
 				{/each}
 			</div>
 		{/each}
 	</div>
+
+	{#if currentState === 'start'}
+		<div class="state-panel start-panel">
+			<div class="panel-runes">{@render runes('start', { words: 4, min: 3, max: 8 })}</div>
+			<InkButton size="lg" primary onclick={() => actor.send({ type: 'start' })}>Start</InkButton>
+		</div>
+	{/if}
 
 	{#if canSeeVote(currentState, 'pickWord')}
 		{@const canPickWord = canVote(currentState, game, 'pickWord', debugUser)}
@@ -737,13 +877,7 @@
 								{@render runes(`${game.wordCardId}:${wordIndex}`)}
 							{/if}
 						</span>
-						<span class="vote-stack">
-							{#each voteState.voted as userId (userId)}
-								<span class="vote-ghost" transition:fly={{ y: 16, duration: 260 }}>
-									<Avatar user={playerData.find(x => x.id === userId)!} name={false} />
-								</span>
-							{/each}
-						</span>
+						{@render VoteStack(voteState)}
 					</button>
 				{/each}
 			</div>
@@ -785,16 +919,62 @@
 						{/if}
 					</span>
 					<span class="question-votes" aria-label={`Votes for ${q.title}`}>
-						<span class="vote-stack">
-							{#each voteState.voted as userId (userId)}
-								<span class="vote-ghost" transition:fly={{ y: 16, duration: 260 }}>
-									<Avatar user={playerData.find(x => x.id === userId)!} name={false} />
-								</span>
-							{/each}
-						</span>
+						{@render VoteStack(voteState)}
 					</span>
 				</button>
 			{/each}
+		</div>
+	{/if}
+
+	{#if currentState === 'spiritAnswers'}
+		{@const canAnswer = canAnswerSpirit(game, debugUser)}
+		<div class="answer-stage" data-can-answer={canAnswer}>
+			<div class="answer-word">
+				{#if canAnswer}
+					{game.word}
+				{:else}
+					{@render runes(`${game.wordCardId}:answer-word`, { words: 2, min: 5, max: 9 })}
+				{/if}
+			</div>
+			<div class="question-selector answer-selector">
+				{#each currentTeam.spiritQuestionPicks as qId (qId)}
+					{@const q = questions.find(x => x.id === qId)!}
+					<form
+						class="question-card answer-card"
+						onsubmit={event => {
+							event.preventDefault();
+							answerClue(qId);
+						}}
+					>
+						<span class="question-title">
+							{#if canAnswer}
+								{q.title}
+							{:else}
+								{@render runes(`${qId}:answer-title`, { words: 2, min: 3, max: 8 })}
+							{/if}
+						</span>
+						<span class="question-body">
+							{#if canAnswer}
+								{q.question}
+							{:else}
+								{@render runes(`${qId}:answer-question`, { words: 5, min: 3, max: 9 })}
+							{/if}
+						</span>
+						<span class="answer-input-row">
+							<input
+								aria-label={`Clue for ${q.title}`}
+								disabled={!canAnswer}
+								oninput={event => (clueDrafts[qId] = event.currentTarget.value)}
+								placeholder="Clue"
+								value={clueDrafts[qId] ?? ''}
+							/>
+							<InkButton size="sm" primary type="submit" disabled={!canAnswer || !clueDrafts[qId]?.trim()}>
+								Seal
+							</InkButton>
+						</span>
+					</form>
+				{/each}
+			</div>
 		</div>
 	{/if}
 
@@ -819,6 +999,94 @@
 			</div>
 		</div>
 	{/if}
+
+	{#if canSeeVote(currentState, 'clue')}
+		{@const clue = getCurrentClue(game)}
+		{@const q = currentClueQuestion(game)}
+		<div class="clue-stage">
+			{#if clue && q}
+				<div class="question-card clue-card">
+					<span class="question-title">{q.title}</span>
+					<span class="question-body clue-body">
+						{#if clue.value}
+							<span class="clue-value">{clue.value}</span>
+						{:else}
+							{@render runes(`${q.id}:clue`, { words: 3, min: 3, max: 8 })}
+						{/if}
+					</span>
+				</div>
+			{/if}
+			<div class="action-buttons clue-buttons">
+				{#each votingConfig.clue.choices(game) as option}
+					{@const voteState = optionVoteState(currentState, game, 'clue', option)}
+					<InkButton
+						size="lg"
+						primary={option === 'getClue'}
+						class="flex-1"
+						disabled={!canVote(currentState, game, 'clue', debugUser)}
+						onclick={() => actor.send({ type: 'vote', action: 'clue', option, userId: debugUser })}
+						selfVoted={voteState.voted.includes(debugUser)}
+						voteLabel={voteLabel(option)}
+						voting={voteState}
+					>
+						{option === 'getClue' ? 'Reveal' : 'Silencio'}
+					</InkButton>
+				{/each}
+			</div>
+		</div>
+	{/if}
+
+	{#if canSeeVote(currentState, 'guessLetter')}
+		{@const canGuess = canVote(currentState, game, 'guessLetter', debugUser)}
+		<div class="guess-stage" data-can-vote={canGuess}>
+			<div class="guess-display">
+				<span>{currentGuess(game) || '\u00a0'}</span>
+			</div>
+			<div class="guess-tally">
+				{#each votingConfig.guessLetter.choices(game) as option}
+					{@const voteState = optionVoteState(currentState, game, 'guessLetter', option)}
+					{#if voteState.voted.length}
+						<span class="tally-entry">
+							<span class="tally-label">{voteLabel(option)}:</span>
+							{@render TallyAvatars(voteState)}
+						</span>
+					{/if}
+				{/each}
+			</div>
+			<div class="ansi-keyboard">
+				{#each config.keyboardRows as row, rowIndex (rowIndex)}
+					<div class="keyboard-row" data-row={rowIndex}>
+						{#each row as option (option)}
+							{@const voteState = optionVoteState(currentState, game, 'guessLetter', option)}
+							<button
+								aria-pressed={voteState.voted.includes(debugUser)}
+								class="key-button"
+								class:space-key={option === ' '}
+								data-key={option === ' ' ? 'space' : option}
+								data-voted={voteState.voted.includes(debugUser)}
+								disabled={!canGuess}
+								onclick={() => actor.send({ type: 'vote', action: 'guessLetter', option, userId: debugUser })}
+								type="button"
+							>
+								{@render VoteDots(voteState)}
+								<span class="key-face">{voteLabel(option)}</span>
+							</button>
+						{/each}
+					</div>
+				{/each}
+			</div>
+		</div>
+	{/if}
+
+	{#if currentState === 'win' || currentState === 'lose'}
+		<div class="question-card result-card" data-result={currentState}>
+			<span class="question-title">{currentState === 'win' ? 'Won' : 'Lost'}</span>
+			<span class="question-body result-word">{game.word}</span>
+			<span class="result-actions">
+				<InkButton size="md" primary onclick={() => actor.send({ type: 'start' })}>Reset</InkButton>
+			</span>
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -841,6 +1109,86 @@
 			padding: 0.25rem 0;
 			gap: 0.5rem;
 		}
+	}
+
+	.board-cell {
+		position: relative;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		width: 100%;
+		min-height: 2rem;
+		border: 0;
+		border-radius: 0.35rem;
+		background: transparent;
+		color: inherit;
+		font: inherit;
+		padding: 0.25rem 0;
+		text-align: left;
+	}
+
+	button.board-cell {
+		cursor: pointer;
+		overflow: visible;
+		transition:
+			background 180ms ease,
+			box-shadow 200ms ease,
+			color 180ms ease,
+			transform 180ms ease;
+	}
+
+	button.board-cell:hover:not(:disabled),
+	button.board-cell:focus-visible,
+	button.board-cell[data-voted='true'] {
+		background: color-mix(in oklab, var(--app-focus) 12%, transparent);
+		box-shadow:
+			0 0 0 1px color-mix(in oklab, var(--app-focus) 36%, transparent),
+			0 0 0.8rem color-mix(in oklab, var(--app-focus) 18%, transparent);
+		color: var(--logo-word);
+	}
+
+	button.board-cell:disabled {
+		cursor: default;
+		opacity: 1;
+	}
+
+	button.board-cell[data-hint-target='true']::after {
+		position: absolute;
+		inset: -0.16rem;
+		border: 1px solid color-mix(in oklab, var(--app-focus) 72%, transparent);
+		border-radius: 0.48rem;
+		box-shadow:
+			0 0 0.65rem color-mix(in oklab, var(--app-focus) 24%, transparent),
+			inset 0 0 0.5rem color-mix(in oklab, var(--app-focus) 12%, transparent);
+		pointer-events: none;
+		content: '';
+		animation: hint-cell-wobble 1500ms ease-in-out infinite;
+	}
+
+	@keyframes hint-cell-wobble {
+		0%,
+		100% {
+			opacity: 0.68;
+			transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+		}
+		25% {
+			opacity: 1;
+			transform: translate3d(0.04rem, -0.03rem, 0) rotate(0.7deg) scale(1.015);
+		}
+		55% {
+			opacity: 0.86;
+			transform: translate3d(-0.05rem, 0.02rem, 0) rotate(-0.6deg) scale(0.995);
+		}
+		78% {
+			opacity: 1;
+			transform: translate3d(0.02rem, 0.04rem, 0) rotate(0.35deg) scale(1.01);
+		}
+	}
+
+	.board-eye-space {
+		width: 24px;
+		height: 24px;
+		flex: 0 0 auto;
 	}
 
 	button,
@@ -898,6 +1246,27 @@
 		display: flex;
 		gap: 0.5rem;
 		align-items: center;
+	}
+
+	.state-panel {
+		display: grid;
+		justify-items: center;
+		gap: 1rem;
+		border: 1px solid color-mix(in oklab, var(--app-border) 74%, var(--app-accent) 26%);
+		border-radius: 0.5rem;
+		background:
+			radial-gradient(100% 120% at 50% -10%, color-mix(in oklab, var(--app-accent) 18%, transparent), transparent 56%),
+			color-mix(in oklab, var(--app-panel) 92%, transparent);
+		box-shadow:
+			0 1rem 2.4rem color-mix(in oklab, black 38%, transparent),
+			inset 0 1px 0 color-mix(in oklab, white 8%, transparent);
+		padding: 1.2rem;
+	}
+
+	.panel-runes {
+		display: flex;
+		justify-content: center;
+		max-width: 100%;
 	}
 
 	.pick-word {
@@ -1097,6 +1466,28 @@
 			drop-shadow(0 0 0.5rem color-mix(in oklab, var(--app-focus) 18%, transparent));
 	}
 
+	.vote-dots {
+		position: absolute;
+		top: 0.26rem;
+		left: 50%;
+		display: flex;
+		gap: 0.15rem;
+		justify-content: center;
+		max-width: calc(100% - 0.45rem);
+		pointer-events: none;
+		transform: translateX(-50%);
+	}
+
+	.vote-dot {
+		width: 0.34rem;
+		height: 0.34rem;
+		border-radius: 999px;
+		background: var(--vote-color);
+		box-shadow:
+			0 0 0.28rem color-mix(in oklab, var(--vote-color) 82%, transparent),
+			0 0.1rem 0.22rem color-mix(in oklab, black 48%, transparent);
+	}
+
 	.rune-word {
 		display: inline-flex;
 		flex-wrap: wrap;
@@ -1146,7 +1537,7 @@
 		perspective: 58rem;
 	}
 
-	button.question-card {
+	.question-card {
 		position: relative;
 		display: flex;
 		flex-direction: column;
@@ -1164,7 +1555,7 @@
 			inset 0 1px 0 color-mix(in oklab, white 12%, transparent),
 			inset 0 -1px 0 color-mix(in oklab, black 34%, transparent);
 		color: var(--app-text);
-		cursor: pointer;
+		cursor: default;
 		overflow: hidden;
 		padding: 0;
 		text-align: left;
@@ -1178,7 +1569,11 @@
 			transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
 	}
 
-	button.question-card::before {
+	button.question-card {
+		cursor: pointer;
+	}
+
+	.question-card::before {
 		position: absolute;
 		inset: 0;
 		background:
@@ -1275,6 +1670,292 @@
 		justify-content: center;
 		width: 100%;
 		min-width: 0;
+	}
+
+	.clue-value,
+	.result-word,
+	.answer-word,
+	.guess-display {
+		font-family: var(--font-fancy);
+		font-weight: 950;
+		letter-spacing: 0;
+		text-shadow:
+			0 0 0.65rem color-mix(in oklab, var(--app-focus) 28%, transparent),
+			0 0.2rem 0.42rem color-mix(in oklab, black 42%, transparent);
+	}
+
+	.clue-value {
+		font-size: clamp(1.4rem, 7vw, 2rem);
+		line-height: 1;
+		text-align: center;
+	}
+
+	.answer-stage,
+	.clue-stage,
+	.guess-stage {
+		display: grid;
+		gap: 0.85rem;
+	}
+
+	.answer-word,
+	.guess-display {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 3.25rem;
+		border: 1px solid color-mix(in oklab, var(--app-border) 76%, var(--app-accent) 24%);
+		border-radius: 0.5rem;
+		background:
+			radial-gradient(80% 100% at 50% 0%, color-mix(in oklab, var(--app-focus) 12%, transparent), transparent 60%),
+			color-mix(in oklab, var(--app-input) 64%, transparent);
+		box-shadow:
+			0 0.7rem 1.4rem color-mix(in oklab, black 28%, transparent),
+			inset 0 1px 0 color-mix(in oklab, white 8%, transparent);
+		color: var(--logo-word);
+		font-size: clamp(1.45rem, 7vw, 2.15rem);
+		padding: 0.5rem 0.8rem;
+		text-align: center;
+	}
+
+	.answer-selector {
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+	}
+
+	.answer-card {
+		min-height: 15.5rem;
+	}
+
+	.answer-card .question-body {
+		min-height: 6.4rem;
+	}
+
+	.answer-input-row {
+		position: relative;
+		z-index: 1;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: 0.5rem;
+		align-items: center;
+		min-height: 3.2rem;
+		border-top: 1px solid color-mix(in oklab, var(--app-border) 64%, transparent);
+		background: linear-gradient(180deg, color-mix(in oklab, var(--app-input) 24%, transparent), transparent);
+		padding: 0.52rem;
+		transform: translateZ(0.75rem);
+	}
+
+	.answer-input-row input {
+		min-width: 0;
+		height: 2.2rem;
+		border: 1px solid color-mix(in oklab, var(--app-border) 74%, transparent);
+		border-radius: 0.375rem;
+		background: color-mix(in oklab, var(--app-input) 86%, black 6%);
+		color: var(--app-text);
+		font: inherit;
+		font-weight: 800;
+		padding: 0 0.7rem;
+	}
+
+	.answer-input-row input:focus-visible {
+		outline: 2px solid var(--app-focus);
+		outline-offset: 2px;
+	}
+
+	.answer-input-row input:disabled {
+		opacity: 0.55;
+	}
+
+	.clue-stage {
+		width: min(100%, 30rem);
+		margin: 0 auto;
+	}
+
+	.clue-card {
+		min-height: 11rem;
+	}
+
+	.clue-body .rune-word {
+		font-size: 1.18rem;
+	}
+
+	.clue-buttons {
+		align-items: stretch;
+	}
+
+	.guess-stage {
+		border: 1px solid color-mix(in oklab, var(--app-border) 76%, var(--app-accent) 24%);
+		border-radius: 0.5rem;
+		background:
+			radial-gradient(120% 80% at 50% -10%, color-mix(in oklab, var(--app-moon) 20%, transparent), transparent 56%),
+			color-mix(in oklab, var(--app-panel) 94%, transparent);
+		box-shadow:
+			0 1.25rem 3rem color-mix(in oklab, black 42%, transparent),
+			inset 0 1px 0 color-mix(in oklab, white 8%, transparent);
+		padding: 0.8rem;
+	}
+
+	.guess-display {
+		min-height: 3.8rem;
+		font-family: var(--font-mono);
+		letter-spacing: 0.08em;
+	}
+
+	.guess-tally {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		min-height: 2.35rem;
+		border: 1px solid color-mix(in oklab, var(--app-border) 70%, transparent);
+		border-radius: 0.375rem;
+		background: color-mix(in oklab, var(--app-input) 58%, transparent);
+		overflow-x: auto;
+		padding: 0.42rem 0.5rem;
+	}
+
+	.tally-entry {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.28rem;
+		min-width: max-content;
+		border: 1px solid color-mix(in oklab, var(--app-border) 68%, transparent);
+		border-radius: 999px;
+		background: color-mix(in oklab, var(--app-panel) 74%, transparent);
+		padding: 0.18rem 0.4rem 0.18rem 0.48rem;
+	}
+
+	.tally-label {
+		color: var(--app-muted);
+		font-family: var(--font-mono);
+		font-size: 0.72rem;
+		font-weight: 950;
+		line-height: 1;
+		text-transform: uppercase;
+	}
+
+	.tally-avatars {
+		display: inline-flex;
+		align-items: center;
+	}
+
+	.tally-avatar {
+		display: inline-grid;
+		place-items: center;
+		margin-left: -0.12rem;
+	}
+
+	.tally-avatar:first-child {
+		margin-left: 0;
+	}
+
+	.tally-avatar :global(.avatar) {
+		font-size: 1.15rem;
+	}
+
+	.ansi-keyboard {
+		display: grid;
+		gap: 0.42rem;
+		font-family: var(--font-mono);
+	}
+
+	.keyboard-row {
+		display: flex;
+		justify-content: center;
+		gap: 0.36rem;
+	}
+
+	button.key-button {
+		position: relative;
+		display: grid;
+		place-items: end center;
+		width: clamp(1.85rem, 8.4vw, 2.55rem);
+		height: clamp(2.35rem, 10vw, 3rem);
+		border: 1px solid color-mix(in oklab, var(--app-border) 68%, var(--app-accent) 32%);
+		border-radius: 0.35rem;
+		background:
+			linear-gradient(180deg, color-mix(in oklab, var(--app-input) 82%, white 8%), var(--app-input) 62%),
+			var(--app-input);
+		box-shadow:
+			0 0.26rem 0 color-mix(in oklab, black 34%, transparent),
+			0 0.52rem 0.9rem color-mix(in oklab, black 26%, transparent),
+			inset 0 1px 0 color-mix(in oklab, white 10%, transparent);
+		color: var(--app-text);
+		cursor: pointer;
+		font: inherit;
+		font-weight: 950;
+		line-height: 1;
+		padding: 0.4rem 0.25rem 0.48rem;
+		text-align: center;
+		transition:
+			background 180ms ease,
+			border-color 180ms ease,
+			box-shadow 200ms ease,
+			color 180ms ease,
+			transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+	}
+
+	button.key-button.space-key {
+		width: min(13rem, 62%);
+	}
+
+	button.key-button:hover:not(:disabled),
+	button.key-button:focus-visible {
+		border-color: color-mix(in oklab, var(--app-focus) 56%, var(--app-accent) 44%);
+		box-shadow:
+			0 0.34rem 0 color-mix(in oklab, black 32%, transparent),
+			0 0.78rem 1.2rem color-mix(in oklab, black 32%, transparent),
+			0 0 0.72rem color-mix(in oklab, var(--app-focus) 16%, transparent),
+			inset 0 1px 0 color-mix(in oklab, white 14%, transparent);
+		transform: translateY(-0.12rem);
+	}
+
+	button.key-button:active:not(:disabled) {
+		box-shadow:
+			0 0.08rem 0 color-mix(in oklab, black 36%, transparent),
+			0 0.28rem 0.54rem color-mix(in oklab, black 28%, transparent),
+			inset 0 1px 0 color-mix(in oklab, black 18%, transparent);
+		transform: translateY(0.1rem);
+	}
+
+	button.key-button[data-voted='true'] {
+		border-color: color-mix(in oklab, var(--app-focus) 64%, var(--app-accent) 36%);
+		box-shadow:
+			0 0.3rem 0 color-mix(in oklab, black 32%, transparent),
+			0 0 0.95rem color-mix(in oklab, var(--app-focus) 24%, transparent),
+			inset 0 1px 0 color-mix(in oklab, white 14%, transparent);
+		color: var(--logo-word);
+	}
+
+	button.key-button:disabled {
+		cursor: default;
+		opacity: 0.74;
+	}
+
+	.key-face {
+		text-transform: uppercase;
+	}
+
+	.result-card {
+		width: min(100%, 22rem);
+		min-height: 12rem;
+		margin: 0 auto;
+	}
+
+	.result-card[data-result='win'] {
+		border-color: color-mix(in oklab, var(--app-focus) 58%, var(--app-border) 42%);
+	}
+
+	.result-word {
+		color: var(--logo-word);
+		font-size: clamp(1.6rem, 8vw, 2.35rem);
+	}
+
+	.result-actions {
+		position: relative;
+		z-index: 1;
+		display: flex;
+		justify-content: center;
+		border-top: 1px solid color-mix(in oklab, var(--app-border) 64%, transparent);
+		padding: 0.7rem;
+		transform: translateZ(0.75rem);
 	}
 
 	@keyframes rune-dance {
