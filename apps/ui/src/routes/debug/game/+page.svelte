@@ -513,10 +513,6 @@
 			: Boolean(entry.fullValue && entry.value === entry.fullValue);
 	}
 
-	function isBoardEntryInvalid(context: GameContext, entry: BoardEntry | undefined): boolean {
-		return Boolean(entry?.type === 'guess' && entry.value && !context.word.startsWith(entry.value));
-	}
-
 	function revealableClueIds(context: GameContext): string[] {
 		return teams.flatMap(team =>
 			context.teams[team].board.flatMap((entry, index) =>
@@ -602,9 +598,30 @@
 		return clue?.questionId ? questions.find(question => question.id === clue.questionId)! : null;
 	}
 
-	function currentGuess(context: GameContext): string {
-		const entry = context.teams[context.currentTeam].board.at(-1);
-		return entry?.type === 'guess' ? entry.value : '';
+	function guessParts(context: GameContext, entry: BoardEntry): { valid: string; invalid: string } {
+		let validLength = entry.value.length;
+		for (let index = 1; index <= entry.value.length; index += 1) {
+			if (!context.word.startsWith(entry.value.slice(0, index))) {
+				validLength = index - 1;
+				break;
+			}
+		}
+
+		return {
+			valid: entry.value.slice(0, validLength),
+			invalid: entry.value.slice(validLength),
+		};
+	}
+
+	function isCurrentGuessCell(context: GameContext, team: Team, turn: number): boolean {
+		const teamState = context.teams[team];
+		const entry = teamState.board[turn];
+		return (
+			currentState === 'guessing' &&
+			context.currentTeam === team &&
+			turn === teamState.board.length - 1 &&
+			entry?.type === 'guess'
+		);
 	}
 
 	function wordRunes(
@@ -754,6 +771,28 @@
 	</span>
 {/snippet}
 
+{#snippet BoardValue(entry: BoardEntry | undefined)}
+	{#if entry?.type === 'guess'}
+		{@const parts = guessParts(game, entry)}
+		<span class="board-value" class:done={isBoardEntryDone(game, entry)} data-entry-type="guess">
+			<span class="guess-valid">{parts.valid || (!parts.invalid ? '\u00a0' : '')}</span>
+			{#if parts.invalid}
+				<span class="guess-invalid">{parts.invalid}</span>
+			{/if}
+		</span>
+	{:else}
+		<span
+			class="board-value"
+			class:done={isBoardEntryDone(game, entry)}
+			data-entry-type={entry?.type}
+			data-letter-hint={entry?.type === 'clue' && entry.value ? 'true' : undefined}
+			data-eye-hint={entry?.hint ? 'true' : undefined}
+		>
+			{entry?.value || '\u00a0'}
+		</span>
+	{/if}
+{/snippet}
+
 <div class="debug-game" data-state={currentState}>
 	<header class="top-bar">
 		<div class="debug-controls">
@@ -809,6 +848,7 @@
 				{#each teams as team}
 					{@const entry = game.teams[team].board[turn]}
 					{@const clueId = boardEntryId(team, turn)}
+					{@const isGuessingCell = isCurrentGuessCell(game, team, turn)}
 					{@const canPickHintCell =
 						canSeeVote(currentState, 'pickHint') && entry?.type === 'clue' && !isBoardEntryDone(game, entry)}
 					{#if canPickHintCell}
@@ -819,6 +859,7 @@
 							class="board-cell"
 							class:flex-row-reverse={team === 'moon'}
 							data-hint-target={canUseHintCell && !hasUserVote(game, 'pickHint', debugUser) ? 'true' : undefined}
+							data-guess-target={isGuessingCell ? 'true' : undefined}
 							data-voted={voteState.voted.includes(debugUser)}
 							disabled={!canUseHintCell}
 							onclick={() => actor.send({ type: 'vote', action: 'pickHint', option: clueId, userId: debugUser })}
@@ -829,21 +870,21 @@
 							{:else}
 								<div class="board-eye-space"></div>
 							{/if}
-							<span class:invalid={isBoardEntryInvalid(game, entry)} class:done={isBoardEntryDone(game, entry)}>
-								{entry.value || '\u00a0'}
-							</span>
-							{@render VoteDots(voteState)}
+							{@render BoardValue(entry)}
+							{@render VoteStack(voteState)}
 						</button>
 					{:else}
-						<div class="board-cell" class:flex-row-reverse={team === 'moon'}>
+						<div
+							class="board-cell"
+							class:flex-row-reverse={team === 'moon'}
+							data-guess-target={isGuessingCell ? 'true' : undefined}
+						>
 							{#if board[team].hints.includes(turn)}
 								<Eye size={24} />
 							{:else}
 								<div class="board-eye-space"></div>
 							{/if}
-							<span class:invalid={isBoardEntryInvalid(game, entry)} class:done={isBoardEntryDone(game, entry)}>
-								{entry?.value || '\u00a0'}
-							</span>
+							{@render BoardValue(entry)}
 						</div>
 					{/if}
 				{/each}
@@ -1040,9 +1081,6 @@
 	{#if canSeeVote(currentState, 'guessLetter')}
 		{@const canGuess = canVote(currentState, game, 'guessLetter', debugUser)}
 		<div class="guess-stage" data-can-vote={canGuess}>
-			<div class="guess-display">
-				<span>{currentGuess(game) || '\u00a0'}</span>
-			</div>
 			<div class="guess-tally">
 				{#each votingConfig.guessLetter.choices(game) as option}
 					{@const voteState = optionVoteState(currentState, game, 'guessLetter', option)}
@@ -1095,8 +1133,22 @@
 		position: relative;
 		display: grid;
 		gap: 1rem;
+		width: 100%;
+		max-width: 100%;
+		min-width: 0;
 		color: var(--app-text);
+		overflow-x: clip;
 		padding-bottom: 4rem;
+	}
+
+	:global(.content-card:has(.debug-game)) {
+		overflow-x: clip;
+	}
+
+	.board {
+		min-width: 0;
+		max-width: 100%;
+		overflow-x: clip;
 	}
 
 	.board-row {
@@ -1105,6 +1157,7 @@
 		border-bottom: 1px solid var(--app-border);
 		& > * {
 			flex: 1 1 0;
+			min-width: 0;
 			display: flex;
 			align-items: center;
 			padding: 0.25rem 0;
@@ -1118,6 +1171,7 @@
 		align-items: center;
 		gap: 0.5rem;
 		width: 100%;
+		min-width: 0;
 		min-height: 2rem;
 		border: 0;
 		border-radius: 0.35rem;
@@ -1129,6 +1183,46 @@
 		padding: 0.5rem 0;
 		text-align: left;
 		text-transform: uppercase;
+	}
+
+	.board-value {
+		display: inline-flex;
+		min-width: 0;
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.board-value[data-letter-hint='true'] {
+		color: color-mix(in oklab, var(--app-accent-strong) 74%, var(--logo-word) 26%);
+		font-weight: 950;
+		text-shadow:
+			0 0 0.55rem color-mix(in oklab, var(--app-accent) 26%, transparent),
+			0 0.12rem 0.26rem color-mix(in oklab, black 42%, transparent);
+	}
+
+	.board-value[data-eye-hint='true'] {
+		color: var(--logo-word);
+		text-shadow:
+			0 0 0.72rem color-mix(in oklab, var(--app-focus) 34%, transparent),
+			0 0.12rem 0.28rem color-mix(in oklab, black 44%, transparent);
+	}
+
+	.board-value.done {
+		color: color-mix(in oklab, var(--logo-word) 82%, white 18%);
+	}
+
+	.guess-valid {
+		color: color-mix(in oklab, var(--app-text) 88%, var(--app-muted) 12%);
+	}
+
+	.guess-invalid {
+		color: var(--app-error);
+		font-weight: 950;
+		text-shadow:
+			0 0 0.55rem color-mix(in oklab, var(--app-error) 42%, transparent),
+			0 0.12rem 0.25rem color-mix(in oklab, black 46%, transparent);
 	}
 
 	button.board-cell {
@@ -1156,14 +1250,27 @@
 		opacity: 1;
 	}
 
-	button.board-cell[data-hint-target='true']::after {
+	button.board-cell[data-hint-target='true'] {
+		--cell-pulse-color: var(--app-focus);
+	}
+
+	.board-cell[data-guess-target='true'] {
+		--cell-pulse-color: var(--app-muted);
+		background: color-mix(in oklab, var(--app-muted) 9%, transparent);
+		box-shadow:
+			0 0 0 1px color-mix(in oklab, var(--app-muted) 26%, transparent),
+			inset 0 0 0.7rem color-mix(in oklab, var(--app-muted) 10%, transparent);
+	}
+
+	button.board-cell[data-hint-target='true']::after,
+	.board-cell[data-guess-target='true']::after {
 		position: absolute;
 		inset: -0.16rem;
-		border: 1px solid color-mix(in oklab, var(--app-focus) 72%, transparent);
+		border: 1px solid color-mix(in oklab, var(--cell-pulse-color) 72%, transparent);
 		border-radius: 0.48rem;
 		box-shadow:
-			0 0 0.65rem color-mix(in oklab, var(--app-focus) 24%, transparent),
-			inset 0 0 0.5rem color-mix(in oklab, var(--app-focus) 12%, transparent);
+			0 0 0.65rem color-mix(in oklab, var(--cell-pulse-color) 24%, transparent),
+			inset 0 0 0.5rem color-mix(in oklab, var(--cell-pulse-color) 12%, transparent);
 		pointer-events: none;
 		content: '';
 		animation: hint-cell-wobble 1500ms ease-in-out infinite;
@@ -1193,6 +1300,22 @@
 		width: 24px;
 		height: 24px;
 		flex: 0 0 auto;
+	}
+
+	.board-cell > .vote-stack {
+		justify-content: flex-end;
+		min-width: 1.8rem;
+		height: 1.35rem;
+		margin-left: auto;
+	}
+
+	.board-cell.flex-row-reverse > .vote-stack {
+		margin-right: auto;
+		margin-left: 0;
+	}
+
+	.board-cell .vote-ghost :global(.avatar) {
+		font-size: 1.12rem;
 	}
 
 	button,
@@ -1678,8 +1801,7 @@
 
 	.clue-value,
 	.result-word,
-	.answer-word,
-	.guess-display {
+	.answer-word {
 		font-family: var(--font-fancy);
 		font-weight: 950;
 		letter-spacing: 0;
@@ -1701,8 +1823,7 @@
 		gap: 0.85rem;
 	}
 
-	.answer-word,
-	.guess-display {
+	.answer-word {
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -1790,25 +1911,23 @@
 		background:
 			radial-gradient(120% 80% at 50% -10%, color-mix(in oklab, var(--app-moon) 20%, transparent), transparent 56%),
 			color-mix(in oklab, var(--app-panel) 94%, transparent);
-		padding: 1rem;
-		margin: 0 -1rem;
-	}
-
-	.guess-display {
-		min-height: 3.8rem;
-		font-family: var(--font-mono);
-		letter-spacing: 0.08em;
+		width: 100%;
+		min-width: 0;
+		overflow: hidden;
+		padding: 0.8rem 0;
 	}
 
 	.guess-tally {
 		display: flex;
 		align-items: center;
+		flex-wrap: wrap;
 		gap: 0.45rem;
 		min-height: 2.35rem;
+		min-width: 0;
 		border: 1px solid color-mix(in oklab, var(--app-border) 70%, transparent);
 		border-radius: 0.375rem;
 		background: color-mix(in oklab, var(--app-input) 58%, transparent);
-		overflow-x: auto;
+		overflow: hidden;
 		padding: 0.42rem 0.5rem;
 	}
 
@@ -1854,20 +1973,23 @@
 	.ansi-keyboard {
 		display: grid;
 		gap: 0.375rem;
+		min-width: 0;
 		font-family: var(--font-mono);
 	}
 
 	.keyboard-row {
 		display: flex;
 		justify-content: center;
-		gap: 0.375rem;
+		gap: clamp(0.18rem, 1.6vw, 0.375rem);
+		min-width: 0;
 	}
 
 	button.key-button {
 		position: relative;
 		display: grid;
 		place-items: end center;
-		width: clamp(1.85rem, 8.4vw, 2.55rem);
+		width: clamp(1.42rem, 7.3vw, 2.55rem);
+		min-width: 0;
 		height: clamp(2.35rem, 10vw, 3rem);
 		border: 1px solid color-mix(in oklab, var(--app-border) 68%, var(--app-accent) 32%);
 		border-radius: 0.35rem;
@@ -1894,7 +2016,7 @@
 	}
 
 	button.key-button.space-key {
-		width: min(13rem, 62%);
+		width: min(13rem, 72%);
 	}
 
 	button.key-button:hover:not(:disabled),
