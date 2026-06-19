@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { HTMLAttributes } from 'svelte/elements';
 	import type { User } from '@repo/shared/onlineGame';
 	import { playerColorPreset, playerIconComponents } from '$lib/playerPresentation';
 
@@ -7,7 +8,10 @@
 		name = 'after',
 		class: cls,
 		...rest
-	}: { user: Pick<User, 'name' | 'color' | 'icon'>; name?: boolean | 'before' | 'after'; class?: string } = $props();
+	}: HTMLAttributes<HTMLSpanElement> & {
+		user: Pick<User, 'name' | 'color' | 'icon'>;
+		name?: boolean | 'before' | 'after';
+	} = $props();
 
 	const Icon = $derived(playerIconComponents[user.icon]);
 	const color = $derived(playerColorPreset(user.color).value);

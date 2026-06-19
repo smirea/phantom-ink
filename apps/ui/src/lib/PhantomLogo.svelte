@@ -1,5 +1,12 @@
 <script lang="ts">
-	let { compact = false, textOnly = false }: { compact?: boolean; textOnly?: boolean } = $props();
+	import type { HTMLAttributes } from 'svelte/elements';
+
+	let {
+		compact = false,
+		textOnly = false,
+		class: cls,
+		...rest
+	}: HTMLAttributes<HTMLDivElement> & { compact?: boolean; textOnly?: boolean } = $props();
 
 	const letters = Array.from('Phantom Ink').map((char, index) => ({
 		char,
@@ -8,7 +15,7 @@
 	}));
 </script>
 
-<div class:compact class:text-only={textOnly} class="phantom-logo" role="img" aria-label="Phantom Ink">
+<div class:compact class:text-only={textOnly} class={['phantom-logo', cls]} role="img" aria-label="Phantom Ink">
 	<span class="logo-text" aria-hidden="true">
 		{#each letters as letter}
 			<span
