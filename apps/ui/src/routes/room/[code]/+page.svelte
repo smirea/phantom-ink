@@ -9,6 +9,7 @@
 	import { consumeEventIterator } from '@orpc/client';
 	import {
 		playerIdForUser,
+		type PlayerId,
 		type RoomMemberView,
 		type RoomViewState,
 		type RoomVoteSummary,
@@ -24,6 +25,8 @@
 	import Sun from '@lucide/svelte/icons/sun';
 	import UsersRound from '@lucide/svelte/icons/users-round';
 	import { onMount } from 'svelte';
+
+	type VotingState = { voted: User['id'][]; eligible: User[]; required?: number };
 
 	const appContext = getAppContext();
 	const roomCode = $derived(parseRoomCode(page.params.code));
@@ -122,18 +125,25 @@
 		return mode === 'custom' ? customVote : standardVote;
 	}
 
-	function votingFor(summary: RoomVoteSummary | null): { voted: User[]; missing?: User[] } | undefined {
+	function votingFor(summary: RoomVoteSummary | null): VotingState | undefined {
 		if (!summary) return undefined;
-		const voted = usersForPlayerIds(summary.voterIds);
-		const missing = usersForPlayerIds(summary.missingPlayerIds);
-		return missing.length ? { voted, missing } : { voted };
+		return {
+			voted: userIdsForPlayerIds(summary.voterIds),
+			eligible: usersForPlayerIds(summary.eligiblePlayerIds),
+			required: summary.requiredVotes,
+		};
 	}
 
-	function usersForPlayerIds(playerIds: readonly string[]): User[] {
-		return playerIds.flatMap(playerId => {
-			const member = members.find(member => member.id === playerId);
-			return member ? [memberToUser(member)] : [];
-		});
+	function userIdsForPlayerIds(playerIds: readonly PlayerId[]): User['id'][] {
+		return playerIds.map(playerId => memberForPlayerId(playerId).userId);
+	}
+
+	function usersForPlayerIds(playerIds: readonly PlayerId[]): User[] {
+		return playerIds.map(playerId => memberToUser(memberForPlayerId(playerId)));
+	}
+
+	function memberForPlayerId(playerId: PlayerId): RoomMemberView {
+		return members.find(member => member.id === playerId)!;
 	}
 
 	function memberToUser(member: RoomMemberView): User {

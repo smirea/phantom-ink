@@ -9,7 +9,7 @@
 
 	type ButtonSize = 'sm' | 'md' | 'lg';
 	type ButtonType = 'button' | 'submit' | 'reset';
-	type VotingState = { voted: User[]; missing?: User[] };
+	type VotingState = { voted: User['id'][]; eligible: User[]; required?: number };
 
 	let {
 		children,
@@ -50,7 +50,7 @@
 	const resolvedIconSize = $derived(iconSize ?? (size === 'lg' ? 26 : size === 'sm' ? 17 : 20));
 	const resolvedIconCssSize = $derived(formatCssSize(resolvedIconSize));
 	const resolvedIconStrokeWidth = $derived(iconStrokeWidth ?? (size === 'lg' ? 2.5 : 2.3));
-	const selfHasVoted = $derived(Boolean(voting?.voted.some(user => user.id === appContext.user.id)));
+	const selfHasVoted = $derived(Boolean(voting?.voted.includes(appContext.user.id)));
 
 	function formatCssSize(value: number | string): string {
 		return typeof value === 'number' ? `${value}px` : value;

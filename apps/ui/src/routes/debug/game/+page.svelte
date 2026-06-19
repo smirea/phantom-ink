@@ -36,7 +36,7 @@
 		questionId?: QuestionCard['id'];
 	};
 	type VoteAction = 'ask' | 'eyeHint' | 'guess';
-	type VoteState = { votes: User['id'][]; participating: User['id'][]; required: number };
+	type VoteState = { voted: User['id'][]; eligible: User['id'][]; required: number };
 
 	interface TeamState {
 		spirit: User['id'];
@@ -192,11 +192,11 @@
 
 				return updateTeam(context, context.currentTeam, team => {
 					const current = team.voting[event.action];
-					if (!current.participating.includes(event.playerId)) return team;
+					if (!current.eligible.includes(event.playerId)) return team;
 
-					const votes = current.votes.includes(event.playerId)
-						? current.votes.filter(id => id !== event.playerId)
-						: [...current.votes, event.playerId];
+					const votes = current.voted.includes(event.playerId)
+						? current.voted.filter(id => id !== event.playerId)
+						: [...current.voted, event.playerId];
 
 					return {
 						...team,
@@ -374,7 +374,7 @@
 	}
 
 	function createVoteState(players: Array<User['id']>): VoteState {
-		return { votes: [], participating: [...players], required: players.length };
+		return { voted: [], eligible: [...players], required: players.length };
 	}
 
 	function drawQuestionHand(context: GameContext): GameContext {
@@ -507,19 +507,19 @@
 
 	function hasConsensus(context: GameContext, action: VoteAction): boolean {
 		const vote = context.teams[context.currentTeam].voting[action];
-		return vote.required > 0 && vote.votes.length >= vote.required;
+		return vote.required > 0 && vote.voted.length >= vote.required;
 	}
 
 	function vote(action: VoteAction) {
 		actor.send({ type: 'vote', action, playerId: debugUser });
 	}
 
-	function votingUsers(voting: VoteState): { voted: User[]; missing?: User[] } {
-		const voted = playerData.filter(user => voting.votes.includes(user.id));
-		const missing = playerData.filter(
-			user => voting.participating.includes(user.id) && !voting.votes.includes(user.id),
-		);
-		return missing.length ? { voted, missing } : { voted };
+	function votingUsers(voting: VoteState): { voted: User['id'][]; eligible: User[]; required: number } {
+		return {
+			voted: voting.voted,
+			eligible: playerData.filter(user => voting.eligible.includes(user.id)),
+			required: voting.required,
+		};
 	}
 
 	function otherTeam(team: Team): Team {

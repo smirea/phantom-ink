@@ -1,26 +1,22 @@
 <script lang="ts">
 	import Avatar from '$lib/Avatar.svelte';
-	import { type RoomMemberView, type RoomVoteSummary, type User } from '@repo/shared/onlineGame';
+	import type { User } from '@repo/shared/onlineGame';
 	import Check from '@lucide/svelte/icons/check';
 	import Minus from '@lucide/svelte/icons/minus';
 	import ScrollText from '@lucide/svelte/icons/scroll-text';
-	import { clamp, compact } from 'es-toolkit';
+	import { clamp } from 'es-toolkit';
 	import { onMount, tick } from 'svelte';
 
-	type VotingState = { voted: User[]; missing?: User[] };
+	type VotingState = { voted: User['id'][]; eligible: User[]; required?: number };
 
 	let {
-		summary,
-		members = [],
 		label = 'Votes',
 		passive = false,
 		voting,
 	}: {
-		summary?: RoomVoteSummary | null | undefined;
-		members?: RoomMemberView[];
 		label?: string;
 		passive?: boolean;
-		voting?: VotingState;
+		voting: VotingState;
 	} = $props();
 
 	let isOpen = $state(false);
@@ -32,12 +28,10 @@
 	let flashTimer: ReturnType<typeof setTimeout> | undefined;
 	let flashFrame: number | undefined;
 
-	const summaryVoters = $derived(compact((summary?.voterIds ?? []).map(memberForId)));
-	const summaryMissing = $derived(compact((summary?.missingPlayerIds ?? []).map(memberForId)));
-	const voters = $derived(voting?.voted ?? summaryVoters);
-	const missing = $derived(voting?.missing ?? summaryMissing);
-	const currentVotes = $derived(voting ? voters.length : (summary?.currentVotes ?? 0));
-	const requiredVotes = $derived(voting ? voters.length + missing.length : (summary?.requiredVotes ?? 0));
+	const voters = $derived(voting.eligible.filter(user => voting.voted.includes(user.id)));
+	const missing = $derived(voting.eligible.filter(user => !voting.voted.includes(user.id)));
+	const currentVotes = $derived(voting.voted.length);
+	const requiredVotes = $derived(voting.required ?? voting.eligible.length);
 
 	$effect(() => {
 		if (lastCount === null) {
@@ -81,10 +75,6 @@
 			window.removeEventListener('scroll', handleViewportChange, true);
 		};
 	});
-
-	function memberForId(playerId: string): RoomMemberView | null {
-		return members.find(member => member.id === playerId) ?? null;
-	}
 
 	async function toggle(event: Event) {
 		event.preventDefault();
