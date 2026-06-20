@@ -793,7 +793,7 @@
 	{/if}
 {/snippet}
 
-<div class="debug-game" data-state={currentState}>
+<div class="debug-game" data-state={currentState} data-has-actions={canSeeVote(currentState, 'mediumAction')}>
 	<header class="top-bar">
 		<div class="debug-controls">
 			<select
@@ -1138,7 +1138,10 @@
 		min-width: 0;
 		color: var(--app-text);
 		overflow-x: clip;
-		padding-bottom: 4rem;
+
+		&[data-has-actions='true'] {
+			padding-bottom: 4rem;
+		}
 	}
 
 	:global(.content-card:has(.debug-game)) {
@@ -1924,11 +1927,8 @@
 		gap: 0.45rem;
 		min-height: 2.35rem;
 		min-width: 0;
-		border: 1px solid color-mix(in oklab, var(--app-border) 70%, transparent);
-		border-radius: 0.375rem;
-		background: color-mix(in oklab, var(--app-input) 58%, transparent);
 		overflow: hidden;
-		padding: 0.42rem 0.5rem;
+		padding: 0 1rem;
 	}
 
 	.tally-entry {
@@ -1945,9 +1945,7 @@
 	.tally-label {
 		color: var(--app-muted);
 		font-family: var(--font-mono);
-		font-size: 0.72rem;
-		font-weight: 950;
-		line-height: 1;
+		font-weight: bold;
 		text-transform: uppercase;
 	}
 
