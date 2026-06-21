@@ -8,6 +8,7 @@
 	import { parseRoomCode } from '$lib/roomCodes';
 	import { LS } from '$lib/storage';
 	import DoorOpen from '@lucide/svelte/icons/door-open';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import Moon from '@lucide/svelte/icons/moon';
 	import Sun from '@lucide/svelte/icons/sun';
 	import UserRound from '@lucide/svelte/icons/user-round';
@@ -75,9 +76,10 @@
 	const activePath = $derived(page.url.pathname);
 	const activeRoute = $derived(`${page.url.pathname}${page.url.search}${page.url.hash}`);
 	const activeRoomCode = $derived(roomCodeFromPath(activePath));
+	const isCreatingRoom = $derived(isCreatingRoomPath(activePath));
 	const isBareScreen = $derived(activePath === '/' || activePath === '/setup');
 	const isLobbyScreen = $derived(activePath === '/lobby');
-	const isRoomScreen = $derived(Boolean(activeRoomCode));
+	const isRoomScreen = $derived(Boolean(activeRoomCode) || isCreatingRoom);
 	const requiresSavedUser = $derived(!isPublicPath(activePath));
 	const canRenderRoute = $derived(!requiresSavedUser || !appContext.user.unsaved);
 	const setupHref = $derived(`/setup?returnTo=${encodeURIComponent(activeRoute)}`);
@@ -293,6 +295,10 @@
 		return parseRoomCode(match?.[1]);
 	}
 
+	function isCreatingRoomPath(path: string): boolean {
+		return path === '/room/new';
+	}
+
 	function getAnchor(target: EventTarget | null): HTMLAnchorElement | null {
 		if (!(target instanceof Element)) return null;
 		return target.closest('a[href]');
@@ -382,7 +388,7 @@
 	}
 
 	function isRoomPath(path: string | undefined): boolean {
-		return Boolean(path && roomCodeFromPath(path));
+		return Boolean(path && (roomCodeFromPath(path) || isCreatingRoomPath(path)));
 	}
 
 	function endViewTransition() {
@@ -401,6 +407,10 @@
 			<header class="screen-top">
 				{#if activeRoomCode}
 					<div class="room-code-mark" aria-label={`Room ${activeRoomCode}`}>{activeRoomCode}</div>
+				{:else if isCreatingRoom}
+					<div class="room-code-mark loading">
+						<LoaderCircle size={31} strokeWidth={2.5} />
+					</div>
 				{:else}
 					<div class="top-logo-link">
 						<PhantomLogo compact textOnly />

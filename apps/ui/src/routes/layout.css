@@ -131,6 +131,7 @@ button {
 .room-code-mark {
 	display: inline-flex;
 	align-items: center;
+	justify-content: center;
 	justify-self: start;
 	min-height: 2.5rem;
 	color: var(--logo-word);
@@ -144,6 +145,18 @@ button {
 		0.035em 0.07em 0 var(--logo-word-stroke),
 		0 0.12em 0.18em var(--logo-shadow);
 	-webkit-text-stroke: 0.025em var(--logo-word-stroke);
+}
+
+.room-code-mark.loading {
+	min-width: 4.8rem;
+	letter-spacing: 0;
+	text-shadow: none;
+	-webkit-text-stroke: 0;
+}
+
+.room-code-mark.loading svg {
+	animation: room-code-loading 850ms linear infinite;
+	filter: drop-shadow(0 0 0.55rem color-mix(in oklab, var(--logo-word) 42%, transparent));
 }
 
 .room-bottom-logo {
@@ -504,6 +517,12 @@ html[data-logo-transition='letters']::view-transition-image-pair(phantom-logo-le
 		opacity: 0;
 		filter: blur(0.45rem);
 		transform: translateY(-0.55rem) scale(0.97);
+	}
+}
+
+@keyframes room-code-loading {
+	to {
+		transform: rotate(360deg);
 	}
 }
 

@@ -9,6 +9,7 @@ import {
 	applyOnlineRoomAction,
 	createInitialOnlineRoomState,
 	playerIdForUser,
+	ROOM_CODE_LENGTH,
 	sanitizePlayerColor,
 	sanitizePlayerIcon,
 	sanitizePlayerName,
@@ -89,6 +90,25 @@ const router = os.router({
 				.map(room => ({ code: room.code, state: loadRoomState(room.code) }))
 				.filter(room => room.state.members.length > 0);
 			return { rooms: selectRoomDirectoryListings(rooms) };
+		}),
+		create: os.rooms.create.handler(({ input }) => {
+			pruneInactiveLobbyRooms();
+			const userId = requireUserId(input.userId);
+			const user = getUser(userId);
+			if (!user) throw new ORPCError('NOT_FOUND', { message: 'User not found' });
+
+			const code = createUnusedRoomCode();
+			touchUserPresence(user.id);
+			leaveOtherRooms(code, user);
+			const state = appendRoomAction(code, user.id, {
+				type: 'join',
+				actorId: playerIdForUser(user.id),
+				userId: user.id,
+				name: user.name,
+				color: user.color,
+				icon: user.icon,
+			});
+			return { code, room: roomResponse(code, user.id, state).room };
 		}),
 		get: os.rooms.get.handler(({ input }) => {
 			pruneInactiveLobbyRooms();
@@ -278,6 +298,30 @@ function saveUser(
 
 function getRooms(): RoomRow[] {
 	return db.select().from(roomsTable).orderBy(desc(roomsTable.updatedAt)).all();
+}
+
+function roomExists(code: string): boolean {
+	return Boolean(db.select({ code: roomsTable.code }).from(roomsTable).where(eq(roomsTable.code, code)).get());
+}
+
+function createUnusedRoomCode(): string {
+	for (let attempt = 0; attempt < 64; attempt += 1) {
+		const code = createRoomCode();
+		if (!roomExists(code)) return code;
+	}
+
+	throw new ORPCError('INTERNAL_SERVER_ERROR', { message: 'Unable to create room code' });
+}
+
+function createRoomCode(): string {
+	const bytes = crypto.getRandomValues(new Uint8Array(ROOM_CODE_LENGTH));
+	let code = '';
+
+	for (const value of bytes) {
+		code += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[value % 26];
+	}
+
+	return code;
 }
 
 function touchUserPresence(userId: User['id'], now = Date.now()): void {

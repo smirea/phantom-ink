@@ -1,5 +1,11 @@
+import type { RoomViewState } from '@repo/shared/onlineGame';
+
 declare global {
-	namespace App {}
+	namespace App {
+		interface PageState {
+			optimisticRoom?: RoomViewState;
+		}
+	}
 }
 
 declare module '$app/navigation' {

@@ -4,7 +4,6 @@
 	import InkButton from '$lib/InkButton.svelte';
 	import { api } from '$lib/api';
 	import { getAppContext } from '$lib/appContext';
-	import { createRoomCode } from '$lib/roomCodes';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { type RoomDirectoryListing, type User } from '@repo/shared/onlineGame';
@@ -80,11 +79,11 @@
 	});
 
 	async function startNewSeance() {
-		if (isCreating) return;
+		if (isCreating || joiningCode) return;
 		isCreating = true;
 		error = null;
 		try {
-			await joinAndNavigate(createUnusedRoomCode());
+			await goto(roomHref('new'), { noScroll: true });
 		} catch (caught) {
 			error = caught;
 		} finally {
@@ -94,33 +93,15 @@
 
 	async function joinExistingRoom(code: string) {
 		if (joiningCode || isCreating) return;
+		joiningCode = code;
 		error = null;
 		try {
-			await joinAndNavigate(code);
+			await goto(roomHref(code), { noScroll: true });
 		} catch (caught) {
 			error = caught;
-		}
-	}
-
-	async function joinAndNavigate(code: string) {
-		joiningCode = code;
-		try {
-			const userId = appContext.user.id;
-
-			await api.rooms.join({ code, userId });
-			await goto(roomHref(code), { noScroll: true });
 		} finally {
 			joiningCode = null;
 		}
-	}
-
-	function createUnusedRoomCode(): string {
-		const usedCodes = new Set(rooms.map(room => room.code));
-		for (let attempt = 0; attempt < 16; attempt += 1) {
-			const code = createRoomCode();
-			if (!usedCodes.has(code)) return code;
-		}
-		return createRoomCode();
 	}
 
 	function roomHref(code: string): string {

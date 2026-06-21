@@ -34,6 +34,7 @@ export const appContract = {
 	},
 	rooms: {
 		list: oc.output(orpcType<{ rooms: RoomDirectoryListing[] }>()),
+		create: oc.input(orpcType<UserLookupInput>()).output(orpcType<{ code: string; room: RoomViewState }>()),
 		get: oc.input(orpcType<RoomInput>()).output(orpcType<{ room: RoomViewState }>()),
 		join: oc.input(orpcType<RoomInput>()).output(orpcType<{ room: RoomViewState }>()),
 		action: oc.input(orpcType<RoomActionInput>()).output(orpcType<{ room: RoomViewState }>()),

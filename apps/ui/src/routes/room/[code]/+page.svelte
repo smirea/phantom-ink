@@ -7,11 +7,13 @@
 	import InkButton from '$lib/InkButton.svelte';
 	import { api } from '$lib/api';
 	import { getAppContext } from '$lib/appContext';
-	import { parseRoomCode } from '$lib/roomCodes';
 	import { consumeEventIterator } from '@orpc/client';
 	import { applyPhantomInkGameAction, type GameEvent, type PhantomInkGameState } from '@repo/shared/game';
 	import {
+		applyOnlineRoomAction,
+		createInitialOnlineRoomState,
 		playerIdForUser,
+		selectRoomViewState,
 		type PlayerId,
 		type RoomMemberView,
 		type RoomViewState,
@@ -30,10 +32,12 @@
 
 	type VotingState = { voted: User['id'][]; eligible: User[]; required?: number };
 	type PendingGameAction = { id: number; event: GameEvent };
+	type RoomRequestPayload = { code?: string; room: RoomViewState };
 
+	let { data } = $props();
 	const appContext = getAppContext();
-	const roomCode = $derived(parseRoomCode(page.params.code));
-	let room = $state<RoomViewState | null>(null);
+	const roomCode = $derived(data.roomCode);
+	let room = $state<RoomViewState | null>(initialRoom());
 	let error = $state<unknown>(null);
 	let pendingAction = $state<string | null>(null);
 	let pendingGameActions = $state<PendingGameAction[]>([]);
@@ -62,13 +66,14 @@
 	const gamePlayers = $derived(members.map(memberToUser));
 	const activeGameState = $derived(optimisticGameState ?? room?.gameState ?? null);
 	const canUseLobbyControls = $derived(
-		Boolean(roomCode && room?.phase === 'lobby' && self && self.role !== 'spectator'),
+		Boolean(roomCode && room?.status === 'connected' && room.phase === 'lobby' && self && self.role !== 'spectator'),
 	);
 	const readyButtonLabel = $derived(room?.startProblem ?? 'Ready?');
 
 	onMount(() => {
-		if (!roomCode) {
-			void goto(`/lobby${page.url.search}${page.url.hash}`, { noScroll: true });
+		const initialRoomCode = roomCode;
+		if (!data.isCreatingRoom && !initialRoomCode) {
+			void goto(lobbyHref(), { noScroll: true });
 			return;
 		}
 
@@ -78,12 +83,31 @@
 		async function connect() {
 			try {
 				const userId = appContext.user.id;
+				const payload: RoomRequestPayload = data.isCreatingRoom
+					? await api.rooms.create({ userId })
+					: await api.rooms.join({ code: initialRoomCode as string, userId });
+				if (cancelled) return;
 
-				const payload = await api.rooms.join({ code: roomCode ?? '', userId });
 				room = payload.room;
-				if (cancelled || !roomCode) return;
+				rebuildOptimisticGame();
+				error = null;
 
-				const cancel = consumeEventIterator(api.rooms.events({ code: roomCode, userId }), {
+				const connectedCode = payload.code ?? initialRoomCode;
+				if (!connectedCode) {
+					await goto(lobbyHref(), { noScroll: true });
+					return;
+				}
+
+				if (data.isCreatingRoom) {
+					await goto(roomHref(connectedCode), {
+						replaceState: true,
+						noScroll: true,
+						state: { optimisticRoom: payload.room },
+					});
+					return;
+				}
+
+				const cancel = consumeEventIterator(api.rooms.events({ code: connectedCode, userId }), {
 					onEvent: payload => {
 						const nextRoom = payload.room;
 						room = nextRoom;
@@ -108,6 +132,31 @@
 			closeEvents?.();
 		};
 	});
+
+	function initialRoom(): RoomViewState | null {
+		if (page.state.optimisticRoom) return page.state.optimisticRoom;
+		if (!data.isCreatingRoom) return null;
+
+		const user = appContext.user;
+		const state = createInitialOnlineRoomState();
+		applyOnlineRoomAction(state, {
+			type: 'join',
+			actorId: playerIdForUser(user.id),
+			userId: user.id,
+			name: user.name,
+			color: user.color,
+			icon: user.icon,
+		});
+		return selectRoomViewState(state, user.id, 'connecting');
+	}
+
+	function roomHref(code: string): string {
+		return `/room/${code}${page.url.search}${page.url.hash}`;
+	}
+
+	function lobbyHref(): string {
+		return `/lobby${page.url.search}${page.url.hash}`;
+	}
 
 	function voteSummary(action: RoomVoteSummary['action']): RoomVoteSummary | null {
 		return room?.votes.find(vote => vote.action === action) ?? null;
