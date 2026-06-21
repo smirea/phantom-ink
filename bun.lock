@@ -53,6 +53,8 @@
         "@orpc/contract": "^1.14.6",
         "drizzle-orm": "^0.45.2",
         "es-toolkit": "^1.47.1",
+        "immer": "^11.1.8",
+        "xstate": "^5.32.1",
         "zod": "^4.4.3",
       },
     },
