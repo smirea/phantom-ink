@@ -468,17 +468,6 @@
 		{#if currentState === 'spiritAnswers'}
 			{@const canAnswer = canAnswerSpirit(game, viewerId)}
 			{@const selectedQuestionId = selectedAnswerQuestionId(game)}
-			<button
-				class="question-popup-toggle answer-question-toggle"
-				onclick={() => (questionsMinimized = !questionsMinimized)}
-				type="button"
-			>
-				{#if questionsMinimized}
-					<Maximize2 size={18} />
-				{:else}
-					<Minimize2 size={18} />
-				{/if}
-			</button>
 			{#if !questionsMinimized}
 				<div class="answer-question-overlay" transition:fly={{ y: 20, duration: 180 }}>
 					<div class="answer-question-stage" data-can-answer={canAnswer}>
@@ -553,6 +542,7 @@
 			<footer
 				class="action-footer"
 				class:keyboard-dock={actionFooterKind === 'keyboard'}
+				data-can-answer={actionFooterKind === 'answer' && canAnswerSpirit(game, viewerId) ? 'true' : undefined}
 				data-footer-kind={actionFooterKind}
 			>
 				{#if canSeeVote(currentState, 'mediumAction')}
@@ -603,14 +593,30 @@
 						}}
 					>
 						<div class="answer-input-row">
-							<input
-								disabled={!canAnswer || !selectedQuestionId}
-								oninput={event => {
-									if (selectedQuestionId) clueDrafts[selectedQuestionId] = event.currentTarget.value;
-								}}
-								placeholder="Clue"
-								value={selectedQuestionId ? (clueDrafts[selectedQuestionId] ?? '') : ''}
-							/>
+							<button
+								class="answer-question-toggle"
+								onclick={() => (questionsMinimized = !questionsMinimized)}
+								type="button"
+							>
+								{#if questionsMinimized}
+									<Maximize2 size={18} />
+								{:else}
+									<Minimize2 size={18} />
+								{/if}
+							</button>
+							<span
+								class="answer-input-frame"
+								data-answer-target={canAnswer && selectedQuestionId ? 'true' : undefined}
+							>
+								<input
+									disabled={!canAnswer || !selectedQuestionId}
+									oninput={event => {
+										if (selectedQuestionId) clueDrafts[selectedQuestionId] = event.currentTarget.value;
+									}}
+									placeholder="Clue"
+									value={selectedQuestionId ? (clueDrafts[selectedQuestionId] ?? '') : ''}
+								/>
+							</span>
 							<InkButton
 								size="md"
 								primary
@@ -703,6 +709,10 @@
 	}
 
 	.game-screen[data-state='mediumsAsk']:not([data-questions-minimized='true']) .game-content {
+		overflow: hidden;
+	}
+
+	.game-screen[data-state='spiritAnswers']:not([data-questions-minimized='true']) .game-content {
 		overflow: hidden;
 	}
 
@@ -1033,6 +1043,14 @@
 		box-shadow: 0 -0.22rem 0.7rem color-mix(in srgb, black 14%, transparent);
 		overflow: visible;
 		padding: 1rem 1rem 0.5rem;
+		transition:
+			background 180ms ease,
+			border-color 180ms ease,
+			box-shadow 180ms ease;
+	}
+
+	.action-footer[data-footer-kind='answer'][data-can-answer='true']:not(:focus-within) {
+		animation: answer-action-highlight 1800ms ease-in-out infinite;
 	}
 
 	.action-buttons {
@@ -1056,6 +1074,7 @@
 	}
 
 	.question-popup-toggle,
+	.answer-question-toggle,
 	.question-restore-button {
 		display: inline-grid;
 		place-items: center;
@@ -1076,6 +1095,8 @@
 
 	.question-popup-toggle:hover,
 	.question-popup-toggle:focus-visible,
+	.answer-question-toggle:hover,
+	.answer-question-toggle:focus-visible,
 	.question-restore-button:hover,
 	.question-restore-button:focus-visible {
 		border-color: color-mix(in oklab, var(--app-focus) 58%, var(--app-border) 42%);
@@ -1134,17 +1155,6 @@
 	.answer-action-row {
 		display: grid;
 		gap: 0.55rem;
-		border: 1px solid transparent;
-		border-radius: 0.58rem;
-		padding: 0.18rem;
-		transition:
-			background 180ms ease,
-			border-color 180ms ease,
-			box-shadow 180ms ease;
-	}
-
-	.answer-action-row[data-can-answer='true']:not(:focus-within) {
-		animation: answer-action-highlight 1800ms ease-in-out infinite;
 	}
 
 	.answer-question-overlay {
@@ -1152,10 +1162,11 @@
 		inset: 0;
 		z-index: 30;
 		display: grid;
-		place-items: center;
+		align-items: end;
+		justify-items: center;
 		min-width: 0;
 		min-height: 0;
-		padding: clamp(0.75rem, 3dvh, 1.4rem) clamp(0.65rem, 2.4vw, 1.25rem) 3.4rem;
+		padding: 0.75rem clamp(0.65rem, 2.4vw, 1.25rem) clamp(0.85rem, 2dvh, 1.15rem);
 		pointer-events: none;
 	}
 
@@ -1433,7 +1444,9 @@
 	}
 
 	.answer-question-toggle {
-		z-index: 34;
+		position: relative;
+		z-index: 1;
+		flex: 0 0 auto;
 	}
 
 	.question-selector-popup {
@@ -1467,9 +1480,35 @@
 		align-items: center;
 	}
 
-	.answer-input-row input {
+	.answer-input-frame {
+		position: relative;
+		display: flex;
 		min-width: 0;
 		flex: 1 1 auto;
+		border-radius: 0.45rem;
+		overflow: visible;
+	}
+
+	.answer-input-frame[data-answer-target='true'] {
+		--cell-pulse-color: var(--app-focus);
+	}
+
+	.answer-input-frame[data-answer-target='true']::after {
+		position: absolute;
+		inset: 0.08rem;
+		border: 1px solid color-mix(in oklab, var(--cell-pulse-color) 72%, transparent);
+		border-radius: 0.36rem;
+		box-shadow:
+			inset 0 0 0.85rem color-mix(in oklab, var(--cell-pulse-color) 18%, transparent),
+			inset 0 0 0.5rem color-mix(in oklab, var(--cell-pulse-color) 12%, transparent);
+		pointer-events: none;
+		content: '';
+		animation: hint-cell-wobble 1500ms ease-in-out infinite;
+	}
+
+	.answer-input-row input {
+		width: 100%;
+		min-width: 0;
 		height: 2.85rem;
 		border: 1px solid color-mix(in oklab, var(--app-border) 74%, transparent);
 		border-radius: 0.45rem;
@@ -1644,7 +1683,8 @@
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.answer-action-row[data-can-answer='true']:not(:focus-within) {
+		.action-footer[data-footer-kind='answer'][data-can-answer='true']:not(:focus-within),
+		.answer-input-frame[data-answer-target='true']::after {
 			animation: none;
 		}
 	}
