@@ -1028,15 +1028,15 @@
 	.action-footer-shell {
 		flex: 0 0 auto;
 		z-index: 40;
-		overflow: hidden;
+		overflow: visible;
 	}
 
 	.action-footer {
 		border-top: 1px solid var(--app-border);
 		background: var(--app-panel);
 		box-shadow: 0 -0.22rem 0.7rem color-mix(in srgb, black 14%, transparent);
-		overflow: hidden;
-		padding: 0.5rem 1rem;
+		overflow: visible;
+		padding: 1rem 1rem 0.5rem;
 	}
 
 	.action-buttons {

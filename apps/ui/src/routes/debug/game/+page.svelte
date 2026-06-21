@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Avatar from '$lib/Avatar.svelte';
 	import GameScreen from '$lib/GameScreen.svelte';
-	import { gameMachine, gameStates, type GameEvent, type GameState } from '@repo/shared/game';
+	import { gameMachine, gameStates, type GameEvent, type GameState, type VoteType } from '@repo/shared/game';
 	import type { User } from '@repo/shared/onlineGame';
 	import type { Team } from '@repo/shared/types';
 	import { onDestroy } from 'svelte';
@@ -22,6 +22,7 @@
 	const game = $derived(snapshot.context);
 	const currentState = $derived(snapshot.value as GameState);
 	const currentTeamName = $derived(game.currentTeam);
+	const debugActionState = $derived(actionStateFor(currentState));
 	let debugUser = $state<User['id']>(0);
 
 	const playerData: User[] = [
@@ -40,9 +41,33 @@
 	function player(userId: User['id']): User {
 		return playerData.find(user => user.id === userId)!;
 	}
+
+	function actionStateFor(state: GameState): VoteType | 'answer' | undefined {
+		switch (state) {
+			case 'setupWord':
+				return 'pickWord';
+			case 'mediumsTurn':
+				return 'mediumAction';
+			case 'eyeHint':
+				return 'pickHint';
+			case 'mediumsAsk':
+				return 'pickQuestions';
+			case 'spiritAnswers':
+				return 'answer';
+			case 'mediumsGetClues':
+				return 'clue';
+			case 'guessing':
+				return 'guessLetter';
+		}
+	}
 </script>
 
-<div class="debug-game-shell">
+<div
+	class="debug-game-shell"
+	data-state={currentState}
+	data-action-state={debugActionState}
+	data-debug-user={debugUser}
+>
 	<header class="debug-game-controls">
 		<div class="debug-control-group">
 			<select
@@ -72,13 +97,10 @@
 			</div>
 		</div>
 
-		<div class="debug-user-switcher">
-			{#each playerData as user (user.id)}
-				<button class:active-user={user.id === debugUser} onclick={() => (debugUser = user.id)} type="button">
-					<Avatar {user} name={false} />
-				</button>
-			{/each}
+		<div class="debug-active-user">
+			<Avatar user={player(debugUser)} />
 		</div>
+
 		<button onclick={() => send({ type: 'start' })} type="button">
 			{currentState === 'start' ? 'Start' : 'Reset'}
 		</button>
@@ -110,7 +132,7 @@
 	.debug-game-controls,
 	.debug-control-group,
 	.team-toggle,
-	.debug-user-switcher {
+	.debug-active-user {
 		display: flex;
 		align-items: center;
 		gap: 0.75rem;
@@ -124,12 +146,18 @@
 		padding: 0.8rem 1rem;
 	}
 
-	.team-toggle {
-		gap: 0.4rem;
+	.debug-game-controls > button {
+		margin-left: auto;
 	}
 
-	.debug-user-switcher {
-		gap: 0.2rem;
+	.debug-active-user {
+		font-size: 1.5rem;
+		min-width: 5rem;
+		justify-content: center;
+	}
+
+	.team-toggle {
+		gap: 0.4rem;
 	}
 
 	button,
@@ -145,15 +173,7 @@
 		background: transparent;
 	}
 
-	.debug-user-switcher button {
-		display: inline-grid;
-		place-items: center;
-		padding: 0.28rem;
-		background: transparent;
-	}
-
-	.active-toggle,
-	.active-user {
+	.active-toggle {
 		background: color-mix(in srgb, var(--app-accent) 16%, transparent) !important;
 	}
 </style>
