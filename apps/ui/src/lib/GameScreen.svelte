@@ -611,12 +611,19 @@
 								<input
 									disabled={!canAnswer || !selectedQuestionId}
 									oninput={event => {
-										if (selectedQuestionId) clueDrafts[selectedQuestionId] = event.currentTarget.value;
+										if (selectedQuestionId) {
+											const clue = event.currentTarget.value.toUpperCase();
+											event.currentTarget.value = clue;
+											clueDrafts[selectedQuestionId] = clue;
+										}
 									}}
 									placeholder={canAnswer ? (selectedQuestion?.question ?? '') : 'Clue'}
 									value={selectedQuestionId ? (clueDrafts[selectedQuestionId] ?? '') : ''}
 								/>
 							</span>
+							{#if canAnswer}
+								<span class="answer-word">{game.word.toUpperCase()}</span>
+							{/if}
 							<InkButton
 								size="md"
 								primary
@@ -1501,6 +1508,19 @@
 		font-size: 1.05rem;
 		font-weight: 800;
 		padding: 0 0.9rem;
+		text-transform: uppercase;
+	}
+
+	.answer-word {
+		color: var(--logo-word);
+		font-family: var(--font-fancy);
+		font-size: 1.18rem;
+		font-weight: 950;
+		line-height: 1;
+		white-space: nowrap;
+		text-shadow:
+			0 0 0.55rem color-mix(in oklab, var(--app-focus) 28%, transparent),
+			0 0.16rem 0.32rem color-mix(in oklab, black 42%, transparent);
 	}
 
 	.answer-input-row input:focus-visible {
