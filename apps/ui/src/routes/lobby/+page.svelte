@@ -28,7 +28,6 @@
 	let nearbyExpanded = $state(false);
 	let nearbyCollapsible = $state(false);
 	let isLoading = $state(true);
-	let isCreating = $state(false);
 	let joiningCode = $state<string | null>(null);
 	let error = $state<unknown>(null);
 	const playerListElements = new Map<string, HTMLElement>();
@@ -84,21 +83,16 @@
 		scheduleDelayedListMeasure(nearbyMeasureKey);
 	});
 
-	async function startNewSeance() {
-		if (isCreating || joiningCode) return;
-		isCreating = true;
+	function startNewSeance() {
+		if (joiningCode) return;
 		error = null;
-		try {
-			await goto(roomHref('new'), { noScroll: true });
-		} catch (caught) {
+		void goto(roomHref('new'), { noScroll: true }).catch(caught => {
 			error = caught;
-		} finally {
-			isCreating = false;
-		}
+		});
 	}
 
 	async function joinExistingRoom(room: RoomDirectoryListing) {
-		if (joiningCode || isCreating) return;
+		if (joiningCode) return;
 		joiningCode = room.code;
 		error = null;
 		try {
@@ -257,16 +251,7 @@
 </svelte:head>
 
 <section class="lobby-screen">
-	<InkButton
-		disabled={Boolean(joiningCode)}
-		fill
-		icon={Plus}
-		loading={isCreating}
-		onclick={startNewSeance}
-		primary
-		size="lg"
-		type="button"
-	>
+	<InkButton disabled={Boolean(joiningCode)} fill icon={Plus} onclick={startNewSeance} primary size="lg" type="button">
 		Convene a new séance
 	</InkButton>
 
