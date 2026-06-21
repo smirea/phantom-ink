@@ -32,6 +32,7 @@
 - TanStack Query is configured in `apps/ui/src/routes/+layout.svelte`.
 - Prefer Svelte component CSS for styling. Use Tailwind only for small inline layout and spacing utilities when that is simpler than adding a class.
 - Nest css class definitions in logical blocks where appropriate (one level is fine, don't over do it). Example for a custom `.table {} .table-row {} .table-cell {}` prefer defining them as `.table { .table-row {} .table-cell {} }`
+- never add pure accessibility clutter, no aria attributes
 
 # Local Dev Hosts
 

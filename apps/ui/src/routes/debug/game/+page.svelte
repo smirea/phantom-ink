@@ -761,16 +761,6 @@
 	</span>
 {/snippet}
 
-{#snippet TallyAvatars(voteState: VoteState)}
-	<span class="tally-avatars">
-		{#each voteState.voted as userId (userId)}
-			<span class="tally-avatar" transition:fly={{ y: 8, duration: 220 }}>
-				<Avatar user={player(userId)} name={false} />
-			</span>
-		{/each}
-	</span>
-{/snippet}
-
 {#snippet BoardValue(entry: BoardEntry | undefined)}
 	{#if entry?.type === 'guess'}
 		{@const parts = guessParts(game, entry)}
@@ -1081,17 +1071,6 @@
 	{#if canSeeVote(currentState, 'guessLetter')}
 		{@const canGuess = canVote(currentState, game, 'guessLetter', debugUser)}
 		<div class="guess-stage" data-can-vote={canGuess}>
-			<div class="guess-tally">
-				{#each votingConfig.guessLetter.choices(game) as option}
-					{@const voteState = optionVoteState(currentState, game, 'guessLetter', option)}
-					{#if voteState.voted.length}
-						<span class="tally-entry">
-							<span class="tally-label">{voteLabel(option)}:</span>
-							{@render TallyAvatars(voteState)}
-						</span>
-					{/if}
-				{/each}
-			</div>
 			<div class="ansi-keyboard">
 				{#each config.keyboardRows as row, rowIndex (rowIndex)}
 					<div class="keyboard-row" data-row={rowIndex}>
@@ -1918,54 +1897,6 @@
 		min-width: 0;
 		overflow: hidden;
 		padding: 0.8rem 0;
-	}
-
-	.guess-tally {
-		display: flex;
-		align-items: center;
-		flex-wrap: wrap;
-		gap: 0.45rem;
-		min-height: 2.35rem;
-		min-width: 0;
-		overflow: hidden;
-		padding: 0 1rem;
-	}
-
-	.tally-entry {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.28rem;
-		min-width: max-content;
-		border: 1px solid color-mix(in oklab, var(--app-border) 68%, transparent);
-		border-radius: 999px;
-		background: color-mix(in oklab, var(--app-panel) 74%, transparent);
-		padding: 0.18rem 0.4rem 0.18rem 0.48rem;
-	}
-
-	.tally-label {
-		color: var(--app-muted);
-		font-family: var(--font-mono);
-		font-weight: bold;
-		text-transform: uppercase;
-	}
-
-	.tally-avatars {
-		display: inline-flex;
-		align-items: center;
-	}
-
-	.tally-avatar {
-		display: inline-grid;
-		place-items: center;
-		margin-left: -0.12rem;
-	}
-
-	.tally-avatar:first-child {
-		margin-left: 0;
-	}
-
-	.tally-avatar :global(.avatar) {
-		font-size: 1.15rem;
 	}
 
 	.ansi-keyboard {
