@@ -37,3 +37,7 @@
 # Local Dev Hosts
 
 - UI: phantom-ink.localhost -> 6080
+
+# Game QA
+
+- `/debug/game` runs the shared game machine locally in sync mode. Use it for quick single-browser runs, switching the active player from the debug header and driving votes through every phase.

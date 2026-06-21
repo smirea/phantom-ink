@@ -2,11 +2,13 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import Avatar from '$lib/Avatar.svelte';
+	import GameScreen from '$lib/GameScreen.svelte';
 	import InkButton from '$lib/InkButton.svelte';
 	import { api } from '$lib/api';
 	import { getAppContext } from '$lib/appContext';
 	import { parseRoomCode } from '$lib/roomCodes';
 	import { consumeEventIterator } from '@orpc/client';
+	import { applyPhantomInkGameAction, type GameEvent, type PhantomInkGameState } from '@repo/shared/game';
 	import {
 		playerIdForUser,
 		type PlayerId,
@@ -21,18 +23,21 @@
 	import CircleDashed from '@lucide/svelte/icons/circle-dashed';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import Moon from '@lucide/svelte/icons/moon';
-	import Sparkles from '@lucide/svelte/icons/sparkles';
 	import Sun from '@lucide/svelte/icons/sun';
 	import UsersRound from '@lucide/svelte/icons/users-round';
 	import { onMount } from 'svelte';
 
 	type VotingState = { voted: User['id'][]; eligible: User[]; required?: number };
+	type PendingGameAction = { id: number; event: GameEvent };
 
 	const appContext = getAppContext();
 	const roomCode = $derived(parseRoomCode(page.params.code));
 	let room = $state<RoomViewState | null>(null);
 	let error = $state<string | null>(null);
 	let pendingAction = $state<string | null>(null);
+	let pendingGameActions = $state<PendingGameAction[]>([]);
+	let optimisticGameState = $state<PhantomInkGameState | null>(null);
+	let nextPendingGameActionId = 0;
 
 	const members = $derived(room?.members ?? []);
 	const self = $derived(room?.selfPlayerId ? members.find(member => member.id === room?.selfPlayerId) : null);
@@ -53,6 +58,8 @@
 	const displayedWordVoting = $derived(votingFor(displayedWordVote));
 	const fallbackSelfPlayerId = $derived(appContext.user.id > 0 ? playerIdForUser(appContext.user.id) : null);
 	const selfIsReady = $derived(Boolean(self && readyVote?.voterIds.includes(self.id)));
+	const gamePlayers = $derived(members.map(memberToUser));
+	const activeGameState = $derived(optimisticGameState ?? room?.gameState ?? null);
 	const canUseLobbyControls = $derived(
 		Boolean(roomCode && room?.phase === 'lobby' && self && self.role !== 'spectator'),
 	);
@@ -79,6 +86,7 @@
 					onEvent: payload => {
 						const nextRoom = payload.room;
 						room = nextRoom;
+						rebuildOptimisticGame();
 						error = null;
 					},
 					onError: () => {
@@ -173,6 +181,7 @@
 				},
 			});
 			room = payload.room;
+			rebuildOptimisticGame();
 		} catch (caught) {
 			error = caught instanceof Error ? caught.message : 'Unable to switch sides.';
 		} finally {
@@ -196,6 +205,7 @@
 				},
 			});
 			room = payload.room;
+			rebuildOptimisticGame();
 		} catch (caught) {
 			error = caught instanceof Error ? caught.message : 'Unable to update readiness.';
 		} finally {
@@ -219,11 +229,51 @@
 				},
 			});
 			room = payload.room;
+			rebuildOptimisticGame();
 		} catch (caught) {
 			error = caught instanceof Error ? caught.message : 'Unable to update word settings.';
 		} finally {
 			pendingAction = null;
 		}
+	}
+
+	async function sendGameEvent(event: GameEvent) {
+		if (!roomCode || !self || !room?.gameState) return;
+
+		const pending = { id: ++nextPendingGameActionId, event };
+		pendingGameActions = [...pendingGameActions, pending];
+		rebuildOptimisticGame();
+
+		try {
+			const payload = await api.rooms.action({
+				code: roomCode,
+				userId: appContext.user.id,
+				action: {
+					type: 'game-action',
+					actorId: self.id,
+					action: event,
+				},
+			});
+			room = payload.room;
+		} catch (caught) {
+			error = caught instanceof Error ? caught.message : 'Unable to send action.';
+		} finally {
+			pendingGameActions = pendingGameActions.filter(action => action.id !== pending.id);
+			rebuildOptimisticGame();
+		}
+	}
+
+	function rebuildOptimisticGame() {
+		if (!room?.gameState || !pendingGameActions.length) {
+			optimisticGameState = null;
+			return;
+		}
+
+		const next = structuredClone($state.snapshot(room.gameState));
+		for (const pending of pendingGameActions) {
+			applyPhantomInkGameAction(next, pending.event);
+		}
+		optimisticGameState = next;
 	}
 </script>
 
@@ -232,11 +282,14 @@
 </svelte:head>
 
 <section class="room-screen" aria-label={roomCode ? `Room ${roomCode}` : 'Room'}>
-	{#if room?.phase === 'playing'}
-		<div class="started-screen">
-			<Sparkles size={38} strokeWidth={1.7} />
-			<h1>Game started</h1>
-		</div>
+	{#if room?.phase === 'playing' && activeGameState}
+		<GameScreen
+			game={activeGameState.context}
+			state={activeGameState.state}
+			players={gamePlayers}
+			viewerId={appContext.user.id}
+			send={event => void sendGameEvent(event)}
+		/>
 	{:else}
 		<div class="room-settings">
 			<div
@@ -692,24 +745,6 @@
 		font-size: 0.86rem;
 		font-weight: 850;
 		text-align: center;
-	}
-
-	.started-screen {
-		display: grid;
-		place-items: center;
-		align-content: center;
-		gap: 0.65rem;
-		min-height: clamp(14rem, 44dvh, 26rem);
-		color: var(--app-accent);
-		text-align: center;
-	}
-
-	.started-screen h1 {
-		margin: 0;
-		color: var(--app-text);
-		font-size: clamp(2rem, 9vw, 3.7rem);
-		font-weight: 950;
-		line-height: 0.95;
 	}
 
 	.room-error {

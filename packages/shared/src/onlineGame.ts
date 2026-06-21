@@ -2,7 +2,6 @@ import { countBy, difference, intersection, uniq, uniqBy } from 'es-toolkit';
 import {
 	applyPhantomInkGameAction,
 	createInitialGameState,
-	normalizeGameState,
 	type PhantomInkGameAction,
 	type PhantomInkGameState,
 } from './game';
@@ -85,7 +84,6 @@ export interface OnlineRoomState {
 	phase: RoomPhase;
 	wordMode: WordMode;
 	gameState: PhantomInkGameState | null;
-	savedState: PhantomInkGameState | null;
 	members: RoomMember[];
 	readyPlayerIds: PlayerId[];
 	votes: RoomVote[];
@@ -105,10 +103,7 @@ export type OnlineRoomAction =
 	| { type: 'set-seat'; actorId: PlayerId; team: Team; role: PlayerRole }
 	| { type: 'set-ready'; actorId: PlayerId; ready: boolean }
 	| { type: 'vote'; actorId: PlayerId; vote: RoomVoteAction }
-	| { type: 'start-game'; actorId: PlayerId; object?: string | null }
 	| { type: 'game-action'; actorId: PlayerId; action: PhantomInkGameAction }
-	| { type: 'save-state'; actorId: PlayerId }
-	| { type: 'load-state'; actorId: PlayerId; state?: PhantomInkGameState | null }
 	| { type: 'reset-room'; actorId: PlayerId };
 
 export interface RoomViewState {
@@ -121,7 +116,6 @@ export interface RoomViewState {
 	members: RoomMemberView[];
 	votes: RoomVoteSummary[];
 	gameState: PhantomInkGameState | null;
-	savedState: PhantomInkGameState | null;
 	canStart: boolean;
 	startProblem: string | null;
 }
@@ -150,7 +144,6 @@ export function createInitialOnlineRoomState(): OnlineRoomState {
 		phase: 'lobby',
 		wordMode: 'standard',
 		gameState: null,
-		savedState: null,
 		members: [],
 		readyPlayerIds: [],
 		votes: [],
@@ -250,7 +243,6 @@ export function selectRoomViewState(
 		members,
 		votes,
 		gameState: state?.gameState ?? null,
-		savedState: state?.savedState ?? null,
 		canStart: startProblem === null,
 		startProblem,
 	};
@@ -328,31 +320,10 @@ export function applyOnlineRoomAction(state: OnlineRoomState, action: OnlineRoom
 			if (!voteAction) return false;
 			return applyVote(state, actor, voteAction);
 		}
-		case 'start-game':
-			if (state.phase !== 'lobby' || getStartProblem(state) !== null) return false;
-
-			state.phase = 'playing';
-			state.gameState = createInitialGameState({ object: action.object });
-			state.readyPlayerIds = [];
-			state.votes = [];
-			return true;
 		case 'game-action':
 			if (state.phase !== 'playing' || !state.gameState) return false;
 
 			return applyPhantomInkGameAction(state.gameState, action.action);
-		case 'save-state':
-			if (!state.gameState) return false;
-
-			state.savedState = structuredClone(state.gameState);
-			return true;
-		case 'load-state': {
-			const nextState = action.state ?? state.savedState;
-			if (!nextState) return false;
-
-			state.phase = 'playing';
-			state.gameState = normalizeGameState(structuredClone(nextState));
-			return true;
-		}
 		case 'reset-room':
 			state.phase = 'lobby';
 			state.gameState = null;
@@ -376,6 +347,8 @@ function getStartProblem(state: OnlineRoomState): string | null {
 	const seated = state.members.filter(member => member.role !== 'spectator');
 	if (seated.length < MIN_SEATED_PLAYER_COUNT) return 'At least 4 souls needed';
 	if (seated.length > MAX_SEATED_PLAYER_COUNT) return 'Too many seated souls';
+	if (seated.filter(member => member.team === 'sun').length < 2) return 'Sun needs at least 2 souls';
+	if (seated.filter(member => member.team === 'moon').length < 2) return 'Moon needs at least 2 souls';
 
 	return null;
 }
@@ -432,10 +405,23 @@ function finalizeVotes(state: OnlineRoomState): void {
 	const ready = buildVoteSummary(state, 'ready', 'Ready');
 	if (ready.consensus && getStartProblem(state) === null) {
 		state.phase = 'playing';
-		state.gameState = createInitialGameState();
+		state.gameState = createRoomGameState(state);
 		state.readyPlayerIds = [];
 		state.votes = [];
 	}
+}
+
+function createRoomGameState(state: OnlineRoomState): PhantomInkGameState {
+	const seated = state.members.filter(member => member.role !== 'spectator');
+	const playersByTeam = {
+		sun: seated.filter(member => member.team === 'sun').map(member => member.userId),
+		moon: seated.filter(member => member.team === 'moon').map(member => member.userId),
+	};
+
+	return createInitialGameState({
+		playersByTeam,
+		seed: [state.v, state.wordMode, playersByTeam.sun.join(','), playersByTeam.moon.join(',')].join(':'),
+	});
 }
 
 function clearReady(state: OnlineRoomState): void {
