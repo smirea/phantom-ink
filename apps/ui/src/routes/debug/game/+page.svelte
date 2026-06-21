@@ -2,14 +2,14 @@
 	import Avatar from '$lib/Avatar.svelte';
 	import InkButton from '$lib/InkButton.svelte';
 	import { playerColorPreset } from '$lib/playerPresentation';
-	import { Eye } from '@lucide/svelte';
+	import { Check, Eye, Info, X } from '@lucide/svelte';
 	import { board, questions, words, type QuestionCard, type WordCard } from '@repo/shared/data';
 	import type { User } from '@repo/shared/onlineGame';
 	import type { Team } from '@repo/shared/types';
 	import { range, sample, shuffle, uniq } from 'es-toolkit';
 	import { produce } from 'immer';
 	import { onDestroy } from 'svelte';
-	import { fly } from 'svelte/transition';
+	import { fly, slide } from 'svelte/transition';
 	import { assign, createActor, enqueueActions, setup } from 'xstate';
 
 	const gameStates = [
@@ -33,7 +33,9 @@
 		fullValue?: string;
 		hint?: string;
 		questionId?: QuestionCard['id'];
+		discardedQuestionId?: QuestionCard['id'];
 	};
+	type KnownQuestion = { kind: 'used' | 'discarded'; question: QuestionCard };
 	type VoteState = { voted: User['id'][]; eligible: User[]; required: number };
 	type VoteOption = number | string;
 
@@ -191,12 +193,14 @@
 						? event.questionId
 						: team.spiritQuestionPicks[0];
 					if (!questionId) return;
+					const discardedQuestionId = team.spiritQuestionPicks.find(id => id !== questionId);
 
 					team.board.push({
 						type: 'clue',
 						value: '',
 						fullValue: sanitizePhrase(event.clue),
 						questionId,
+						discardedQuestionId,
 					});
 					draft.discardedQuestionsDeck = uniq([...draft.discardedQuestionsDeck, ...team.spiritQuestionPicks]);
 					team.spiritQuestionPicks = [];
@@ -381,6 +385,15 @@
 							type: 'clue',
 							value: 'cucum',
 							fullValue: 'cucumber',
+							discardedQuestionId: questions[1].id,
+							questionId: questions[2].id,
+						},
+						{
+							type: 'clue',
+							value: 'oran',
+							fullValue: 'orange',
+							discardedQuestionId: questions[10].id,
+							questionId: questions[11].id,
 						},
 					],
 				),
@@ -392,6 +405,8 @@
 							value: 'toma',
 							fullValue: 'tomato',
 							hint: 'a',
+							discardedQuestionId: questions[5].id,
+							questionId: questions[6].id,
 						},
 					],
 				),
@@ -582,6 +597,49 @@
 		return context.teams[context.currentTeam].spirit === id;
 	}
 
+	function playerTeam(context: GameContext, id: User['id']): Team {
+		return context.teams.sun.players.includes(id) ? 'sun' : 'moon';
+	}
+
+	function questionById(id: QuestionCard['id'] | undefined): QuestionCard | undefined {
+		return id ? questions.find(question => question.id === id) : undefined;
+	}
+
+	function knownQuestionsForCell(
+		context: GameContext,
+		viewerId: User['id'],
+		team: Team,
+		turn: number,
+	): KnownQuestion[] {
+		const entry = context.teams[team].board[turn];
+		if (entry?.type !== 'clue') return [];
+
+		const known: KnownQuestion[] = [];
+		const answered = questionById(entry.questionId);
+		const discarded = questionById(entry.discardedQuestionId);
+		if (team === playerTeam(context, viewerId) && answered) {
+			known.push({ kind: 'used', question: answered });
+		}
+		if (discarded) {
+			known.push({ kind: 'discarded', question: discarded });
+		}
+		return known;
+	}
+
+	function rowHasKnownQuestions(context: GameContext, viewerId: User['id'], turn: number): boolean {
+		return teams.some(team => knownQuestionsForCell(context, viewerId, team, turn).length > 0);
+	}
+
+	function toggleBoardRowQuestions(context: GameContext, turn: number) {
+		if (!rowHasKnownQuestions(context, debugUser, turn)) {
+			expandedBoardRows = expandedBoardRows.filter(row => row !== turn);
+			return;
+		}
+		expandedBoardRows = expandedBoardRows.includes(turn)
+			? expandedBoardRows.filter(row => row !== turn)
+			: [...expandedBoardRows, turn];
+	}
+
 	function hasUserVote(context: GameContext, action: VoteType, id: User['id']): boolean {
 		return Boolean(context.voting[action]?.[id]?.length);
 	}
@@ -693,6 +751,7 @@
 
 	let debugUser = $state<User['id']>(playerData[0].id);
 	let clueDrafts = $state<Record<string, string>>({});
+	let expandedBoardRows = $state<number[]>([]);
 
 	actor.send({
 		type: 'debugSetState',
@@ -820,8 +879,11 @@
 	</header>
 
 	<div class="board">
-		<div class="board-row">
+		<div class="board-row board-header-row">
 			{#each teams as team}
+				{#if team === 'moon'}
+					<div class="board-row-toggle-slot"></div>
+				{/if}
 				<div class="flex gap-2" class:flex-row-reverse={team === 'moon'}>
 					{#each game.teams[team].players as userId}
 						<Avatar
@@ -834,50 +896,99 @@
 			{/each}
 		</div>
 		{#each range(board.turns) as turn}
-			<div class="board-row">
-				{#each teams as team}
-					{@const entry = game.teams[team].board[turn]}
-					{@const clueId = boardEntryId(team, turn)}
-					{@const isGuessingCell = isCurrentGuessCell(game, team, turn)}
-					{@const canPickHintCell =
-						canSeeVote(currentState, 'pickHint') && entry?.type === 'clue' && !isBoardEntryDone(game, entry)}
-					{#if canPickHintCell}
-						{@const voteState = optionVoteState(currentState, game, 'pickHint', clueId)}
-						{@const canUseHintCell = canVote(currentState, game, 'pickHint', debugUser)}
-						<button
-							aria-pressed={voteState.voted.includes(debugUser)}
-							class="board-cell"
-							class:flex-row-reverse={team === 'moon'}
-							data-hint-target={canUseHintCell && !hasUserVote(game, 'pickHint', debugUser) ? 'true' : undefined}
-							data-guess-target={isGuessingCell ? 'true' : undefined}
-							data-voted={voteState.voted.includes(debugUser)}
-							disabled={!canUseHintCell}
-							onclick={() => actor.send({ type: 'vote', action: 'pickHint', option: clueId, userId: debugUser })}
-							type="button"
-						>
-							{#if board[team].hints.includes(turn)}
-								<Eye size={24} />
-							{:else}
-								<div class="board-eye-space"></div>
-							{/if}
-							{@render BoardValue(entry)}
-							{@render VoteStack(voteState)}
-						</button>
-					{:else}
-						<div
-							class="board-cell"
-							class:flex-row-reverse={team === 'moon'}
-							data-guess-target={isGuessingCell ? 'true' : undefined}
-						>
-							{#if board[team].hints.includes(turn)}
-								<Eye size={24} />
-							{:else}
-								<div class="board-eye-space"></div>
-							{/if}
-							{@render BoardValue(entry)}
-						</div>
-					{/if}
-				{/each}
+			{@const hasKnownQuestions = rowHasKnownQuestions(game, debugUser, turn)}
+			{@const rowExpanded = expandedBoardRows.includes(turn)}
+			<div
+				class="board-row-group"
+				data-expanded={rowExpanded ? 'true' : undefined}
+				data-has-known={hasKnownQuestions ? 'true' : undefined}
+			>
+				<div class="board-row">
+					{#each teams as team}
+						{#if team === 'moon'}
+							<button
+								class="row-question-toggle"
+								disabled={!hasKnownQuestions}
+								onclick={() => toggleBoardRowQuestions(game, turn)}
+								type="button"
+							>
+								<span class="row-toggle-icon">
+									{#if rowExpanded}
+										<X size={18} />
+									{:else}
+										<Info size={18} />
+									{/if}
+								</span>
+							</button>
+						{/if}
+						{@const entry = game.teams[team].board[turn]}
+						{@const clueId = boardEntryId(team, turn)}
+						{@const isGuessingCell = isCurrentGuessCell(game, team, turn)}
+						{@const canPickHintCell =
+							canSeeVote(currentState, 'pickHint') && entry?.type === 'clue' && !isBoardEntryDone(game, entry)}
+						{#if canPickHintCell}
+							{@const voteState = optionVoteState(currentState, game, 'pickHint', clueId)}
+							{@const canUseHintCell = canVote(currentState, game, 'pickHint', debugUser)}
+							<button
+								aria-pressed={voteState.voted.includes(debugUser)}
+								class="board-cell"
+								class:flex-row-reverse={team === 'moon'}
+								data-hint-target={canUseHintCell && !hasUserVote(game, 'pickHint', debugUser) ? 'true' : undefined}
+								data-guess-target={isGuessingCell ? 'true' : undefined}
+								data-voted={voteState.voted.includes(debugUser)}
+								disabled={!canUseHintCell}
+								onclick={() => actor.send({ type: 'vote', action: 'pickHint', option: clueId, userId: debugUser })}
+								type="button"
+							>
+								{#if board[team].hints.includes(turn)}
+									<Eye size={24} />
+								{:else}
+									<div class="board-eye-space"></div>
+								{/if}
+								{@render BoardValue(entry)}
+								{@render VoteStack(voteState)}
+							</button>
+						{:else}
+							<div
+								class="board-cell"
+								class:flex-row-reverse={team === 'moon'}
+								data-guess-target={isGuessingCell ? 'true' : undefined}
+							>
+								{#if board[team].hints.includes(turn)}
+									<Eye size={24} />
+								{:else}
+									<div class="board-eye-space"></div>
+								{/if}
+								{@render BoardValue(entry)}
+							</div>
+						{/if}
+					{/each}
+				</div>
+				{#if rowExpanded && hasKnownQuestions}
+					<div class="row-question-popover" transition:slide={{ duration: 180 }}>
+						{#each teams as questionTeam}
+							<div class="row-question-column" data-team={questionTeam}>
+								{#each knownQuestionsForCell(game, debugUser, questionTeam, turn) as known (`${questionTeam}:${known.kind}:${known.question.id}`)}
+									<div class="known-question" data-kind={known.kind}>
+										<span class="known-question-icon">
+											{#if known.kind === 'used'}
+												<Check size={14} />
+											{:else}
+												<X size={14} />
+											{/if}
+										</span>
+										<span class="known-question-copy">
+											<strong>{known.question.title}:</strong>
+											{known.question.question}
+										</span>
+									</div>
+								{:else}
+									<span class="known-question-empty"></span>
+								{/each}
+							</div>
+						{/each}
+					</div>
+				{/if}
 			</div>
 		{/each}
 	</div>
@@ -1134,17 +1245,68 @@
 	}
 
 	.board-row {
-		display: flex;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 2rem minmax(0, 1fr);
 		align-items: center;
 		border-bottom: 1px solid var(--app-border);
 		& > * {
-			flex: 1 1 0;
 			min-width: 0;
 			display: flex;
 			align-items: center;
 			padding: 0.25rem 0;
 			gap: 0.5rem;
 		}
+	}
+
+	.board-row-group {
+		display: grid;
+		min-width: 0;
+	}
+
+	.board-row-toggle-slot,
+	.row-question-toggle {
+		justify-content: center;
+		width: 2rem;
+		min-width: 2rem;
+		min-height: 2rem;
+		padding: 0;
+	}
+
+	.row-question-toggle {
+		position: relative;
+		border: 0;
+		background: transparent;
+		color: var(--app-muted);
+		cursor: pointer;
+	}
+
+	.row-question-toggle:disabled {
+		cursor: default;
+		opacity: 1;
+	}
+
+	.row-toggle-icon {
+		position: absolute;
+		inset: 0;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		opacity: 0;
+		transform: scale(0.72) rotate(-24deg);
+		transition:
+			opacity 140ms ease,
+			transform 180ms ease,
+			color 140ms ease;
+	}
+
+	.board-row-group[data-has-known='true']:hover .row-toggle-icon,
+	.board-row-group[data-expanded='true'] .row-toggle-icon {
+		opacity: 1;
+		transform: scale(1) rotate(0deg);
+	}
+
+	.board-row-group[data-expanded='true'] .row-toggle-icon {
+		color: var(--logo-word);
 	}
 
 	.board-cell {
@@ -1227,11 +1389,6 @@
 		color: var(--logo-word);
 	}
 
-	button.board-cell:disabled {
-		cursor: default;
-		opacity: 1;
-	}
-
 	button.board-cell[data-hint-target='true'] {
 		--cell-pulse-color: var(--app-focus);
 	}
@@ -1298,6 +1455,90 @@
 
 	.board-cell .vote-ghost :global(.avatar) {
 		font-size: 1.12rem;
+	}
+
+	.row-question-popover {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0;
+		border-bottom: 1px solid color-mix(in oklab, var(--app-border) 72%, transparent);
+		background:
+			linear-gradient(180deg, color-mix(in oklab, var(--app-focus) 7%, transparent), transparent),
+			color-mix(in oklab, var(--app-panel) 72%, transparent);
+		padding: 0.45rem 0;
+	}
+
+	.row-question-column {
+		display: grid;
+		gap: 0.35rem;
+		min-width: 0;
+		border-block: 1px solid color-mix(in oklab, var(--app-border) 62%, transparent);
+		background: color-mix(in oklab, var(--app-input) 34%, transparent);
+		padding: 0.45rem;
+	}
+
+	.row-question-column[data-team='sun'] {
+		border-left: 1px solid color-mix(in oklab, var(--app-border) 62%, transparent);
+		border-radius: 0.375rem 0 0 0.375rem;
+	}
+
+	.row-question-column[data-team='moon'] {
+		border-right: 1px solid color-mix(in oklab, var(--app-border) 62%, transparent);
+		border-left: 1px solid color-mix(in oklab, var(--app-border) 42%, transparent);
+		border-radius: 0 0.375rem 0.375rem 0;
+	}
+
+	.known-question {
+		--known-question-color: var(--app-muted);
+		display: grid;
+		grid-template-columns: 1rem minmax(0, 1fr);
+		align-items: start;
+		gap: 0.35rem;
+		min-width: 0;
+		font-family: inherit;
+		font-size: 0.78rem;
+		font-weight: 650;
+		letter-spacing: 0;
+		line-height: 1.24;
+		text-transform: none;
+	}
+
+	.known-question + .known-question {
+		border-top: 1px solid color-mix(in oklab, var(--app-border) 58%, transparent);
+		padding-top: 0.35rem;
+	}
+
+	.known-question-icon {
+		display: inline-flex;
+		justify-content: center;
+		margin-top: 0.06rem;
+		color: var(--known-question-color);
+		filter: drop-shadow(0 0 0.35rem color-mix(in oklab, var(--known-question-color) 34%, transparent));
+	}
+
+	.known-question[data-kind='used'] {
+		--known-question-color: color-mix(in oklab, #34f077 84%, var(--logo-word) 16%);
+	}
+
+	.known-question[data-kind='discarded'] {
+		--known-question-color: color-mix(in oklab, #ff4f6d 88%, var(--app-error) 12%);
+	}
+
+	.known-question-copy {
+		min-width: 0;
+		color: color-mix(in oklab, var(--app-text) 86%, var(--app-muted) 14%);
+	}
+
+	.known-question-copy strong {
+		color: var(--known-question-color);
+		font: inherit;
+		font-weight: 850;
+		letter-spacing: 0;
+		text-shadow: 0 0 0.45rem color-mix(in oklab, var(--known-question-color) 24%, transparent);
+	}
+
+	.known-question-empty {
+		min-height: 0.35rem;
 	}
 
 	button,
