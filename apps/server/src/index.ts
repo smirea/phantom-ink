@@ -134,7 +134,19 @@ const router = os.router({
 	},
 });
 
-const rpcHandler = new RPCHandler(router);
+const rpcHandler = new RPCHandler(router, {
+	clientInterceptors: [
+		async ({ next }) => {
+			try {
+				return await next();
+			} catch (caught) {
+				const details = errorDetails(caught);
+				console.error(details.stack);
+				throw errorForClient(caught, details);
+			}
+		},
+	],
+});
 
 const server = Bun.serve({
 	development: true,
@@ -172,6 +184,51 @@ function requireRoomCode(value: string): string {
 	const code = value.trim().toUpperCase();
 	if (!/^[A-Z]{4}$/.test(code)) throw new ORPCError('BAD_REQUEST', { message: 'Room codes must be 4 letters' });
 	return code;
+}
+
+type ErrorDetails = {
+	name: string;
+	message: string;
+	stack: string;
+};
+
+function errorDetails(caught: unknown): ErrorDetails {
+	const error = caught instanceof Error ? caught : new Error(formatUnknownError(caught));
+	const stack = error.stack ?? `${error.name}: ${error.message}`;
+
+	return {
+		name: error.name,
+		message: error.message,
+		stack,
+	};
+}
+
+function errorForClient(caught: unknown, details: ErrorDetails): ORPCError<string, ErrorDetails> {
+	if (caught instanceof ORPCError) {
+		return new ORPCError(caught.code, {
+			defined: caught.defined,
+			status: caught.status,
+			message: details.message,
+			data: details,
+			cause: caught,
+		});
+	}
+
+	return new ORPCError('INTERNAL_SERVER_ERROR', {
+		message: details.message,
+		data: details,
+		cause: caught,
+	});
+}
+
+function formatUnknownError(value: unknown): string {
+	if (typeof value === 'string') return value;
+
+	try {
+		return JSON.stringify(value) ?? String(value);
+	} catch {
+		return String(value);
+	}
 }
 
 function getUserRow(userId: User['id'] | null): UserRow | null {

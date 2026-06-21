@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import Avatar from '$lib/Avatar.svelte';
+	import ErrorBox from '$lib/ErrorBox.svelte';
 	import GameScreen from '$lib/GameScreen.svelte';
 	import InkButton from '$lib/InkButton.svelte';
 	import { api } from '$lib/api';
@@ -33,7 +34,7 @@
 	const appContext = getAppContext();
 	const roomCode = $derived(parseRoomCode(page.params.code));
 	let room = $state<RoomViewState | null>(null);
-	let error = $state<string | null>(null);
+	let error = $state<unknown>(null);
 	let pendingAction = $state<string | null>(null);
 	let pendingGameActions = $state<PendingGameAction[]>([]);
 	let optimisticGameState = $state<PhantomInkGameState | null>(null);
@@ -89,15 +90,15 @@
 						rebuildOptimisticGame();
 						error = null;
 					},
-					onError: () => {
-						error = 'Connection faded.';
+					onError: caught => {
+						error = caught;
 					},
 				});
 				closeEvents = () => {
 					void cancel();
 				};
 			} catch (caught) {
-				if (!cancelled) error = caught instanceof Error ? caught.message : 'Unable to join séance.';
+				if (!cancelled) error = caught;
 			}
 		}
 
@@ -183,7 +184,7 @@
 			room = payload.room;
 			rebuildOptimisticGame();
 		} catch (caught) {
-			error = caught instanceof Error ? caught.message : 'Unable to switch sides.';
+			error = caught;
 		} finally {
 			pendingAction = null;
 		}
@@ -207,7 +208,7 @@
 			room = payload.room;
 			rebuildOptimisticGame();
 		} catch (caught) {
-			error = caught instanceof Error ? caught.message : 'Unable to update readiness.';
+			error = caught;
 		} finally {
 			pendingAction = null;
 		}
@@ -231,7 +232,7 @@
 			room = payload.room;
 			rebuildOptimisticGame();
 		} catch (caught) {
-			error = caught instanceof Error ? caught.message : 'Unable to update word settings.';
+			error = caught;
 		} finally {
 			pendingAction = null;
 		}
@@ -256,7 +257,7 @@
 			});
 			room = payload.room;
 		} catch (caught) {
-			error = caught instanceof Error ? caught.message : 'Unable to send action.';
+			error = caught;
 		} finally {
 			pendingGameActions = pendingGameActions.filter(action => action.id !== pending.id);
 			rebuildOptimisticGame();
@@ -376,7 +377,7 @@
 	{/if}
 
 	{#if error}
-		<p class="room-error">{error}</p>
+		<ErrorBox {error} />
 	{/if}
 </section>
 
@@ -738,17 +739,6 @@
 		display: grid;
 		gap: 0.35rem;
 		overflow: visible;
-	}
-
-	.room-error {
-		color: var(--app-error);
-		font-size: 0.86rem;
-		font-weight: 850;
-		text-align: center;
-	}
-
-	.room-error {
-		margin: 0;
 	}
 
 	.spin {

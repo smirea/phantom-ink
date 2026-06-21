@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Avatar from '$lib/Avatar.svelte';
+	import ErrorBox from '$lib/ErrorBox.svelte';
 	import InkButton from '$lib/InkButton.svelte';
 	import { api } from '$lib/api';
 	import { getAppContext } from '$lib/appContext';
@@ -24,7 +25,7 @@
 	let isLoading = $state(true);
 	let isCreating = $state(false);
 	let joiningCode = $state<string | null>(null);
-	let error = $state<string | null>(null);
+	let error = $state<unknown>(null);
 	const playerListElements = new Map<string, HTMLElement>();
 	let nearbyListElement = $state<HTMLElement | undefined>();
 	let measureFrame: number | undefined;
@@ -49,8 +50,8 @@
 					nearbySouls = nearbySoulsPayload.users;
 					error = null;
 				}
-			} catch {
-				if (!cancelled) error = 'Unable to load open séances.';
+			} catch (caught) {
+				if (!cancelled) error = caught;
 			} finally {
 				if (!cancelled) isLoading = false;
 			}
@@ -85,7 +86,7 @@
 		try {
 			await joinAndNavigate(createUnusedRoomCode());
 		} catch (caught) {
-			error = caught instanceof Error ? caught.message : 'Unable to start a séance.';
+			error = caught;
 		} finally {
 			isCreating = false;
 		}
@@ -97,7 +98,7 @@
 		try {
 			await joinAndNavigate(code);
 		} catch (caught) {
-			error = caught instanceof Error ? caught.message : 'Unable to join séance.';
+			error = caught;
 		}
 	}
 
@@ -349,7 +350,7 @@
 	</div>
 
 	{#if error}
-		<p class="lobby-error">{error}</p>
+		<ErrorBox {error} />
 	{/if}
 </section>
 
@@ -633,14 +634,6 @@
 		border: 1px dashed color-mix(in oklab, var(--app-border) 78%, transparent);
 		border-radius: 0.5rem;
 		color: var(--app-muted);
-		font-weight: 850;
-		text-align: center;
-	}
-
-	.lobby-error {
-		margin: 0;
-		color: var(--app-error);
-		font-size: 0.9rem;
 		font-weight: 850;
 		text-align: center;
 	}
