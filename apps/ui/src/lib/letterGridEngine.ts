@@ -200,6 +200,10 @@ export class LetterGridEngine {
 		this.dirtyCellIndexes.clear();
 	}
 
+	hasDirtyCellIndexes(): boolean {
+		return this.dirtyCellIndexes.size > 0;
+	}
+
 	cellCenter(cell: EngineCell): { x: number; y: number } {
 		const spacing = this.spacing.current;
 		return {

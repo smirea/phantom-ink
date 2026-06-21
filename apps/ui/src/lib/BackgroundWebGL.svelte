@@ -146,6 +146,10 @@
 		document.addEventListener('visibilitychange', handleVisibility);
 		themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
+		// Keep smoke storage stable; per-frame bufferData can orphan GPU memory while flame bursts are active.
+		gl.bindBuffer(gl.ARRAY_BUFFER, smokeBuffer);
+		gl.bufferData(gl.ARRAY_BUFFER, smokeData.byteLength, gl.DYNAMIC_DRAW);
+
 		gl.enable(gl.BLEND);
 		gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
@@ -336,8 +340,10 @@
 			return { capacity: cellCount, count: cellCount, data };
 		}
 
-		const dirtyIndexes = engine.consumeDirtyCellIndexes().filter(index => index >= 0 && index < cellCount);
 		upload.count = cellCount;
+		if (!engine.hasDirtyCellIndexes()) return upload;
+
+		const dirtyIndexes = engine.consumeDirtyCellIndexes().filter(index => index >= 0 && index < cellCount);
 		if (dirtyIndexes.length === 0) return upload;
 
 		dirtyIndexes.sort((a, b) => a - b);
@@ -461,7 +467,7 @@
 
 		const ratio = currentPixelRatio();
 		gl.bindBuffer(gl.ARRAY_BUFFER, smokeBuffer);
-		gl.bufferData(gl.ARRAY_BUFFER, smokeData.subarray(0, count * smokeInstanceFloats), gl.DYNAMIC_DRAW);
+		gl.bufferSubData(gl.ARRAY_BUFFER, 0, smokeData);
 		gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
 		gl.useProgram(smokeProgram.program);
 		if (vertexArrays) vertexArrays.extension.bindVertexArrayOES(vertexArrays.smoke);

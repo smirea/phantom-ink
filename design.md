@@ -110,6 +110,7 @@ Desired behavior:
 - Spacing and direction events should be slow, smooth, and infrequent.
 - The card never participates in background logic. Letters pass behind it.
 - Hidden tabs should pause without jumping on resume; blurred windows can keep a low-frame-rate version alive.
+- Interaction flame effects and idle animation frames should stay bounded and avoid steady memory churn.
 
 The debug background panel is for tuning only. `DEBUG.backgroundConfig()` or `?debugBackground=true` can expose live controls, but those controls should not affect the normal interface.
 
