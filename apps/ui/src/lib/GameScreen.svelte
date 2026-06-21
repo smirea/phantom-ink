@@ -584,6 +584,9 @@
 				{:else if currentState === 'spiritAnswers'}
 					{@const canAnswer = canAnswerSpirit(game, viewerId)}
 					{@const selectedQuestionId = selectedAnswerQuestionId(game)}
+					{@const selectedQuestion = selectedQuestionId
+						? questions.find(question => question.id === selectedQuestionId)!
+						: undefined}
 					<form
 						class="answer-action-row"
 						data-can-answer={canAnswer}
@@ -604,16 +607,13 @@
 									<Minimize2 size={18} />
 								{/if}
 							</button>
-							<span
-								class="answer-input-frame"
-								data-answer-target={canAnswer && selectedQuestionId ? 'true' : undefined}
-							>
+							<span class="answer-input-frame">
 								<input
 									disabled={!canAnswer || !selectedQuestionId}
 									oninput={event => {
 										if (selectedQuestionId) clueDrafts[selectedQuestionId] = event.currentTarget.value;
 									}}
-									placeholder="Clue"
+									placeholder={canAnswer ? (selectedQuestion?.question ?? '') : 'Clue'}
 									value={selectedQuestionId ? (clueDrafts[selectedQuestionId] ?? '') : ''}
 								/>
 							</span>
@@ -1489,23 +1489,6 @@
 		overflow: visible;
 	}
 
-	.answer-input-frame[data-answer-target='true'] {
-		--cell-pulse-color: var(--app-focus);
-	}
-
-	.answer-input-frame[data-answer-target='true']::after {
-		position: absolute;
-		inset: 0.08rem;
-		border: 1px solid color-mix(in oklab, var(--cell-pulse-color) 72%, transparent);
-		border-radius: 0.36rem;
-		box-shadow:
-			inset 0 0 0.85rem color-mix(in oklab, var(--cell-pulse-color) 18%, transparent),
-			inset 0 0 0.5rem color-mix(in oklab, var(--cell-pulse-color) 12%, transparent);
-		pointer-events: none;
-		content: '';
-		animation: hint-cell-wobble 1500ms ease-in-out infinite;
-	}
-
 	.answer-input-row input {
 		width: 100%;
 		min-width: 0;
@@ -1683,8 +1666,7 @@
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.action-footer[data-footer-kind='answer'][data-can-answer='true']:not(:focus-within),
-		.answer-input-frame[data-answer-target='true']::after {
+		.action-footer[data-footer-kind='answer'][data-can-answer='true']:not(:focus-within) {
 			animation: none;
 		}
 	}
