@@ -9,7 +9,7 @@
 	import { range, sample, shuffle, uniq } from 'es-toolkit';
 	import { produce } from 'immer';
 	import { onDestroy } from 'svelte';
-	import { fly, scale, slide } from 'svelte/transition';
+	import { crossfade, fade, fly, slide } from 'svelte/transition';
 	import { assign, createActor, enqueueActions, setup } from 'xstate';
 
 	const gameStates = [
@@ -79,6 +79,10 @@
 		keyboardRows: ['QWERTYUIOP'.split(''), 'ASDFGHJKL'.split(''), 'ZXCVBNM'.split(''), [' ']],
 		runes: 'ᚡᚢᚣᚤᚥᚦᚧᚩᚫᚭᚮᚯᚱᚲᚳᚴᚵᚶᚷᚸᚹᚺᚻᚼᚽᚾᚿᛀᛁᛂᛃᛄᛅᛆᛇᛈᛉᛊᛋᛏᛐᛑᛒᛓᛔᛗᛘᛙᛚᛛᛜᛝᛞᛟᛠᛡᛢᛣᛤᛥᛦᛨᛩᛪ'.split(''),
 	} as const;
+	const [sendQuestionCard, receiveQuestionCard] = crossfade({
+		duration: 220,
+		fallback: node => fade(node, { duration: 160 }),
+	});
 
 	type VoteType = 'pickWord' | 'mediumAction' | 'pickQuestions' | 'clue' | 'guessLetter' | 'pickHint';
 	type VoteConfig = {
@@ -371,18 +375,7 @@
 	const game = $derived(snapshot.context);
 	const currentState = $derived(snapshot.value as GameState);
 	const currentTeamName = $derived(game.currentTeam);
-	const actionFooterKind = $derived(
-		canSeeVote(currentState, 'guessLetter')
-			? 'keyboard'
-			: currentState === 'spiritAnswers'
-				? 'answer'
-				: canSeeVote(currentState, 'pickQuestions')
-					? 'questions'
-					: canSeeVote(currentState, 'mediumAction') || canSeeVote(currentState, 'clue')
-						? 'buttons'
-						: undefined,
-	);
-	const hasActionFooter = $derived(Boolean(actionFooterKind));
+	let questionsMinimized = $state(false);
 
 	function createInitialContext(): GameContext {
 		return {
@@ -745,7 +738,6 @@
 	let clueDrafts = $state<Record<string, string>>({});
 	let answerQuestionId = $state<QuestionCard['id'] | null>(null);
 	let expandedBoardRows = $state<number[]>([]);
-	let questionsMinimized = $state(false);
 
 	/*
 	actor.send({
@@ -779,6 +771,24 @@
 	*/
 
 	const currentTeam = $derived(snapshot.context.teams[snapshot.context.currentTeam]);
+	const hasQuestionFooterContent = $derived(
+		canVote(currentState, game, 'pickQuestions', debugUser) ||
+			currentTeam.questions.some(
+				(_qId, questionIndex) => optionVoteState(currentState, game, 'pickQuestions', questionIndex).voted.length > 0,
+			),
+	);
+	const actionFooterKind = $derived(
+		canSeeVote(currentState, 'guessLetter')
+			? 'keyboard'
+			: currentState === 'spiritAnswers'
+				? 'answer'
+				: canSeeVote(currentState, 'pickQuestions') && questionsMinimized && hasQuestionFooterContent
+					? 'questions'
+					: canSeeVote(currentState, 'mediumAction') || canSeeVote(currentState, 'clue')
+						? 'buttons'
+						: undefined,
+	);
+	const hasActionFooter = $derived(Boolean(actionFooterKind));
 
 	$effect(() => {
 		if (currentState !== 'mediumsAsk') questionsMinimized = false;
@@ -820,21 +830,15 @@
 	</span>
 {/snippet}
 
-{#snippet QuestionChoice(
-	q: QuestionCard,
-	questionIndex: number,
-	canPickQuestions: boolean,
-	compact: boolean,
-	needsVote: boolean,
-)}
+{#snippet QuestionChoice(q: QuestionCard, questionIndex: number, canPickQuestions: boolean, compact: boolean)}
 	{@const voteState = optionVoteState(currentState, game, 'pickQuestions', questionIndex)}
 	<button
 		aria-pressed={voteState.voted.includes(debugUser)}
 		class="question-card"
 		class:question-card-compact={compact}
-		data-needs-vote={needsVote ? 'true' : undefined}
 		data-voted={voteState.voted.includes(debugUser)}
 		disabled={!canPickQuestions}
+		in:receiveQuestionCard={{ key: q.id }}
 		onclick={() =>
 			actor.send({
 				type: 'vote',
@@ -842,13 +846,21 @@
 				option: questionIndex,
 				userId: debugUser,
 			})}
+		out:sendQuestionCard={{ key: q.id }}
 		type="button"
 	>
 		<span class="question-title">
-			{#if canPickQuestions}
-				{q.title}
-			{:else}
-				{@render runes(`${q.id}:title`, { words: 2, min: 3, max: 8 })}
+			<span class="question-title-text">
+				{#if canPickQuestions}
+					{q.title}
+				{:else}
+					{@render runes(`${q.id}:title`, { words: 2, min: 3, max: 8 })}
+				{/if}
+			</span>
+			{#if voteState.voted.length}
+				<span class="question-title-votes" transition:fade={{ duration: 160 }}>
+					{@render VoteStack(voteState)}
+				</span>
 			{/if}
 		</span>
 		<span class="question-body">
@@ -858,29 +870,32 @@
 				{@render runes(`${q.id}:question`, { words: 5, min: 3, max: 9 })}
 			{/if}
 		</span>
-		<span class="question-votes" aria-label={`Votes for ${q.title}`}>
-			{@render VoteStack(voteState)}
-		</span>
 	</button>
 {/snippet}
 
 {#snippet QuestionVoteTally()}
-	<div class="question-vote-tally">
-		{#each currentTeam.questions as qId, questionIndex (qId)}
-			{@const q = questions.find(x => x.id === qId)!}
-			{@const voteState = optionVoteState(currentState, game, 'pickQuestions', questionIndex)}
-			<div class="question-vote-row">
-				<span class="question-vote-label">{q.title}:</span>
-				<span class="question-vote-avatars">
-					{#each voteState.voted as userId (userId)}
-						<span class="question-voter" transition:fly={{ y: 8, duration: 200 }}>
-							<Avatar user={player(userId)} name={false} />
-						</span>
-					{/each}
-				</span>
-			</div>
-		{/each}
-	</div>
+	{@const tallies = currentTeam.questions
+		.map((qId, questionIndex) => ({
+			q: questions.find(x => x.id === qId)!,
+			voteState: optionVoteState(currentState, game, 'pickQuestions', questionIndex),
+		}))
+		.filter(tally => tally.voteState.voted.length)}
+	{#if tallies.length}
+		<div class="question-vote-tally">
+			{#each tallies as { q, voteState } (q.id)}
+				<div class="question-vote-row">
+					<span class="question-vote-label">{q.title}:</span>
+					<span class="question-vote-avatars">
+						{#each voteState.voted as userId (userId)}
+							<span class="question-voter" transition:fly={{ y: 8, duration: 200 }}>
+								<Avatar user={player(userId)} name={false} />
+							</span>
+						{/each}
+					</span>
+				</div>
+			{/each}
+		</div>
+	{/if}
 {/snippet}
 
 {#snippet BoardValue(entry: BoardEntry | undefined)}
@@ -1099,17 +1114,15 @@
 
 		{#if canSeeVote(currentState, 'pickQuestions')}
 			{@const canPickQuestions = canVote(currentState, game, 'pickQuestions', debugUser)}
-			{@const needsQuestionVote =
-				canPickQuestions && userVoteCount(game, 'pickQuestions', debugUser) < votingConfig.pickQuestions.count}
 			{#if !questionsMinimized}
-				<div class="question-popup" transition:scale={{ duration: 180, start: 0.94 }}>
+				<div class="question-popup" transition:fly={{ y: 20, duration: 180 }}>
 					<button class="question-popup-toggle" onclick={() => (questionsMinimized = true)} type="button">
 						<Minimize2 size={18} />
 					</button>
 					<div class="question-selector question-selector-popup" data-can-vote={canPickQuestions}>
 						{#each currentTeam.questions as qId, questionIndex (qId)}
 							{@const q = questions.find(x => x.id === qId)!}
-							{@render QuestionChoice(q, questionIndex, canPickQuestions, false, needsQuestionVote)}
+							{@render QuestionChoice(q, questionIndex, canPickQuestions, false)}
 						{/each}
 					</div>
 				</div>
@@ -1173,15 +1186,13 @@
 					</div>
 				{:else if canSeeVote(currentState, 'pickQuestions')}
 					{@const canPickQuestions = canVote(currentState, game, 'pickQuestions', debugUser)}
-					{@const needsQuestionVote =
-						canPickQuestions && userVoteCount(game, 'pickQuestions', debugUser) < votingConfig.pickQuestions.count}
 					<div class="question-footer-content" data-minimized={questionsMinimized ? 'true' : undefined}>
-						{#if questionsMinimized}
-							<div class="question-footer-tray" transition:slide={{ duration: 180 }}>
+						{#if questionsMinimized && canPickQuestions}
+							<div class="question-footer-tray" transition:fly={{ y: 18, duration: 180 }}>
 								<div class="question-selector question-selector-footer" data-can-vote={canPickQuestions}>
 									{#each currentTeam.questions as qId, questionIndex (qId)}
 										{@const q = questions.find(x => x.id === qId)!}
-										{@render QuestionChoice(q, questionIndex, canPickQuestions, true, needsQuestionVote)}
+										{@render QuestionChoice(q, questionIndex, canPickQuestions, true)}
 									{/each}
 								</div>
 								<button class="question-restore-button" onclick={() => (questionsMinimized = false)} type="button">
@@ -2115,6 +2126,7 @@
 		grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
 		align-items: stretch;
 		gap: 0.8rem;
+		overflow: visible;
 		perspective: 58rem;
 	}
 
@@ -2133,19 +2145,18 @@
 
 	.question-popup-toggle {
 		position: absolute;
-		top: 0.65rem;
+		bottom: 0.65rem;
 		right: 0.65rem;
 		z-index: 3;
 	}
 
 	.question-selector-popup {
-		grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.4rem), 1fr));
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 		grid-auto-rows: minmax(0, 1fr);
 		gap: 0.55rem;
 		height: 100%;
 		min-height: 0;
-		overflow: hidden;
-		padding-top: 2.25rem;
+		overflow: visible;
 	}
 
 	.question-selector-footer {
@@ -2153,6 +2164,7 @@
 		gap: 0.45rem;
 		max-height: min(26dvh, 12rem);
 		min-width: 0;
+		padding: 0.2rem;
 		overflow-y: auto;
 	}
 
@@ -2189,6 +2201,7 @@
 	}
 
 	.question-selector-popup .question-card {
+		height: 100%;
 		min-height: 0;
 	}
 
@@ -2232,23 +2245,8 @@
 		color: var(--logo-word);
 	}
 
-	button.question-card[data-needs-vote='true']:not(:disabled)::after {
-		position: absolute;
-		inset: 0.08rem;
-		z-index: 2;
-		border: 1px solid color-mix(in oklab, var(--app-focus) 72%, transparent);
-		border-radius: 0.42rem;
-		box-shadow:
-			inset 0 0 0.85rem color-mix(in oklab, var(--app-focus) 18%, transparent),
-			0 0 0.7rem color-mix(in oklab, var(--app-focus) 16%, transparent);
-		pointer-events: none;
-		content: '';
-		animation: hint-cell-wobble 1500ms ease-in-out infinite;
-	}
-
 	.question-title,
-	.question-body,
-	.question-votes {
+	.question-body {
 		position: relative;
 		z-index: 1;
 	}
@@ -2264,17 +2262,59 @@
 		font-size: 1.18rem;
 		font-weight: 900;
 		line-height: 1.08;
+		overflow: hidden;
 		padding: 0.7rem 0.85rem 0.62rem;
 		text-align: center;
 		text-shadow: 0 0.18rem 0.42rem color-mix(in oklab, black 34%, transparent);
 		transform: translateZ(0.7rem);
 	}
 
-	.question-selector-popup .question-title,
-	.question-card-compact .question-title {
+	.question-title-text {
+		position: relative;
+		z-index: 1;
+		min-width: 0;
+	}
+
+	.question-title-votes {
+		position: absolute;
+		inset: 0;
+		z-index: 2;
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		background: linear-gradient(
+			90deg,
+			transparent 0 24%,
+			color-mix(in oklab, black 52%, transparent) 62%,
+			color-mix(in oklab, black 76%, transparent)
+		);
+		padding: 0.25rem 0.55rem 0.25rem 42%;
+		pointer-events: none;
+		transform: translateZ(1rem);
+		will-change: opacity;
+	}
+
+	.question-title-votes .vote-stack {
+		justify-content: flex-end;
+		width: auto;
+		min-width: 0;
+		height: auto;
+	}
+
+	.question-title-votes .vote-ghost :global(.avatar) {
+		font-size: 1.22rem;
+	}
+
+	.question-selector-popup .question-title {
 		min-height: 2.25rem;
 		font-size: 0.9rem;
 		padding: 0.52rem 0.62rem 0.45rem;
+	}
+
+	.question-card-compact .question-title {
+		min-height: 1.7rem;
+		font-size: 0.72rem;
+		padding: 0.34rem 0.5rem 0.3rem;
 	}
 
 	button.question-card[data-voted='true'] .question-title {
@@ -2286,62 +2326,41 @@
 		align-items: center;
 		justify-content: center;
 		min-height: 7.15rem;
-		flex: 1 1 auto;
+		flex: 1 1 0;
 		color: color-mix(in oklab, var(--app-text) 88%, var(--app-muted) 12%);
-		font-size: 0.98rem;
+		font-size: 1.06rem;
 		font-weight: 650;
-		line-height: 1.28;
+		line-height: 1.26;
 		padding: 0.85rem 0.95rem;
 		text-align: center;
 		text-wrap: balance;
 		transform: translateZ(0.45rem);
 	}
 
-	.question-selector-popup .question-body,
+	.question-selector-popup .question-body {
+		min-height: 0;
+		font-size: 1.08rem;
+		line-height: 1.22;
+		padding: 0.7rem 0.85rem;
+		overflow: hidden;
+	}
+
 	.question-card-compact .question-body {
 		min-height: 0;
-		font-size: 0.78rem;
+		font-size: 0.84rem;
+		font-weight: 500;
 		line-height: 1.18;
 		padding: 0.52rem 0.62rem;
 		overflow: hidden;
 	}
 
+	.question-card-compact .question-title-votes .vote-ghost :global(.avatar) {
+		font-size: 1rem;
+	}
+
 	.question-body .rune-word {
 		font-size: 1.06rem;
 		line-height: 1.28;
-	}
-
-	.question-votes {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		min-height: 2.35rem;
-		border-top: 1px solid color-mix(in oklab, var(--app-border) 64%, transparent);
-		background: linear-gradient(180deg, color-mix(in oklab, var(--app-input) 24%, transparent), transparent);
-		margin-top: auto;
-		padding: 0.35rem 0.75rem 0.45rem;
-		transform: translateZ(0.75rem);
-	}
-
-	.question-selector-popup .question-votes,
-	.question-card-compact .question-votes {
-		min-height: 1.72rem;
-		padding: 0.22rem 0.55rem 0.28rem;
-	}
-
-	.question-card-compact .vote-stack {
-		height: 1.15rem;
-		min-width: 0;
-	}
-
-	.question-card-compact .vote-ghost :global(.avatar) {
-		font-size: 1.05rem;
-	}
-
-	.question-votes .vote-stack {
-		justify-content: center;
-		width: 100%;
-		min-width: 0;
 	}
 
 	.clue-value,
