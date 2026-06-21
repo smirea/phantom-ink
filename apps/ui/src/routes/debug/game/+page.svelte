@@ -370,6 +370,14 @@
 	const game = $derived(snapshot.context);
 	const currentState = $derived(snapshot.value as GameState);
 	const currentTeamName = $derived(game.currentTeam);
+	const actionDockKind = $derived(
+		canSeeVote(currentState, 'guessLetter') ? 'keyboard' : currentState === 'spiritAnswers' ? 'answer' : undefined,
+	);
+	const hasActionDock = $derived(
+		canSeeVote(currentState, 'mediumAction') ||
+			currentState === 'spiritAnswers' ||
+			canSeeVote(currentState, 'guessLetter'),
+	);
 
 	function createInitialContext(): GameContext {
 		return {
@@ -630,6 +638,11 @@
 		return teams.some(team => knownQuestionsForCell(context, viewerId, team, turn).length > 0);
 	}
 
+	function selectedAnswerQuestionId(context: GameContext): QuestionCard['id'] | undefined {
+		const picks = context.teams[context.currentTeam].spiritQuestionPicks;
+		return answerQuestionId && picks.includes(answerQuestionId) ? answerQuestionId : picks[0];
+	}
+
 	function toggleBoardRowQuestions(context: GameContext, turn: number) {
 		if (!rowHasKnownQuestions(context, debugUser, turn)) {
 			expandedBoardRows = expandedBoardRows.filter(row => row !== turn);
@@ -751,6 +764,7 @@
 
 	let debugUser = $state<User['id']>(playerData[0].id);
 	let clueDrafts = $state<Record<string, string>>({});
+	let answerQuestionId = $state<QuestionCard['id'] | null>(null);
 	let expandedBoardRows = $state<number[]>([]);
 
 	actor.send({
@@ -842,7 +856,7 @@
 	{/if}
 {/snippet}
 
-<div class="debug-game" data-state={currentState} data-has-actions={canSeeVote(currentState, 'mediumAction')}>
+<div class="debug-game" data-action-dock={actionDockKind} data-state={currentState} data-has-actions={hasActionDock}>
 	<header class="top-bar">
 		<div class="debug-controls">
 			<select
@@ -1071,53 +1085,49 @@
 
 	{#if currentState === 'spiritAnswers'}
 		{@const canAnswer = canAnswerSpirit(game, debugUser)}
-		<div class="answer-stage" data-can-answer={canAnswer}>
-			<div class="answer-word">
-				{#if canAnswer}
-					{game.word}
-				{:else}
-					{@render runes(`${game.wordCardId}:answer-word`, { words: 2, min: 5, max: 9 })}
-				{/if}
-			</div>
-			<div class="question-selector answer-selector">
-				{#each currentTeam.spiritQuestionPicks as qId (qId)}
-					{@const q = questions.find(x => x.id === qId)!}
-					<form
-						class="question-card answer-card"
-						onsubmit={event => {
-							event.preventDefault();
-							answerClue(qId);
+		{@const selectedQuestionId = selectedAnswerQuestionId(game)}
+		<div class="action-dock answer-dock" data-can-answer={canAnswer}>
+			<form
+				class="answer-action-row"
+				onsubmit={event => {
+					event.preventDefault();
+					if (selectedQuestionId) answerClue(selectedQuestionId);
+				}}
+			>
+				<div class="answer-question-options">
+					{#each currentTeam.spiritQuestionPicks as qId (qId)}
+						{@const q = questions.find(x => x.id === qId)!}
+						<button
+							class="answer-question-option"
+							data-selected={selectedQuestionId === qId}
+							disabled={!canAnswer}
+							onclick={() => (answerQuestionId = qId)}
+							type="button"
+						>
+							<span class="answer-question-title">{q.title}</span>
+							<span class="answer-question-body">{q.question}</span>
+						</button>
+					{/each}
+				</div>
+				<div class="answer-input-row">
+					<input
+						disabled={!canAnswer || !selectedQuestionId}
+						oninput={event => {
+							if (selectedQuestionId) clueDrafts[selectedQuestionId] = event.currentTarget.value;
 						}}
+						placeholder="Clue"
+						value={selectedQuestionId ? (clueDrafts[selectedQuestionId] ?? '') : ''}
+					/>
+					<InkButton
+						size="sm"
+						primary
+						type="submit"
+						disabled={!canAnswer || !selectedQuestionId || !clueDrafts[selectedQuestionId]?.trim()}
 					>
-						<span class="question-title">
-							{#if canAnswer}
-								{q.title}
-							{:else}
-								{@render runes(`${qId}:answer-title`, { words: 2, min: 3, max: 8 })}
-							{/if}
-						</span>
-						<span class="question-body">
-							{#if canAnswer}
-								{q.question}
-							{:else}
-								{@render runes(`${qId}:answer-question`, { words: 5, min: 3, max: 9 })}
-							{/if}
-						</span>
-						<span class="answer-input-row">
-							<input
-								aria-label={`Clue for ${q.title}`}
-								disabled={!canAnswer}
-								oninput={event => (clueDrafts[qId] = event.currentTarget.value)}
-								placeholder="Clue"
-								value={clueDrafts[qId] ?? ''}
-							/>
-							<InkButton size="sm" primary type="submit" disabled={!canAnswer || !clueDrafts[qId]?.trim()}>
-								Seal
-							</InkButton>
-						</span>
-					</form>
-				{/each}
-			</div>
+						Seal
+					</InkButton>
+				</div>
+			</form>
 		</div>
 	{/if}
 
@@ -1181,7 +1191,7 @@
 
 	{#if canSeeVote(currentState, 'guessLetter')}
 		{@const canGuess = canVote(currentState, game, 'guessLetter', debugUser)}
-		<div class="guess-stage" data-can-vote={canGuess}>
+		<div class="action-dock keyboard-dock" data-can-vote={canGuess}>
 			<div class="ansi-keyboard">
 				{#each config.keyboardRows as row, rowIndex (rowIndex)}
 					<div class="keyboard-row" data-row={rowIndex}>
@@ -1231,6 +1241,14 @@
 
 		&[data-has-actions='true'] {
 			padding-bottom: 4rem;
+		}
+
+		&[data-action-dock='answer'] {
+			padding-bottom: 9rem;
+		}
+
+		&[data-action-dock='keyboard'] {
+			padding-bottom: 14rem;
 		}
 	}
 
@@ -1596,6 +1614,62 @@
 		display: flex;
 		gap: 0.5rem;
 		align-items: center;
+	}
+
+	.answer-action-row {
+		display: grid;
+		gap: 0.55rem;
+	}
+
+	.answer-question-options {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.45rem;
+	}
+
+	.answer-question-option {
+		display: grid;
+		gap: 0.16rem;
+		min-width: 0;
+		border: 1px solid color-mix(in oklab, var(--app-border) 70%, transparent);
+		border-radius: 0.375rem;
+		background: color-mix(in oklab, var(--app-input) 58%, transparent);
+		color: inherit;
+		cursor: pointer;
+		padding: 0.45rem 0.55rem;
+		text-align: left;
+	}
+
+	.answer-question-option:disabled {
+		cursor: default;
+		opacity: 0.6;
+	}
+
+	.answer-question-option[data-selected='true'] {
+		border-color: color-mix(in oklab, var(--app-focus) 60%, var(--app-border) 40%);
+		background: color-mix(in oklab, var(--app-focus) 16%, var(--app-input));
+		box-shadow: 0 0 0.8rem color-mix(in oklab, var(--app-focus) 14%, transparent);
+		color: var(--logo-word);
+	}
+
+	.answer-question-title {
+		overflow: hidden;
+		font-family: var(--font-fancy);
+		font-size: 0.9rem;
+		font-weight: 900;
+		line-height: 1;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.answer-question-body {
+		overflow: hidden;
+		color: color-mix(in oklab, var(--app-text) 84%, var(--app-muted) 16%);
+		font-size: 0.72rem;
+		font-weight: 650;
+		line-height: 1.18;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.state-panel {
@@ -2023,8 +2097,7 @@
 	}
 
 	.clue-value,
-	.result-word,
-	.answer-word {
+	.result-word {
 		font-family: var(--font-fancy);
 		font-weight: 950;
 		letter-spacing: 0;
@@ -2039,42 +2112,9 @@
 		text-align: center;
 	}
 
-	.answer-stage,
-	.clue-stage,
-	.guess-stage {
+	.clue-stage {
 		display: grid;
 		gap: 0.85rem;
-	}
-
-	.answer-word {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		min-height: 3.25rem;
-		border: 1px solid color-mix(in oklab, var(--app-border) 76%, var(--app-accent) 24%);
-		border-radius: 0.5rem;
-		background:
-			radial-gradient(80% 100% at 50% 0%, color-mix(in oklab, var(--app-focus) 12%, transparent), transparent 60%),
-			color-mix(in oklab, var(--app-input) 64%, transparent);
-		box-shadow:
-			0 0.7rem 1.4rem color-mix(in oklab, black 28%, transparent),
-			inset 0 1px 0 color-mix(in oklab, white 8%, transparent);
-		color: var(--logo-word);
-		font-size: clamp(1.45rem, 7vw, 2.15rem);
-		padding: 0.5rem 0.8rem;
-		text-align: center;
-	}
-
-	.answer-selector {
-		grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
-	}
-
-	.answer-card {
-		min-height: 15.5rem;
-	}
-
-	.answer-card .question-body {
-		min-height: 6.4rem;
 	}
 
 	.answer-input-row {
@@ -2084,11 +2124,6 @@
 		grid-template-columns: minmax(0, 1fr) auto;
 		gap: 0.5rem;
 		align-items: center;
-		min-height: 3.2rem;
-		border-top: 1px solid color-mix(in oklab, var(--app-border) 64%, transparent);
-		background: linear-gradient(180deg, color-mix(in oklab, var(--app-input) 24%, transparent), transparent);
-		padding: 0.52rem;
-		transform: translateZ(0.75rem);
 	}
 
 	.answer-input-row input {
@@ -2129,15 +2164,11 @@
 		align-items: stretch;
 	}
 
-	.guess-stage {
-		border-top: 1px solid color-mix(in oklab, var(--app-border) 76%, var(--app-accent) 24%);
+	.keyboard-dock {
 		background:
 			radial-gradient(120% 80% at 50% -10%, color-mix(in oklab, var(--app-moon) 20%, transparent), transparent 56%),
 			color-mix(in oklab, var(--app-panel) 94%, transparent);
-		width: 100%;
-		min-width: 0;
-		overflow: hidden;
-		padding: 0.8rem 0;
+		padding-block: 0.65rem 0.75rem;
 	}
 
 	.ansi-keyboard {
