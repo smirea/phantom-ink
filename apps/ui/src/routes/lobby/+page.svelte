@@ -6,7 +6,13 @@
 	import { getAppContext } from '$lib/appContext';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { type RoomDirectoryListing, type User } from '@repo/shared/onlineGame';
+	import {
+		applyOnlineRoomAction,
+		playerIdForUser,
+		selectRoomViewState,
+		type RoomDirectoryListing,
+		type User,
+	} from '@repo/shared/onlineGame';
 	import { cubicOut, quintOut } from 'svelte/easing';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -91,17 +97,34 @@
 		}
 	}
 
-	async function joinExistingRoom(code: string) {
+	async function joinExistingRoom(room: RoomDirectoryListing) {
 		if (joiningCode || isCreating) return;
-		joiningCode = code;
+		joiningCode = room.code;
 		error = null;
 		try {
-			await goto(roomHref(code), { noScroll: true });
+			await goto(roomHref(room.code), {
+				noScroll: true,
+				state: { optimisticRoom: optimisticRoomFor(room) },
+			});
 		} catch (caught) {
 			error = caught;
 		} finally {
 			joiningCode = null;
 		}
+	}
+
+	function optimisticRoomFor(room: RoomDirectoryListing) {
+		const user = appContext.user;
+		const state = structuredClone($state.snapshot(room.state));
+		applyOnlineRoomAction(state, {
+			type: 'join',
+			actorId: playerIdForUser(user.id),
+			userId: user.id,
+			name: user.name,
+			color: user.color,
+			icon: user.icon,
+		});
+		return selectRoomViewState(state, user.id, 'connecting');
 	}
 
 	function roomHref(code: string): string {
@@ -128,10 +151,10 @@
 		nearbyExpanded = !nearbyExpanded;
 	}
 
-	function handleRoomKeydown(event: KeyboardEvent, code: string) {
+	function handleRoomKeydown(event: KeyboardEvent, room: RoomDirectoryListing) {
 		if (event.key !== 'Enter' && event.key !== ' ') return;
 		event.preventDefault();
-		void joinExistingRoom(code);
+		void joinExistingRoom(room);
 	}
 
 	function trackPlayerList(node: HTMLElement, code: string) {
@@ -285,8 +308,8 @@
 					class:collapsible
 					class:joining={joiningCode === room.code}
 					class="lobby-row"
-					onclick={() => joinExistingRoom(room.code)}
-					onkeydown={event => handleRoomKeydown(event, room.code)}
+					onclick={() => joinExistingRoom(room)}
+					onkeydown={event => handleRoomKeydown(event, room)}
 					role="button"
 					tabindex="0"
 				>

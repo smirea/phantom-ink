@@ -125,6 +125,7 @@ export interface RoomDirectoryListing {
 	playerCount: number;
 	players: RoomDirectoryPlayer[];
 	phase: RoomPhase;
+	state: OnlineRoomState;
 }
 
 export interface RoomDirectoryPlayer {
@@ -217,6 +218,7 @@ export function selectRoomDirectoryListings(
 				playerCount: players.length,
 				players,
 				phase: room.state.phase,
+				state: room.state,
 			};
 		})
 		.sort((a, b) => a.code.localeCompare(b.code));
