@@ -1,9 +1,11 @@
 <script lang="ts">
 	import Avatar from '$lib/Avatar.svelte';
 	import GameScreen from '$lib/GameScreen.svelte';
+	import { questions } from '@repo/shared/data';
 	import { gameMachine, gameStates, type GameEvent, type GameState, type VoteType } from '@repo/shared/game';
 	import type { User } from '@repo/shared/onlineGame';
 	import type { Team } from '@repo/shared/types';
+	import { range } from 'es-toolkit';
 	import { onDestroy } from 'svelte';
 	import { createActor } from 'xstate';
 
@@ -22,6 +24,7 @@
 	const game = $derived(snapshot.context);
 	const currentState = $derived(snapshot.value as GameState);
 	const currentTeamName = $derived(game.currentTeam);
+	const currentTeam = $derived(game.teams[game.currentTeam]);
 	const debugActionState = $derived(actionStateFor(currentState));
 	let debugUser = $state<User['id']>(0);
 
@@ -33,10 +36,6 @@
 		{ id: 4, name: 'five', color: 'ectoplasm', icon: 'fish' },
 		{ id: 5, name: 'six', color: 'haunt', icon: 'skull' },
 	];
-
-	function send(event: GameEvent) {
-		actor.send(event);
-	}
 
 	function player(userId: User['id']): User {
 		return playerData.find(user => user.id === userId)!;
@@ -60,6 +59,42 @@
 				return 'guessLetter';
 		}
 	}
+
+	const debug = {
+		state: (state: GameState, team: Team = game.currentTeam) =>
+			actor.send({
+				type: 'debugSetState',
+				state,
+				team,
+			}),
+		clues: (n: number) => {
+			debug.state('mediumsGetClues');
+			range(n).forEach(() => actor.send({ type: 'getClue' }));
+		},
+		pickQuestions: (q1: number, q2: number) =>
+			actor.send({
+				type: 'pickQuestions',
+				questionIds: [currentTeam.questions[q1], currentTeam.questions[q2]],
+			}),
+		spiritAnswer: (clue: string, questionId = currentTeam.spiritQuestionPicks[0]) =>
+			actor.send({
+				type: 'answer',
+				clue,
+				questionId,
+			}),
+	};
+
+	debug.state('setupWord');
+	actor.send({
+		type: 'pickWord',
+		word: 'potato',
+	});
+	debug.state('mediumsTurn');
+	debug.state('mediumsAsk');
+	debug.pickQuestions(2, 3);
+	// debug.spiritAnswer('brown');
+	// debug.clues(3);
+	// debug.state('guessing');
 </script>
 
 <div
@@ -73,7 +108,7 @@
 			<select
 				value={currentState}
 				onchange={event =>
-					send({
+					actor.send({
 						type: 'debugSetState',
 						state: event.currentTarget.value as GameState,
 						team: currentTeamName,
@@ -88,7 +123,7 @@
 				{#each ['sun', 'moon'] as team}
 					<button
 						class:active-toggle={team === currentTeamName}
-						onclick={() => send({ type: 'debugSetTeam', state: currentState, team: team as Team })}
+						onclick={() => actor.send({ type: 'debugSetTeam', state: currentState, team: team as Team })}
 						type="button"
 					>
 						{team}
@@ -101,7 +136,7 @@
 			<Avatar user={player(debugUser)} />
 		</div>
 
-		<button onclick={() => send({ type: 'start' })} type="button">
+		<button onclick={() => actor.send({ type: 'start' })} type="button">
 			{currentState === 'start' ? 'Start' : 'Reset'}
 		</button>
 	</header>
@@ -111,7 +146,7 @@
 		state={currentState}
 		players={playerData}
 		viewerId={debugUser}
-		{send}
+		send={actor.send}
 		onSelectViewer={userId => (debugUser = userId)}
 		showDebugPlayerPicker
 		showStartPanel
