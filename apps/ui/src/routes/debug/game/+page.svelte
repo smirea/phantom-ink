@@ -254,7 +254,8 @@
 			})),
 			debugSetTeam: assign(({ context, event }) => {
 				if (event.type !== 'debugSetState' && event.type !== 'debugSetTeam') return {};
-				return { ...context, currentTeam: event.team };
+				const next = { ...context, currentTeam: event.team };
+				return event.type === 'debugSetState' && event.state === 'mediumsAsk' ? drawQuestionHand(next) : next;
 			}),
 		},
 	}).createMachine({
@@ -1146,138 +1147,140 @@
 	</div>
 
 	{#if hasActionFooter}
-		<footer
-			class="action-footer"
-			class:keyboard-dock={actionFooterKind === 'keyboard'}
-			data-footer-kind={actionFooterKind}
-		>
-			{#if canSeeVote(currentState, 'mediumAction')}
-				<div class="action-buttons">
-					{#each votingConfig.mediumAction.choices(game) as option}
-						{@const voteState = optionVoteState(currentState, game, 'mediumAction', option)}
-						<InkButton
-							size="lg"
-							primary
-							class="flex-1"
-							disabled={!canVote(currentState, game, 'mediumAction', debugUser)}
-							onclick={() => actor.send({ type: 'vote', action: 'mediumAction', option, userId: debugUser })}
-							selfVoted={voteState.voted.includes(debugUser)}
-							voteLabel={voteLabel(option)}
-							voting={voteState}
-						>
-							{voteLabel(option)}
-						</InkButton>
-					{/each}
-				</div>
-			{:else if canSeeVote(currentState, 'pickQuestions')}
-				{@const canPickQuestions = canVote(currentState, game, 'pickQuestions', debugUser)}
-				{@const needsQuestionVote =
-					canPickQuestions && userVoteCount(game, 'pickQuestions', debugUser) < votingConfig.pickQuestions.count}
-				<div class="question-footer-content" data-minimized={questionsMinimized ? 'true' : undefined}>
-					{#if questionsMinimized}
-						<div class="question-footer-tray" transition:slide={{ duration: 180 }}>
-							<div class="question-selector question-selector-footer" data-can-vote={canPickQuestions}>
-								{#each currentTeam.questions as qId, questionIndex (qId)}
-									{@const q = questions.find(x => x.id === qId)!}
-									{@render QuestionChoice(q, questionIndex, canPickQuestions, true, needsQuestionVote)}
-								{/each}
-							</div>
-							<button class="question-restore-button" onclick={() => (questionsMinimized = false)} type="button">
-								<Maximize2 size={18} />
-							</button>
-						</div>
-					{/if}
-					{@render QuestionVoteTally()}
-				</div>
-			{:else if currentState === 'spiritAnswers'}
-				{@const canAnswer = canAnswerSpirit(game, debugUser)}
-				{@const selectedQuestionId = selectedAnswerQuestionId(game)}
-				<form
-					class="answer-action-row"
-					data-can-answer={canAnswer}
-					onsubmit={event => {
-						event.preventDefault();
-						if (selectedQuestionId) answerClue(selectedQuestionId);
-					}}
-				>
-					<div class="answer-question-options">
-						{#each currentTeam.spiritQuestionPicks as qId (qId)}
-							{@const q = questions.find(x => x.id === qId)!}
-							<button
-								class="answer-question-option"
-								data-selected={selectedQuestionId === qId}
-								disabled={!canAnswer}
-								onclick={() => (answerQuestionId = qId)}
-								type="button"
+		<div class="action-footer-shell" transition:fly={{ y: 22, duration: 180 }}>
+			<footer
+				class="action-footer"
+				class:keyboard-dock={actionFooterKind === 'keyboard'}
+				data-footer-kind={actionFooterKind}
+			>
+				{#if canSeeVote(currentState, 'mediumAction')}
+					<div class="action-buttons">
+						{#each votingConfig.mediumAction.choices(game) as option}
+							{@const voteState = optionVoteState(currentState, game, 'mediumAction', option)}
+							<InkButton
+								size="lg"
+								primary
+								class="flex-1"
+								disabled={!canVote(currentState, game, 'mediumAction', debugUser)}
+								onclick={() => actor.send({ type: 'vote', action: 'mediumAction', option, userId: debugUser })}
+								selfVoted={voteState.voted.includes(debugUser)}
+								voteLabel={voteLabel(option)}
+								voting={voteState}
 							>
-								<span class="answer-question-title">{q.title}</span>
-								<span class="answer-question-body">{q.question}</span>
-							</button>
+								{voteLabel(option)}
+							</InkButton>
 						{/each}
 					</div>
-					<div class="answer-input-row">
-						<input
-							disabled={!canAnswer || !selectedQuestionId}
-							oninput={event => {
-								if (selectedQuestionId) clueDrafts[selectedQuestionId] = event.currentTarget.value;
-							}}
-							placeholder="Clue"
-							value={selectedQuestionId ? (clueDrafts[selectedQuestionId] ?? '') : ''}
-						/>
-						<InkButton
-							size="sm"
-							primary
-							type="submit"
-							disabled={!canAnswer || !selectedQuestionId || !clueDrafts[selectedQuestionId]?.trim()}
-						>
-							Seal
-						</InkButton>
+				{:else if canSeeVote(currentState, 'pickQuestions')}
+					{@const canPickQuestions = canVote(currentState, game, 'pickQuestions', debugUser)}
+					{@const needsQuestionVote =
+						canPickQuestions && userVoteCount(game, 'pickQuestions', debugUser) < votingConfig.pickQuestions.count}
+					<div class="question-footer-content" data-minimized={questionsMinimized ? 'true' : undefined}>
+						{#if questionsMinimized}
+							<div class="question-footer-tray" transition:slide={{ duration: 180 }}>
+								<div class="question-selector question-selector-footer" data-can-vote={canPickQuestions}>
+									{#each currentTeam.questions as qId, questionIndex (qId)}
+										{@const q = questions.find(x => x.id === qId)!}
+										{@render QuestionChoice(q, questionIndex, canPickQuestions, true, needsQuestionVote)}
+									{/each}
+								</div>
+								<button class="question-restore-button" onclick={() => (questionsMinimized = false)} type="button">
+									<Maximize2 size={18} />
+								</button>
+							</div>
+						{/if}
+						{@render QuestionVoteTally()}
 					</div>
-				</form>
-			{:else if canSeeVote(currentState, 'clue')}
-				<div class="action-buttons clue-buttons">
-					{#each votingConfig.clue.choices(game) as option}
-						{@const voteState = optionVoteState(currentState, game, 'clue', option)}
-						<InkButton
-							size="lg"
-							primary={option === 'getClue'}
-							class="flex-1"
-							disabled={!canVote(currentState, game, 'clue', debugUser)}
-							onclick={() => actor.send({ type: 'vote', action: 'clue', option, userId: debugUser })}
-							selfVoted={voteState.voted.includes(debugUser)}
-							voteLabel={voteLabel(option)}
-							voting={voteState}
-						>
-							{option === 'getClue' ? 'Reveal' : 'Silencio'}
-						</InkButton>
-					{/each}
-				</div>
-			{:else if canSeeVote(currentState, 'guessLetter')}
-				{@const canGuess = canVote(currentState, game, 'guessLetter', debugUser)}
-				<div class="ansi-keyboard" data-can-vote={canGuess}>
-					{#each config.keyboardRows as row, rowIndex (rowIndex)}
-						<div class="keyboard-row" data-row={rowIndex}>
-							{#each row as option (option)}
-								{@const voteState = optionVoteState(currentState, game, 'guessLetter', option)}
+				{:else if currentState === 'spiritAnswers'}
+					{@const canAnswer = canAnswerSpirit(game, debugUser)}
+					{@const selectedQuestionId = selectedAnswerQuestionId(game)}
+					<form
+						class="answer-action-row"
+						data-can-answer={canAnswer}
+						onsubmit={event => {
+							event.preventDefault();
+							if (selectedQuestionId) answerClue(selectedQuestionId);
+						}}
+					>
+						<div class="answer-question-options">
+							{#each currentTeam.spiritQuestionPicks as qId (qId)}
+								{@const q = questions.find(x => x.id === qId)!}
 								<button
-									aria-pressed={voteState.voted.includes(debugUser)}
-									class="key-button"
-									class:space-key={option === ' '}
-									data-key={option === ' ' ? 'space' : option}
-									data-voted={voteState.voted.includes(debugUser)}
-									disabled={!canGuess}
-									onclick={() => actor.send({ type: 'vote', action: 'guessLetter', option, userId: debugUser })}
+									class="answer-question-option"
+									data-selected={selectedQuestionId === qId}
+									disabled={!canAnswer}
+									onclick={() => (answerQuestionId = qId)}
 									type="button"
 								>
-									{@render VoteDots(voteState)}
-									<span class="key-face">{voteLabel(option)}</span>
+									<span class="answer-question-title">{q.title}</span>
+									<span class="answer-question-body">{q.question}</span>
 								</button>
 							{/each}
 						</div>
-					{/each}
-				</div>
-			{/if}
-		</footer>
+						<div class="answer-input-row">
+							<input
+								disabled={!canAnswer || !selectedQuestionId}
+								oninput={event => {
+									if (selectedQuestionId) clueDrafts[selectedQuestionId] = event.currentTarget.value;
+								}}
+								placeholder="Clue"
+								value={selectedQuestionId ? (clueDrafts[selectedQuestionId] ?? '') : ''}
+							/>
+							<InkButton
+								size="sm"
+								primary
+								type="submit"
+								disabled={!canAnswer || !selectedQuestionId || !clueDrafts[selectedQuestionId]?.trim()}
+							>
+								Seal
+							</InkButton>
+						</div>
+					</form>
+				{:else if canSeeVote(currentState, 'clue')}
+					<div class="action-buttons clue-buttons">
+						{#each votingConfig.clue.choices(game) as option}
+							{@const voteState = optionVoteState(currentState, game, 'clue', option)}
+							<InkButton
+								size="lg"
+								primary={option === 'getClue'}
+								class="flex-1"
+								disabled={!canVote(currentState, game, 'clue', debugUser)}
+								onclick={() => actor.send({ type: 'vote', action: 'clue', option, userId: debugUser })}
+								selfVoted={voteState.voted.includes(debugUser)}
+								voteLabel={voteLabel(option)}
+								voting={voteState}
+							>
+								{option === 'getClue' ? 'Reveal' : 'Silencio'}
+							</InkButton>
+						{/each}
+					</div>
+				{:else if canSeeVote(currentState, 'guessLetter')}
+					{@const canGuess = canVote(currentState, game, 'guessLetter', debugUser)}
+					<div class="ansi-keyboard" data-can-vote={canGuess}>
+						{#each config.keyboardRows as row, rowIndex (rowIndex)}
+							<div class="keyboard-row" data-row={rowIndex}>
+								{#each row as option (option)}
+									{@const voteState = optionVoteState(currentState, game, 'guessLetter', option)}
+									<button
+										aria-pressed={voteState.voted.includes(debugUser)}
+										class="key-button"
+										class:space-key={option === ' '}
+										data-key={option === ' ' ? 'space' : option}
+										data-voted={voteState.voted.includes(debugUser)}
+										disabled={!canGuess}
+										onclick={() => actor.send({ type: 'vote', action: 'guessLetter', option, userId: debugUser })}
+										type="button"
+									>
+										{@render VoteDots(voteState)}
+										<span class="key-face">{voteLabel(option)}</span>
+									</button>
+								{/each}
+							</div>
+						{/each}
+					</div>
+				{/if}
+			</footer>
+		</div>
 	{/if}
 </div>
 
@@ -1664,12 +1667,17 @@
 		background: color-mix(in srgb, var(--app-accent) 16%, transparent) !important;
 	}
 
-	.action-footer {
+	.action-footer-shell {
 		flex: 0 0 auto;
 		z-index: 40;
+		overflow: hidden;
+	}
+
+	.action-footer {
 		border-top: 1px solid var(--app-border);
 		background: var(--app-panel);
 		box-shadow: 0 -0.22rem 0.7rem color-mix(in srgb, black 14%, transparent);
+		overflow: hidden;
 		padding: 0.5rem 1rem;
 	}
 
