@@ -1513,14 +1513,16 @@
 
 	.answer-word {
 		color: var(--logo-word);
-		font-family: var(--font-fancy);
-		font-size: 1.18rem;
-		font-weight: 950;
+		font: inherit;
+		font-size: 1.05rem;
+		font-weight: 800;
 		line-height: 1;
+		text-transform: uppercase;
 		white-space: nowrap;
-		text-shadow:
-			0 0 0.55rem color-mix(in oklab, var(--app-focus) 28%, transparent),
-			0 0.16rem 0.32rem color-mix(in oklab, black 42%, transparent);
+	}
+
+	.answer-input-row input::placeholder {
+		text-transform: none;
 	}
 
 	.answer-input-row input:focus-visible {
