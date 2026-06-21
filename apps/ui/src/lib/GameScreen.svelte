@@ -1,5 +1,7 @@
 <script lang="ts">
 	import Avatar from '$lib/Avatar.svelte';
+	import GameCard from '$lib/GameCard.svelte';
+	import GameRunes from '$lib/GameRunes.svelte';
 	import InkButton from '$lib/InkButton.svelte';
 	import { playerColorPreset } from '$lib/playerPresentation';
 	import { Check, Eye, Info, Maximize2, Minimize2, X } from '@lucide/svelte';
@@ -14,7 +16,6 @@
 		isBoardEntryDone,
 		optionVoteState as createOptionVoteState,
 		playerTeam,
-		seededNumber,
 		teams,
 		voteLabel,
 		votingConfig,
@@ -152,28 +153,6 @@
 		);
 	}
 
-	function wordRunes(
-		hash: string,
-		{ words = 1, min = 6, max = 20 }: { words?: number; min?: number; max?: number } = {},
-	): string[][] {
-		const seed = seededNumber(hash);
-		return range(words).map(wordIndex => {
-			const wordSeed = seededNumber(`${hash}:${wordIndex}`);
-			const length = min + (wordSeed % (max - min + 1));
-			return range(length).map(index => config.runes[(seed + wordIndex * 23 + index * 7) % config.runes.length]);
-		});
-	}
-
-	function runeStyle(hash: string): string {
-		const seed = seededNumber(hash);
-		const direction = seed % 2 ? 1 : -1;
-		return [
-			`--rune-delay: -${seed % 2600}ms`,
-			`--rune-duration: ${2400 + (seed % 900)}ms`,
-			`--rune-drift: ${direction}`,
-		].join('; ');
-	}
-
 	function player(userId: User['id']): User {
 		return players.find(user => user.id === userId)!;
 	}
@@ -211,18 +190,6 @@
 	});
 </script>
 
-{#snippet runes(hash: string, config?: Parameters<typeof wordRunes>[1])}
-	<span class="rune-word">
-		{#each wordRunes(hash, config) as runeGroup, groupIndex (groupIndex)}
-			<span class="rune-group">
-				{#each runeGroup as rune, runeIndex (runeIndex)}
-					<span class="rune" style={runeStyle(`${hash}:${groupIndex}:${runeIndex}`)}>{rune}</span>
-				{/each}
-			</span>
-		{/each}
-	</span>
-{/snippet}
-
 {#snippet VoteStack(voteState: VoteState)}
 	<span class="vote-stack">
 		{#each voteState.voted as userId (userId)}
@@ -243,12 +210,22 @@
 
 {#snippet QuestionChoice(q: QuestionCard, questionIndex: number, canPickQuestions: boolean, compact: boolean)}
 	{@const voteState = optionVoteState(currentState, game, 'pickQuestions', questionIndex)}
-	<button
-		class="question-card"
-		class:question-card-compact={compact}
-		data-voted={voteState.voted.includes(viewerId)}
+	<GameCard
+		interactive
+		title={q.title}
+		bodyText={q.question}
+		redacted={!canPickQuestions}
+		redactionKey={q.id}
+		titleRune={{ words: 1, min: 4, max: 16 }}
+		bodyRune={{ words: 5, min: 3, max: 9 }}
+		{compact}
+		fillHeight={!compact}
+		titleAddonVisible={Boolean(voteState.voted.length)}
+		voted={voteState.voted.includes(viewerId)}
 		disabled={!canPickQuestions}
-		in:receiveQuestionCard={{ key: q.id }}
+		receiveTransition={receiveQuestionCard}
+		sendTransition={sendQuestionCard}
+		transitionKey={q.id}
 		onclick={() =>
 			send({
 				type: 'vote',
@@ -256,31 +233,12 @@
 				option: questionIndex,
 				userId: viewerId,
 			})}
-		out:sendQuestionCard={{ key: q.id }}
 		type="button"
 	>
-		<span class="question-title">
-			<span class="question-title-text">
-				{#if canPickQuestions}
-					{q.title}
-				{:else}
-					{@render runes(`${q.id}:title`, { words: 1, min: 4, max: 16 })}
-				{/if}
-			</span>
-			{#if voteState.voted.length}
-				<span class="question-title-votes" transition:fade={{ duration: 160 }}>
-					{@render VoteStack(voteState)}
-				</span>
-			{/if}
-		</span>
-		<span class="question-body">
-			{#if canPickQuestions}
-				{q.question}
-			{:else}
-				{@render runes(`${q.id}:question`, { words: 5, min: 3, max: 9 })}
-			{/if}
-		</span>
-	</button>
+		{#snippet titleAddon()}
+			{@render VoteStack(voteState)}
+		{/snippet}
+	</GameCard>
 {/snippet}
 
 {#snippet QuestionVoteTally()}
@@ -458,7 +416,7 @@
 
 		{#if showStartPanel && currentState === 'start'}
 			<div class="state-panel start-panel">
-				<div class="panel-runes">{@render runes('start', { words: 4, min: 3, max: 8 })}</div>
+				<div class="panel-runes"><GameRunes hash="start" words={4} min={3} max={8} size="panel" /></div>
 				<InkButton size="lg" primary onclick={() => send({ type: 'start' })}>Start</InkButton>
 			</div>
 		{/if}
@@ -480,7 +438,7 @@
 								{#if canPickWord}
 									<span class="word-text">{word}</span>
 								{:else}
-									{@render runes(`${game.wordCardId}:${wordIndex}`)}
+									<GameRunes hash={`${game.wordCardId}:${wordIndex}`} />
 								{/if}
 							</span>
 							{@render VoteStack(voteState)}
@@ -526,35 +484,27 @@
 					<div class="answer-question-stage" data-can-answer={canAnswer}>
 						{#each currentTeam.spiritQuestionPicks as qId, questionIndex (qId)}
 							{@const q = questions.find(x => x.id === qId)!}
-							<div class="answer-question-float" style={`--answer-float-delay: -${questionIndex * 620}ms`}>
-								<button
-									class="question-card answer-question-card"
-									data-hidden={!canAnswer ? 'true' : undefined}
-									data-selected={selectedQuestionId === qId}
-									disabled={!canAnswer}
-									in:receiveQuestionCard={{ key: q.id }}
-									onclick={() => (answerQuestionId = qId)}
-									out:sendQuestionCard={{ key: q.id }}
-									type="button"
-								>
-									<span class="question-title">
-										<span class="question-title-text">
-											{#if canAnswer}
-												{q.title}
-											{:else}
-												{@render runes(`${q.id}:answer-title`, { words: 1, min: 4, max: 16 })}
-											{/if}
-										</span>
-									</span>
-									<span class="question-body">
-										{#if canAnswer}
-											{q.question}
-										{:else}
-											{@render runes(`${q.id}:answer-question`, { words: 5, min: 4, max: 10 })}
-										{/if}
-									</span>
-								</button>
-							</div>
+							<GameCard
+								interactive
+								variant="answer"
+								title={q.title}
+								bodyText={q.question}
+								redacted={!canAnswer}
+								redactionKey={`${q.id}:answer`}
+								titleRune={{ words: 1, min: 4, max: 16 }}
+								bodyRune={{ words: 5, min: 4, max: 10 }}
+								titleRuneSize="answer-title"
+								bodyRuneSize="answer-body"
+								selected={selectedQuestionId === qId}
+								disabled={!canAnswer}
+								dancing
+								danceDelay={`-${questionIndex * 620}ms`}
+								receiveTransition={receiveQuestionCard}
+								sendTransition={sendQuestionCard}
+								transitionKey={q.id}
+								onclick={() => (answerQuestionId = qId)}
+								type="button"
+							/>
 						{/each}
 					</div>
 				</div>
@@ -566,30 +516,35 @@
 			{@const q = currentClueQuestion(game)}
 			<div class="clue-stage">
 				{#if clue && q}
-					<div class="question-card clue-card">
-						<span class="question-title">{q.title}</span>
-						<span class="question-body clue-body">
-							{#if clue.value}
-								<span class="clue-value">{clue.value}</span>
-							{:else}
-								{@render runes(`${q.id}:clue`, { words: 3, min: 3, max: 8 })}
-							{/if}
-						</span>
-					</div>
+					<GameCard
+						variant="clue"
+						title={q.title}
+						bodyText={clue.value}
+						bodyFancy={Boolean(clue.value)}
+						bodyRedacted={!clue.value}
+						redactionKey={`${q.id}:clue`}
+						bodyRune={{ words: 3, min: 3, max: 8 }}
+						bodyRuneSize="clue-body"
+					/>
 				{/if}
 			</div>
 		{/if}
 
 		{#if currentState === 'win' || currentState === 'lose'}
-			<div class="question-card result-card" data-result={currentState}>
-				<span class="question-title">{currentState === 'win' ? 'Won' : 'Lost'}</span>
-				<span class="question-body result-word">{game.word}</span>
-				{#if showStartPanel}
-					<span class="result-actions">
+			<GameCard
+				variant="result"
+				result={currentState}
+				title={currentState === 'win' ? 'Won' : 'Lost'}
+				bodyText={game.word}
+				bodyFancy
+				footerVisible={showStartPanel}
+			>
+				{#snippet footer()}
+					{#if showStartPanel}
 						<InkButton size="md" primary onclick={() => send({ type: 'start' })}>Reset</InkButton>
-					</span>
-				{/if}
-			</div>
+					{/if}
+				{/snippet}
+			</GameCard>
 		{/if}
 	</div>
 
@@ -1214,52 +1169,6 @@
 		pointer-events: auto;
 	}
 
-	.answer-question-float {
-		min-width: 0;
-		animation: answer-question-float 4600ms ease-in-out infinite;
-		animation-delay: var(--answer-float-delay, 0ms);
-		will-change: transform;
-	}
-
-	.answer-question-card {
-		width: 100%;
-		min-height: clamp(10rem, 30dvh, 16rem);
-		cursor: pointer;
-	}
-
-	.answer-question-card:disabled {
-		cursor: default;
-	}
-
-	.answer-question-card[data-selected='true'] {
-		border-color: color-mix(in oklab, var(--app-focus) 64%, var(--app-sun) 36%);
-		box-shadow:
-			0 1.6rem 3.4rem color-mix(in oklab, black 48%, transparent),
-			0 0 1.35rem color-mix(in oklab, var(--app-focus) 22%, transparent),
-			0 0.34rem 0 color-mix(in oklab, black 30%, transparent),
-			inset 0 1px 0 color-mix(in oklab, white 14%, transparent);
-		color: var(--logo-word);
-	}
-
-	.answer-question-card[data-hidden='true'] {
-		filter: saturate(0.9);
-	}
-
-	.answer-question-card .question-title {
-		min-height: clamp(3.2rem, 8dvh, 4.5rem);
-		font-size: clamp(1.16rem, 4vw, 1.8rem);
-	}
-
-	.answer-question-card .question-body {
-		min-height: clamp(6.8rem, 21dvh, 10.5rem);
-		font-size: clamp(1.02rem, 2.8vw, 1.28rem);
-		line-height: 1.24;
-	}
-
-	.answer-question-card .rune-word {
-		font-size: clamp(1.08rem, 3.6vw, 1.52rem);
-	}
-
 	.state-panel {
 		display: grid;
 		justify-items: center;
@@ -1325,9 +1234,7 @@
 	}
 
 	.pick-word-stage:hover .pick-word,
-	.pick-word-stage:focus-within .pick-word,
-	button.question-card:hover,
-	button.question-card:focus-visible {
+	.pick-word-stage:focus-within .pick-word {
 		border-color: color-mix(in oklab, var(--app-focus) 54%, var(--app-border) 46%);
 		box-shadow:
 			0 1.7rem 3.6rem color-mix(in oklab, black 52%, transparent),
@@ -1496,47 +1403,6 @@
 			0 0.1rem 0.22rem color-mix(in oklab, black 48%, transparent);
 	}
 
-	.rune-word {
-		display: inline-flex;
-		flex-wrap: wrap;
-		align-items: center;
-		justify-content: center;
-		gap: 0.22em 0.38em;
-		max-width: 100%;
-		min-width: 0;
-		color: color-mix(in oklab, var(--app-accent-strong) 72%, var(--app-focus) 28%);
-		font-family: var(--font-mono);
-		font-size: 1.22rem;
-		font-weight: 800;
-		line-height: 1;
-		text-shadow:
-			0 0 0.45rem color-mix(in oklab, var(--app-accent) 42%, transparent),
-			0 0.12rem 0.3rem color-mix(in oklab, black 42%, transparent);
-	}
-
-	.rune-group {
-		display: inline-flex;
-		gap: 0.08em;
-		max-width: 100%;
-		min-width: 0;
-	}
-
-	.rune {
-		display: inline-block;
-		animation: rune-dance calc(var(--rune-duration) * 1.45) ease-in-out infinite;
-		animation-delay: var(--rune-delay);
-		transform-origin: center 58%;
-		will-change: filter, opacity, transform;
-	}
-
-	.rune:nth-child(3n + 2) {
-		animation-name: rune-swap;
-	}
-
-	.rune:nth-child(3n) {
-		animation-name: rune-float;
-	}
-
 	.question-selector {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
@@ -1588,217 +1454,6 @@
 		overflow-y: auto;
 	}
 
-	.question-card {
-		position: relative;
-		display: flex;
-		flex-direction: column;
-		min-height: 13.5rem;
-		border: 1px solid color-mix(in oklab, var(--app-border) 76%, var(--app-accent) 24%);
-		border-radius: 0.5rem;
-		background:
-			radial-gradient(110% 85% at 14% -8%, color-mix(in oklab, var(--app-sun) 18%, transparent), transparent 50%),
-			radial-gradient(120% 100% at 96% 112%, color-mix(in oklab, var(--app-moon) 24%, transparent), transparent 56%),
-			linear-gradient(160deg, color-mix(in oklab, var(--app-panel) 90%, white 10%), var(--app-panel) 58%),
-			var(--app-panel);
-		box-shadow:
-			0 1.25rem 3rem color-mix(in oklab, black 46%, transparent),
-			0 0.28rem 0 color-mix(in oklab, black 28%, transparent),
-			inset 0 1px 0 color-mix(in oklab, white 12%, transparent),
-			inset 0 -1px 0 color-mix(in oklab, black 34%, transparent);
-		color: var(--app-text);
-		cursor: default;
-		overflow: hidden;
-		padding: 0;
-		text-align: left;
-		transform: translateY(0) scale(1);
-		transform-style: preserve-3d;
-		transition:
-			border-color 220ms ease,
-			box-shadow 260ms ease,
-			color 180ms ease,
-			filter 260ms ease,
-			transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
-	}
-
-	.question-selector-popup .question-card {
-		height: 100%;
-		min-height: 0;
-	}
-
-	.question-card-compact {
-		min-height: 5.6rem;
-	}
-
-	button.question-card {
-		cursor: pointer;
-	}
-
-	.question-card::before {
-		position: absolute;
-		inset: 0;
-		background:
-			linear-gradient(110deg, transparent 0 24%, color-mix(in oklab, white 11%, transparent) 32%, transparent 42%),
-			repeating-linear-gradient(28deg, color-mix(in oklab, white 4%, transparent) 0 1px, transparent 1px 6px);
-		opacity: 0.4;
-		pointer-events: none;
-		transform: translateZ(1.25rem);
-		content: '';
-	}
-
-	button.question-card:disabled {
-		cursor: default;
-		opacity: 1;
-	}
-
-	button.question-card:active:not(:disabled) {
-		transform: translateY(-0.08rem) scale(0.995);
-	}
-
-	button.question-card[data-voted='true'] {
-		border-color: color-mix(in oklab, var(--app-focus) 62%, var(--app-sun) 38%);
-		box-shadow:
-			0 1.45rem 3.15rem color-mix(in oklab, black 48%, transparent),
-			0 0 0 1px color-mix(in oklab, var(--app-focus) 26%, transparent),
-			0 0 1.1rem color-mix(in oklab, var(--app-focus) 22%, transparent),
-			0 0.32rem 0 color-mix(in oklab, black 30%, transparent),
-			inset 0 1px 0 color-mix(in oklab, white 14%, transparent);
-		color: var(--logo-word);
-	}
-
-	.question-title,
-	.question-body {
-		position: relative;
-		z-index: 1;
-	}
-
-	.question-title {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		min-height: 3.2rem;
-		border-bottom: 1px solid color-mix(in oklab, var(--app-border) 76%, transparent);
-		background: color-mix(in oklab, var(--app-input) 44%, transparent);
-		font-family: var(--font-fancy);
-		font-size: 1.18rem;
-		font-weight: 900;
-		line-height: 1.08;
-		overflow: hidden;
-		padding: 0.7rem 0.85rem 0.62rem;
-		text-align: center;
-		text-shadow: 0 0.18rem 0.42rem color-mix(in oklab, black 34%, transparent);
-		transform: translateZ(0.7rem);
-	}
-
-	.question-title-text {
-		position: relative;
-		z-index: 1;
-		min-width: 0;
-	}
-
-	.question-title-votes {
-		position: absolute;
-		inset: 0;
-		z-index: 2;
-		display: flex;
-		align-items: center;
-		justify-content: flex-end;
-		background: linear-gradient(
-			90deg,
-			transparent 0 24%,
-			color-mix(in oklab, black 52%, transparent) 62%,
-			color-mix(in oklab, black 76%, transparent)
-		);
-		padding: 0.25rem 0.55rem 0.25rem 42%;
-		pointer-events: none;
-		transform: translateZ(1rem);
-		will-change: opacity;
-	}
-
-	.question-title-votes .vote-stack {
-		justify-content: flex-end;
-		width: auto;
-		min-width: 0;
-		height: auto;
-	}
-
-	.question-title-votes .vote-ghost :global(.avatar) {
-		font-size: 1.22rem;
-	}
-
-	.question-selector-popup .question-title {
-		min-height: 2.25rem;
-		font-size: 0.9rem;
-		padding: 0.52rem 0.62rem 0.45rem;
-	}
-
-	.question-card-compact .question-title {
-		min-height: 1.7rem;
-		font-size: 0.72rem;
-		padding: 0.34rem 0.5rem 0.3rem;
-	}
-
-	button.question-card[data-voted='true'] .question-title {
-		background: color-mix(in oklab, var(--app-focus) 14%, var(--app-input));
-	}
-
-	.question-body {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		min-height: 7.15rem;
-		flex: 1 1 0;
-		color: color-mix(in oklab, var(--app-text) 88%, var(--app-muted) 12%);
-		font-size: 1.06rem;
-		font-weight: 650;
-		line-height: 1.26;
-		padding: 0.85rem 0.95rem;
-		text-align: center;
-		text-wrap: balance;
-		transform: translateZ(0.45rem);
-	}
-
-	.question-selector-popup .question-body {
-		min-height: 0;
-		font-size: 1.08rem;
-		line-height: 1.22;
-		padding: 0.7rem 0.85rem;
-		overflow: hidden;
-	}
-
-	.question-card-compact .question-body {
-		min-height: 0;
-		font-size: 0.84rem;
-		font-weight: 500;
-		line-height: 1.18;
-		padding: 0.52rem 0.62rem;
-		overflow: hidden;
-	}
-
-	.question-card-compact .question-title-votes .vote-ghost :global(.avatar) {
-		font-size: 1rem;
-	}
-
-	.question-body .rune-word {
-		font-size: 1.06rem;
-		line-height: 1.28;
-	}
-
-	.clue-value,
-	.result-word {
-		font-family: var(--font-fancy);
-		font-weight: 950;
-		letter-spacing: 0;
-		text-shadow:
-			0 0 0.65rem color-mix(in oklab, var(--app-focus) 28%, transparent),
-			0 0.2rem 0.42rem color-mix(in oklab, black 42%, transparent);
-	}
-
-	.clue-value {
-		font-size: clamp(1.4rem, 7vw, 2rem);
-		line-height: 1;
-		text-align: center;
-	}
-
 	.clue-stage {
 		display: grid;
 		gap: 0.85rem;
@@ -1838,14 +1493,6 @@
 	.clue-stage {
 		width: min(100%, 30rem);
 		margin: 0 auto;
-	}
-
-	.clue-card {
-		min-height: 11rem;
-	}
-
-	.clue-body .rune-word {
-		font-size: 1.18rem;
 	}
 
 	.clue-buttons {
@@ -1945,44 +1592,6 @@
 		text-transform: uppercase;
 	}
 
-	.result-card {
-		width: min(100%, 22rem);
-		min-height: 12rem;
-		margin: 0 auto;
-	}
-
-	.result-card[data-result='win'] {
-		border-color: color-mix(in oklab, var(--app-focus) 58%, var(--app-border) 42%);
-	}
-
-	.result-word {
-		color: var(--logo-word);
-		font-size: clamp(1.6rem, 8vw, 2.35rem);
-	}
-
-	.result-actions {
-		position: relative;
-		z-index: 1;
-		display: flex;
-		justify-content: center;
-		border-top: 1px solid color-mix(in oklab, var(--app-border) 64%, transparent);
-		padding: 0.7rem;
-		transform: translateZ(0.75rem);
-	}
-
-	@keyframes answer-question-float {
-		0%,
-		100% {
-			transform: translate3d(0, 0, 0) rotate(-0.25deg);
-		}
-		34% {
-			transform: translate3d(0.12rem, -0.28rem, 0.35rem) rotate(0.45deg);
-		}
-		68% {
-			transform: translate3d(-0.1rem, 0.16rem, 0.18rem) rotate(-0.55deg);
-		}
-	}
-
 	@keyframes answer-action-highlight {
 		0%,
 		100% {
@@ -1996,63 +1605,6 @@
 			box-shadow:
 				0 0 0 1px color-mix(in oklab, var(--app-sun) 24%, transparent),
 				0 0 1.1rem color-mix(in oklab, var(--app-sun) 26%, transparent);
-		}
-	}
-
-	@keyframes rune-dance {
-		0%,
-		100% {
-			filter: brightness(1);
-			opacity: 0.78;
-			transform: translate3d(0, 0, 0.2rem) rotate(0deg);
-		}
-		28% {
-			filter: brightness(1.12);
-			opacity: 0.96;
-			transform: translate3d(calc(var(--rune-drift) * 0.26ch), -0.1rem, 0.45rem) rotate(3deg);
-		}
-		58% {
-			filter: brightness(0.92);
-			opacity: 0.86;
-			transform: translate3d(calc(var(--rune-drift) * -0.2ch), 0.08rem, 0.24rem) rotate(-3deg);
-		}
-	}
-
-	@keyframes rune-swap {
-		0%,
-		100% {
-			filter: brightness(0.95);
-			opacity: 0.76;
-			transform: translate3d(0, 0.04rem, 0.1rem) rotate(0deg);
-		}
-		35% {
-			filter: brightness(1.1);
-			opacity: 0.96;
-			transform: translate3d(calc(var(--rune-drift) * -0.3ch), -0.07rem, 0.44rem) rotate(-4deg);
-		}
-		68% {
-			filter: brightness(1.02);
-			opacity: 0.9;
-			transform: translate3d(calc(var(--rune-drift) * 0.24ch), 0.09rem, 0.28rem) rotate(3deg);
-		}
-	}
-
-	@keyframes rune-float {
-		0%,
-		100% {
-			filter: brightness(1);
-			opacity: 0.8;
-			transform: translate3d(0, 0, 0.2rem) rotate(0deg) scale(1);
-		}
-		42% {
-			filter: brightness(1.12);
-			opacity: 0.96;
-			transform: translate3d(calc(var(--rune-drift) * 0.18ch), -0.14rem, 0.48rem) rotate(3deg) scale(1.04);
-		}
-		72% {
-			filter: brightness(0.9);
-			opacity: 0.82;
-			transform: translate3d(calc(var(--rune-drift) * -0.16ch), 0.07rem, 0.24rem) rotate(-2deg) scale(0.99);
 		}
 	}
 
@@ -2086,14 +1638,12 @@
 			padding: 0.56rem 0.65rem;
 		}
 
-		.word-text,
-		.rune-word {
+		.word-text {
 			font-size: 1.03rem;
 		}
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.answer-question-float,
 		.answer-action-row[data-can-answer='true']:not(:focus-within) {
 			animation: none;
 		}
