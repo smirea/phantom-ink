@@ -207,7 +207,7 @@
 	const hasActionFooter = $derived(Boolean(actionFooterKind));
 
 	$effect(() => {
-		if (currentState !== 'mediumsAsk') questionsMinimized = false;
+		if (currentState !== 'mediumsAsk' && currentState !== 'spiritAnswers') questionsMinimized = false;
 	});
 </script>
 
@@ -264,7 +264,7 @@
 				{#if canPickQuestions}
 					{q.title}
 				{:else}
-					{@render runes(`${q.id}:title`, { words: 2, min: 3, max: 8 })}
+					{@render runes(`${q.id}:title`, { words: 1, min: 4, max: 16 })}
 				{/if}
 			</span>
 			{#if voteState.voted.length}
@@ -333,7 +333,9 @@
 <div
 	class="game-screen"
 	data-action-footer={actionFooterKind}
-	data-questions-minimized={currentState === 'mediumsAsk' && questionsMinimized ? 'true' : undefined}
+	data-questions-minimized={(currentState === 'mediumsAsk' || currentState === 'spiritAnswers') && questionsMinimized
+		? 'true'
+		: undefined}
 	data-state={currentState}
 	data-has-actions={hasActionFooter}
 >
@@ -505,6 +507,60 @@
 			{/if}
 		{/if}
 
+		{#if currentState === 'spiritAnswers'}
+			{@const canAnswer = canAnswerSpirit(game, viewerId)}
+			{@const selectedQuestionId = selectedAnswerQuestionId(game)}
+			<button
+				class="question-popup-toggle answer-question-toggle"
+				onclick={() => (questionsMinimized = !questionsMinimized)}
+				type="button"
+			>
+				{#if questionsMinimized}
+					<Maximize2 size={18} />
+				{:else}
+					<Minimize2 size={18} />
+				{/if}
+			</button>
+			{#if !questionsMinimized}
+				<div class="answer-question-overlay" transition:fly={{ y: 20, duration: 180 }}>
+					<div class="answer-question-stage" data-can-answer={canAnswer}>
+						{#each currentTeam.spiritQuestionPicks as qId, questionIndex (qId)}
+							{@const q = questions.find(x => x.id === qId)!}
+							<div class="answer-question-float" style={`--answer-float-delay: -${questionIndex * 620}ms`}>
+								<button
+									class="question-card answer-question-card"
+									data-hidden={!canAnswer ? 'true' : undefined}
+									data-selected={selectedQuestionId === qId}
+									disabled={!canAnswer}
+									in:receiveQuestionCard={{ key: q.id }}
+									onclick={() => (answerQuestionId = qId)}
+									out:sendQuestionCard={{ key: q.id }}
+									type="button"
+								>
+									<span class="question-title">
+										<span class="question-title-text">
+											{#if canAnswer}
+												{q.title}
+											{:else}
+												{@render runes(`${q.id}:answer-title`, { words: 1, min: 4, max: 16 })}
+											{/if}
+										</span>
+									</span>
+									<span class="question-body">
+										{#if canAnswer}
+											{q.question}
+										{:else}
+											{@render runes(`${q.id}:answer-question`, { words: 5, min: 4, max: 10 })}
+										{/if}
+									</span>
+								</button>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
+		{/if}
+
 		{#if canSeeVote(currentState, 'clue')}
 			{@const clue = getCurrentClue(game)}
 			{@const q = currentClueQuestion(game)}
@@ -591,21 +647,6 @@
 							if (selectedQuestionId) answerClue(selectedQuestionId);
 						}}
 					>
-						<div class="answer-question-options">
-							{#each currentTeam.spiritQuestionPicks as qId (qId)}
-								{@const q = questions.find(x => x.id === qId)!}
-								<button
-									class="answer-question-option"
-									data-selected={selectedQuestionId === qId}
-									disabled={!canAnswer}
-									onclick={() => (answerQuestionId = qId)}
-									type="button"
-								>
-									<span class="answer-question-title">{q.title}</span>
-									<span class="answer-question-body">{q.question}</span>
-								</button>
-							{/each}
-						</div>
 						<div class="answer-input-row">
 							<input
 								disabled={!canAnswer || !selectedQuestionId}
@@ -616,7 +657,7 @@
 								value={selectedQuestionId ? (clueDrafts[selectedQuestionId] ?? '') : ''}
 							/>
 							<InkButton
-								size="sm"
+								size="md"
 								primary
 								type="submit"
 								disabled={!canAnswer || !selectedQuestionId || !clueDrafts[selectedQuestionId]?.trim()}
@@ -1138,57 +1179,85 @@
 	.answer-action-row {
 		display: grid;
 		gap: 0.55rem;
+		border: 1px solid transparent;
+		border-radius: 0.58rem;
+		padding: 0.18rem;
+		transition:
+			background 180ms ease,
+			border-color 180ms ease,
+			box-shadow 180ms ease;
 	}
 
-	.answer-question-options {
+	.answer-action-row[data-can-answer='true']:not(:focus-within) {
+		animation: answer-action-highlight 1800ms ease-in-out infinite;
+	}
+
+	.answer-question-overlay {
+		position: absolute;
+		inset: 0;
+		z-index: 30;
+		display: grid;
+		place-items: center;
+		min-width: 0;
+		min-height: 0;
+		padding: clamp(0.75rem, 3dvh, 1.4rem) clamp(0.65rem, 2.4vw, 1.25rem) 3.4rem;
+		pointer-events: none;
+	}
+
+	.answer-question-stage {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 0.45rem;
-	}
-
-	.answer-question-option {
-		display: grid;
-		gap: 0.16rem;
+		gap: clamp(0.7rem, 2.4vw, 1.15rem);
+		width: min(100%, 54rem);
 		min-width: 0;
-		border: 1px solid color-mix(in oklab, var(--app-border) 70%, transparent);
-		border-radius: 0.375rem;
-		background: color-mix(in oklab, var(--app-input) 58%, transparent);
-		color: inherit;
+		perspective: 62rem;
+		pointer-events: auto;
+	}
+
+	.answer-question-float {
+		min-width: 0;
+		animation: answer-question-float 4600ms ease-in-out infinite;
+		animation-delay: var(--answer-float-delay, 0ms);
+		will-change: transform;
+	}
+
+	.answer-question-card {
+		width: 100%;
+		min-height: clamp(10rem, 30dvh, 16rem);
 		cursor: pointer;
-		padding: 0.45rem 0.55rem;
-		text-align: left;
 	}
 
-	.answer-question-option:disabled {
+	.answer-question-card:disabled {
 		cursor: default;
-		opacity: 0.6;
 	}
 
-	.answer-question-option[data-selected='true'] {
-		border-color: color-mix(in oklab, var(--app-focus) 60%, var(--app-border) 40%);
-		background: color-mix(in oklab, var(--app-focus) 16%, var(--app-input));
-		box-shadow: 0 0 0.8rem color-mix(in oklab, var(--app-focus) 14%, transparent);
+	.answer-question-card[data-selected='true'] {
+		border-color: color-mix(in oklab, var(--app-focus) 64%, var(--app-sun) 36%);
+		box-shadow:
+			0 1.6rem 3.4rem color-mix(in oklab, black 48%, transparent),
+			0 0 1.35rem color-mix(in oklab, var(--app-focus) 22%, transparent),
+			0 0.34rem 0 color-mix(in oklab, black 30%, transparent),
+			inset 0 1px 0 color-mix(in oklab, white 14%, transparent);
 		color: var(--logo-word);
 	}
 
-	.answer-question-title {
-		overflow: hidden;
-		font-family: var(--font-fancy);
-		font-size: 0.9rem;
-		font-weight: 900;
-		line-height: 1;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+	.answer-question-card[data-hidden='true'] {
+		filter: saturate(0.9);
 	}
 
-	.answer-question-body {
-		overflow: hidden;
-		color: color-mix(in oklab, var(--app-text) 84%, var(--app-muted) 16%);
-		font-size: 0.72rem;
-		font-weight: 650;
-		line-height: 1.18;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+	.answer-question-card .question-title {
+		min-height: clamp(3.2rem, 8dvh, 4.5rem);
+		font-size: clamp(1.16rem, 4vw, 1.8rem);
+	}
+
+	.answer-question-card .question-body {
+		min-height: clamp(6.8rem, 21dvh, 10.5rem);
+		font-size: clamp(1.02rem, 2.8vw, 1.28rem);
+		line-height: 1.24;
+	}
+
+	.answer-question-card .rune-word {
+		font-size: clamp(1.08rem, 3.6vw, 1.52rem);
 	}
 
 	.state-panel {
@@ -1497,6 +1566,10 @@
 		z-index: 3;
 	}
 
+	.answer-question-toggle {
+		z-index: 34;
+	}
+
 	.question-selector-popup {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		grid-auto-rows: minmax(0, 1fr);
@@ -1734,22 +1807,23 @@
 	.answer-input-row {
 		position: relative;
 		z-index: 1;
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
-		gap: 0.5rem;
+		display: flex;
+		gap: 0.65rem;
 		align-items: center;
 	}
 
 	.answer-input-row input {
 		min-width: 0;
-		height: 2.2rem;
+		flex: 1 1 auto;
+		height: 2.85rem;
 		border: 1px solid color-mix(in oklab, var(--app-border) 74%, transparent);
-		border-radius: 0.375rem;
+		border-radius: 0.45rem;
 		background: color-mix(in oklab, var(--app-input) 86%, black 6%);
 		color: var(--app-text);
 		font: inherit;
+		font-size: 1.05rem;
 		font-weight: 800;
-		padding: 0 0.7rem;
+		padding: 0 0.9rem;
 	}
 
 	.answer-input-row input:focus-visible {
@@ -1896,6 +1970,35 @@
 		transform: translateZ(0.75rem);
 	}
 
+	@keyframes answer-question-float {
+		0%,
+		100% {
+			transform: translate3d(0, 0, 0) rotate(-0.25deg);
+		}
+		34% {
+			transform: translate3d(0.12rem, -0.28rem, 0.35rem) rotate(0.45deg);
+		}
+		68% {
+			transform: translate3d(-0.1rem, 0.16rem, 0.18rem) rotate(-0.55deg);
+		}
+	}
+
+	@keyframes answer-action-highlight {
+		0%,
+		100% {
+			border-color: color-mix(in oklab, var(--app-sun) 20%, transparent);
+			background: color-mix(in oklab, var(--app-sun) 5%, transparent);
+			box-shadow: 0 0 0 0 color-mix(in oklab, var(--app-sun) 0%, transparent);
+		}
+		45% {
+			border-color: color-mix(in oklab, var(--app-sun) 72%, var(--app-border) 28%);
+			background: color-mix(in oklab, var(--app-sun) 13%, transparent);
+			box-shadow:
+				0 0 0 1px color-mix(in oklab, var(--app-sun) 24%, transparent),
+				0 0 1.1rem color-mix(in oklab, var(--app-sun) 26%, transparent);
+		}
+	}
+
 	@keyframes rune-dance {
 		0%,
 		100% {
@@ -1986,6 +2089,13 @@
 		.word-text,
 		.rune-word {
 			font-size: 1.03rem;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.answer-question-float,
+		.answer-action-row[data-can-answer='true']:not(:focus-within) {
+			animation: none;
 		}
 	}
 </style>
