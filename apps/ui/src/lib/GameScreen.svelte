@@ -142,6 +142,10 @@
 		};
 	}
 
+	function boardText(value: string): string {
+		return value.replaceAll(' ', '_');
+	}
+
 	function isCurrentGuessCell(context: GameContext, team: Team, turn: number): boolean {
 		const teamState = context.teams[team];
 		const entry = teamState.board[turn];
@@ -348,9 +352,9 @@
 	{#if entry?.type === 'guess'}
 		{@const parts = guessParts(game, entry)}
 		<span class="board-value" class:done={isBoardEntryDone(game, entry)} data-entry-type="guess">
-			<span class="guess-valid">{parts.valid || (!parts.invalid ? '\u00a0' : '')}</span>
+			<span class="guess-valid">{boardText(parts.valid) || (!parts.invalid ? '\u00a0' : '')}</span>
 			{#if parts.invalid}
-				<span class="guess-invalid">{parts.invalid}</span>
+				<span class="guess-invalid">{boardText(parts.invalid)}</span>
 			{/if}
 		</span>
 	{:else}
@@ -361,7 +365,7 @@
 			data-letter-hint={entry?.type === 'clue' && entry.value ? 'true' : undefined}
 			data-eye-hint={entry?.hint ? 'true' : undefined}
 		>
-			{entry?.value || '\u00a0'}
+			{entry?.value ? boardText(entry.value) : '\u00a0'}
 		</span>
 	{/if}
 {/snippet}
@@ -702,7 +706,7 @@
 							{@const voteState = optionVoteState(currentState, game, 'clue', option)}
 							<InkButton
 								size="lg"
-								primary={option === 'getClue'}
+								primary
 								class="flex-1"
 								disabled={!canVote(currentState, game, 'clue', viewerId)}
 								onclick={() => send({ type: 'vote', action: 'clue', option, userId: viewerId })}
