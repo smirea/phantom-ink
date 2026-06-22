@@ -330,9 +330,9 @@
 			<div class="team-presence-side" data-team={team} data-active={teamHasActivePlayer(team) ? 'true' : undefined}>
 				<div class="team-mark">
 					{#if team === 'sun'}
-						<Sun size={82} strokeWidth={1.35} />
+						<Sun size={124} strokeWidth={1.15} />
 					{:else}
-						<Moon size={82} strokeWidth={1.35} />
+						<Moon size={124} strokeWidth={1.15} />
 					{/if}
 				</div>
 				<div class="team-player-list">
@@ -380,9 +380,9 @@
 	data-has-actions={hasActionFooter}
 >
 	<div class="game-content">
-		{@render TeamPresence()}
-
 		<div class="board">
+			{@render TeamPresence()}
+
 			{#each range(board.turns) as turn}
 				{@const hasKnownQuestions = rowHasKnownQuestions(game, viewerId, turn)}
 				{@const rowExpanded = expandedBoardRows.includes(turn)}
@@ -803,21 +803,21 @@
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) 2rem minmax(0, 1fr);
 		min-width: 0;
-		min-height: clamp(5.8rem, 15dvh, 7.4rem);
-		margin: -0.35rem -0.35rem 0;
+		min-height: 3.15rem;
+		border-bottom: 1px solid var(--app-border);
 		overflow: hidden;
 	}
 
 	.team-presence::after {
 		position: absolute;
-		top: 0.75rem;
-		bottom: 0.55rem;
+		top: 0.42rem;
+		bottom: 0.42rem;
 		left: 50%;
 		width: 1px;
-		background: color-mix(in oklab, var(--app-border) 48%, transparent);
+		background: color-mix(in oklab, var(--app-border) 42%, transparent);
 		box-shadow:
-			-0.45rem 0 1.45rem color-mix(in oklab, #e1aa57 28%, transparent),
-			0.45rem 0 1.45rem color-mix(in oklab, #a997ff 32%, transparent);
+			-0.45rem 0 1.25rem color-mix(in oklab, #e1aa57 16%, transparent),
+			0.45rem 0 1.25rem color-mix(in oklab, #a997ff 18%, transparent);
 		content: '';
 		pointer-events: none;
 		transform: translateX(-50%);
@@ -827,9 +827,9 @@
 		--team-color: var(--app-accent);
 		position: relative;
 		display: grid;
-		align-content: end;
+		align-content: center;
 		min-width: 0;
-		padding: 0.85rem 0.7rem 0.55rem;
+		padding: 0.34rem 0.38rem;
 		overflow: hidden;
 	}
 
@@ -850,16 +850,17 @@
 
 	.team-mark {
 		position: absolute;
-		top: 0.2rem;
+		top: 50%;
 		display: grid;
-		width: 5.4rem;
-		height: 5.4rem;
-		color: color-mix(in oklab, var(--team-color) 68%, transparent);
-		filter: drop-shadow(0 0 0.45rem color-mix(in oklab, var(--team-color) 30%, transparent))
-			drop-shadow(0 0 1.2rem color-mix(in oklab, var(--team-color) 14%, transparent));
-		opacity: 0.38;
+		width: 7.4rem;
+		height: 7.4rem;
+		color: color-mix(in oklab, var(--team-color) 54%, transparent);
+		filter: drop-shadow(0 0 0.5rem color-mix(in oklab, var(--team-color) 12%, transparent))
+			drop-shadow(0 0 1.35rem color-mix(in oklab, var(--team-color) 8%, transparent));
+		opacity: 0.14;
 		pointer-events: none;
 		place-items: center;
+		transform: translateY(-50%);
 		transition:
 			color 180ms ease,
 			opacity 180ms ease,
@@ -872,64 +873,67 @@
 		border-radius: 999px;
 		background: radial-gradient(
 			circle,
-			color-mix(in oklab, var(--team-color) 32%, transparent) 0%,
-			color-mix(in oklab, var(--team-color) 14%, transparent) 38%,
+			color-mix(in oklab, var(--team-color) 14%, transparent) 0%,
+			color-mix(in oklab, var(--team-color) 6%, transparent) 38%,
 			transparent 72%
 		);
 		content: '';
-		opacity: 0.32;
+		opacity: 0.18;
 		transform: scale(0.9);
 	}
 
 	.team-mark :global(svg) {
 		position: relative;
 		z-index: 1;
+		width: 100%;
+		height: 100%;
 	}
 
 	.team-presence-side[data-active='true'] .team-mark {
 		animation: team-icon-pulse 3.8s ease-in-out infinite;
-		color: var(--team-color);
-		opacity: 0.9;
+		color: color-mix(in oklab, var(--team-color) 72%, transparent);
+		opacity: 0.26;
 	}
 
 	.team-presence-side[data-active='true'] .team-mark::before {
 		animation: team-aura-pulse 3.8s ease-in-out infinite;
-		opacity: 0.72;
+		opacity: 0.32;
 	}
 
 	.team-presence-side[data-team='sun'] .team-mark {
-		left: 0.55rem;
+		left: -2.15rem;
 	}
 
 	.team-presence-side[data-team='moon'] .team-mark {
-		right: 0.55rem;
+		right: -2.15rem;
 	}
 
 	.team-player-list {
 		position: relative;
 		z-index: 1;
-		display: grid;
-		gap: 0.38rem;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.22rem 0.42rem;
 		min-width: 0;
 		width: 100%;
-		padding-top: 2.4rem;
 	}
 
 	.team-presence-side[data-team='moon'] .team-player-list {
-		justify-items: end;
+		justify-content: flex-end;
 	}
 
 	.team-player {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.42rem;
+		gap: 0.24rem;
 		max-width: 100%;
 		min-width: 0;
 		border: 0;
 		background: transparent;
 		color: var(--app-text);
 		font: inherit;
-		font-size: 0.92rem;
+		font-size: 0.76rem;
 		font-weight: 900;
 		line-height: 1;
 		padding: 0.08rem 0;
@@ -973,7 +977,7 @@
 	.team-player[data-spirit='true'] .team-player-name {
 		color: color-mix(in oklab, var(--logo-word) 86%, var(--team-color) 14%);
 		font-family: var(--font-fancy);
-		font-size: 1.04rem;
+		font-size: 0.88rem;
 		font-weight: 950;
 		text-shadow:
 			0 0 0.38rem color-mix(in oklab, var(--team-color) 28%, transparent),
@@ -983,19 +987,20 @@
 	.team-player :global(.avatar) {
 		display: inline-grid;
 		place-items: center;
-		width: 1.55rem;
-		height: 1.55rem;
+		width: 1.08rem;
+		height: 1.08rem;
 		flex: 0 0 auto;
-		font-size: 1.55rem;
+		font-size: 1.08rem;
 	}
 
 	.team-player :global(.avatar svg) {
-		width: 1.2rem;
-		height: 1.2rem;
+		width: 0.86rem;
+		height: 0.86rem;
 	}
 
 	.team-player-name {
 		min-width: 0;
+		max-width: min(7.2rem, 34vw);
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -1925,25 +1930,25 @@
 	@keyframes team-icon-pulse {
 		0%,
 		100% {
-			filter: drop-shadow(0 0 0.55rem color-mix(in oklab, var(--team-color) 42%, transparent))
-				drop-shadow(0 0 1.35rem color-mix(in oklab, var(--team-color) 24%, transparent));
+			filter: drop-shadow(0 0 0.55rem color-mix(in oklab, var(--team-color) 20%, transparent))
+				drop-shadow(0 0 1.35rem color-mix(in oklab, var(--team-color) 10%, transparent));
 		}
 
 		50% {
-			filter: drop-shadow(0 0 0.85rem color-mix(in oklab, var(--team-color) 66%, transparent))
-				drop-shadow(0 0 1.85rem color-mix(in oklab, var(--team-color) 36%, transparent));
+			filter: drop-shadow(0 0 0.85rem color-mix(in oklab, var(--team-color) 28%, transparent))
+				drop-shadow(0 0 1.85rem color-mix(in oklab, var(--team-color) 14%, transparent));
 		}
 	}
 
 	@keyframes team-aura-pulse {
 		0%,
 		100% {
-			opacity: 0.52;
+			opacity: 0.22;
 			transform: scale(0.92);
 		}
 
 		50% {
-			opacity: 0.9;
+			opacity: 0.38;
 			transform: scale(1.06);
 		}
 	}
@@ -1964,43 +1969,41 @@
 
 	@media (max-width: 460px) {
 		.team-presence {
-			min-height: 5.55rem;
-			margin-inline: -0.55rem;
+			min-height: 2.9rem;
 		}
 
 		.team-presence-side {
-			padding: 0.65rem 0.55rem 0.45rem;
+			padding: 0.28rem 0.3rem;
 		}
 
 		.team-mark {
-			top: 0.05rem;
-			width: 4.8rem;
-			height: 4.8rem;
+			top: 50%;
+			width: 6.8rem;
+			height: 6.8rem;
 		}
 
 		.team-player-list {
-			gap: 0.32rem;
-			padding-top: 2.05rem;
+			gap: 0.18rem 0.32rem;
 		}
 
 		.team-player {
-			gap: 0.32rem;
-			font-size: 0.8rem;
+			gap: 0.2rem;
+			font-size: 0.68rem;
 		}
 
 		.team-player[data-spirit='true'] .team-player-name {
-			font-size: 0.94rem;
+			font-size: 0.8rem;
 		}
 
 		.team-player :global(.avatar) {
-			width: 1.38rem;
-			height: 1.38rem;
-			font-size: 1.38rem;
+			width: 0.96rem;
+			height: 0.96rem;
+			font-size: 0.96rem;
 		}
 
 		.team-player :global(.avatar svg) {
-			width: 1.08rem;
-			height: 1.08rem;
+			width: 0.76rem;
+			height: 0.76rem;
 		}
 
 		.pick-word {
