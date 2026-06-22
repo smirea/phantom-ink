@@ -127,6 +127,11 @@
 		return clue?.questionId ? questions.find(question => question.id === clue.questionId)! : null;
 	}
 
+	function currentDiscardedClueQuestion(context: GameContext): QuestionCard | null {
+		const clue = getCurrentClue(context);
+		return clue?.discardedQuestionId ? questions.find(question => question.id === clue.discardedQuestionId)! : null;
+	}
+
 	function guessParts(context: GameContext, entry: BoardEntry): { valid: string; invalid: string } {
 		let validLength = entry.value.length;
 		for (let index = 1; index <= entry.value.length; index += 1) {
@@ -313,6 +318,28 @@
 			{/each}
 		</span>
 	</div>
+{/snippet}
+
+{#snippet ClueQuestionBand()}
+	{#if currentState === 'mediumsGetClues'}
+		{@const activeTeam = playerTeam(game, viewerId) === game.currentTeam}
+		{@const q = activeTeam ? currentClueQuestion(game) : currentDiscardedClueQuestion(game)}
+		{#if q}
+			<div class="clue-question-band known-question" data-kind={activeTeam ? 'used' : 'discarded'}>
+				<span class="known-question-icon">
+					{#if activeTeam}
+						<Check size={14} />
+					{:else}
+						<X size={14} />
+					{/if}
+				</span>
+				<span class="known-question-copy">
+					<strong>{q.title}:</strong>
+					{activeTeam ? q.question : '....'}
+				</span>
+			</div>
+		{/if}
+	{/if}
 {/snippet}
 
 {#snippet QuestionChoice(q: QuestionCard, questionIndex: number, canPickQuestions: boolean, compact: boolean)}
@@ -684,6 +711,7 @@
 			data-has-actions={hasActionFooter ? 'true' : undefined}
 		>
 			{@render StatusBand()}
+			{@render ClueQuestionBand()}
 
 			{#if hasActionFooter}
 				<div
@@ -1377,6 +1405,27 @@
 		font-weight: 850;
 		letter-spacing: 0;
 		text-shadow: 0 0 0.45rem color-mix(in oklab, var(--known-question-color) 24%, transparent);
+	}
+
+	.clue-question-band {
+		grid-template-columns: 1rem minmax(0, 1fr);
+		align-items: center;
+		min-height: 1.7rem;
+		border-bottom: 1px solid color-mix(in oklab, var(--app-border) 48%, transparent);
+		background:
+			linear-gradient(90deg, color-mix(in oklab, var(--known-question-color) 10%, transparent), transparent 42%),
+			color-mix(in oklab, var(--app-input) 22%, transparent);
+		padding: 0.26rem 0.75rem;
+	}
+
+	.clue-question-band .known-question-icon {
+		margin-top: 0;
+	}
+
+	.clue-question-band .known-question-copy {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.known-question-empty {
