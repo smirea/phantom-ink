@@ -1,5 +1,4 @@
 <script lang="ts">
-	import Avatar from '$lib/Avatar.svelte';
 	import GameScreen from '$lib/GameScreen.svelte';
 	import { questions } from '@repo/shared/data';
 	import { gameMachine, gameStates, type GameEvent, type GameState, type VoteType } from '@repo/shared/game';
@@ -36,10 +35,6 @@
 		{ id: 4, name: 'five', color: 'ectoplasm', icon: 'fish' },
 		{ id: 5, name: 'six', color: 'haunt', icon: 'skull' },
 	];
-
-	function player(userId: User['id']): User {
-		return playerData.find(user => user.id === userId)!;
-	}
 
 	function actionStateFor(state: GameState): VoteType | 'answer' | undefined {
 		switch (state) {
@@ -132,10 +127,6 @@
 			</div>
 		</div>
 
-		<div class="debug-active-user">
-			<Avatar user={player(debugUser)} />
-		</div>
-
 		<button onclick={() => actor.send({ type: 'start' })} type="button">
 			{currentState === 'start' ? 'Start' : 'Reset'}
 		</button>
@@ -166,8 +157,7 @@
 
 	.debug-game-controls,
 	.debug-control-group,
-	.team-toggle,
-	.debug-active-user {
+	.team-toggle {
 		display: flex;
 		align-items: center;
 		gap: 0.75rem;
@@ -183,12 +173,6 @@
 
 	.debug-game-controls > button {
 		margin-left: auto;
-	}
-
-	.debug-active-user {
-		font-size: 1.5rem;
-		min-width: 5rem;
-		justify-content: center;
 	}
 
 	.team-toggle {

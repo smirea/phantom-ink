@@ -4,7 +4,7 @@
 	import GameRunes from '$lib/GameRunes.svelte';
 	import InkButton from '$lib/InkButton.svelte';
 	import { playerColorPreset } from '$lib/playerPresentation';
-	import { Check, Eye, Info, Maximize2, Minimize2, X } from '@lucide/svelte';
+	import { Check, Eye, Info, Maximize2, Minimize2, Moon, Sun, X } from '@lucide/svelte';
 	import { board, questions, type QuestionCard } from '@repo/shared/data';
 	import {
 		boardEntryId,
@@ -161,6 +161,36 @@
 		return playerColorPreset(player(userId).color).value;
 	}
 
+	function activeVoteForState(state: GameState): VoteType | null {
+		switch (state) {
+			case 'setupWord':
+				return 'pickWord';
+			case 'mediumsTurn':
+				return 'mediumAction';
+			case 'eyeHint':
+				return 'pickHint';
+			case 'mediumsAsk':
+				return 'pickQuestions';
+			case 'mediumsGetClues':
+				return 'clue';
+			case 'guessing':
+				return 'guessLetter';
+			default:
+				return null;
+		}
+	}
+
+	function playerIsActive(userId: User['id']): boolean {
+		const activeVote = activeVoteForState(currentState);
+		if (activeVote) return canVote(currentState, game, activeVote, userId);
+		if (currentState === 'spiritAnswers') return canAnswerSpirit(game, userId);
+		return true;
+	}
+
+	function teamHasActivePlayer(team: Team): boolean {
+		return game.teams[team].players.some(playerIsActive);
+	}
+
 	let clueDrafts = $state<Record<string, string>>({});
 	let answerQuestionId = $state<QuestionCard['id'] | null>(null);
 	let expandedBoardRows = $state<number[]>([]);
@@ -266,6 +296,54 @@
 	{/if}
 {/snippet}
 
+{#snippet TeamPlayer(team: Team, userId: User['id'])}
+	{@const isSpirit = game.teams[team].spirit === userId}
+	{@const isActive = playerIsActive(userId)}
+	{@const isViewer = viewerId === userId}
+	{#if showDebugPlayerPicker}
+		<button
+			class="team-player"
+			data-active={isActive ? 'true' : 'false'}
+			data-spirit={isSpirit ? 'true' : undefined}
+			data-viewer={isViewer ? 'true' : undefined}
+			onclick={() => onSelectViewer?.(userId)}
+			type="button"
+		>
+			<Avatar user={player(userId)} name={false} />
+			<span class="team-player-name">{player(userId).name}</span>
+		</button>
+	{:else}
+		<span class="team-player" data-active={isActive ? 'true' : 'false'} data-spirit={isSpirit ? 'true' : undefined}>
+			<Avatar user={player(userId)} name={false} />
+			<span class="team-player-name">{player(userId).name}</span>
+		</span>
+	{/if}
+{/snippet}
+
+{#snippet TeamPresence()}
+	<div class="team-presence">
+		{#each teams as team}
+			<div class="team-presence-side" data-team={team} data-active={teamHasActivePlayer(team) ? 'true' : undefined}>
+				<div class="team-mark">
+					{#if team === 'sun'}
+						<Sun size={82} strokeWidth={1.35} />
+					{:else}
+						<Moon size={82} strokeWidth={1.35} />
+					{/if}
+				</div>
+				<div class="team-player-list">
+					{#each game.teams[team].players as userId (userId)}
+						{@render TeamPlayer(team, userId)}
+					{/each}
+				</div>
+			</div>
+			{#if team === 'sun'}
+				<div class="team-presence-gap"></div>
+			{/if}
+		{/each}
+	</div>
+{/snippet}
+
 {#snippet BoardValue(entry: BoardEntry | undefined)}
 	{#if entry?.type === 'guess'}
 		{@const parts = guessParts(game, entry)}
@@ -298,25 +376,9 @@
 	data-has-actions={hasActionFooter}
 >
 	<div class="game-content">
+		{@render TeamPresence()}
+
 		<div class="board">
-			{#if showDebugPlayerPicker}
-				<div class="board-row board-header-row">
-					{#each teams as team}
-						{#if team === 'moon'}
-							<div class="board-row-toggle-slot"></div>
-						{/if}
-						<div class="flex gap-2" class:flex-row-reverse={team === 'moon'}>
-							{#each game.teams[team].players as userId}
-								<Avatar
-									user={player(userId)}
-									onclick={() => onSelectViewer?.(userId)}
-									class={game.teams[team].spirit === userId ? 'underline' : ''}
-								/>
-							{/each}
-						</div>
-					{/each}
-				</div>
-			{/if}
 			{#each range(board.turns) as turn}
 				{@const hasKnownQuestions = rowHasKnownQuestions(game, viewerId, turn)}
 				{@const rowExpanded = expandedBoardRows.includes(turn)}
@@ -724,9 +786,215 @@
 	}
 
 	.board {
+		position: relative;
+		z-index: 1;
 		min-width: 0;
 		max-width: 100%;
 		overflow-x: clip;
+	}
+
+	.team-presence {
+		position: relative;
+		z-index: 1;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 2rem minmax(0, 1fr);
+		min-width: 0;
+		min-height: clamp(5.8rem, 15dvh, 7.4rem);
+		margin: -0.35rem -0.35rem 0;
+		overflow: hidden;
+	}
+
+	.team-presence::after {
+		position: absolute;
+		top: 0.75rem;
+		bottom: 0.55rem;
+		left: 50%;
+		width: 1px;
+		background: color-mix(in oklab, var(--app-border) 48%, transparent);
+		box-shadow:
+			-0.45rem 0 1.45rem color-mix(in oklab, #e1aa57 28%, transparent),
+			0.45rem 0 1.45rem color-mix(in oklab, #a997ff 32%, transparent);
+		content: '';
+		pointer-events: none;
+		transform: translateX(-50%);
+	}
+
+	.team-presence-side {
+		--team-color: var(--app-accent);
+		position: relative;
+		display: grid;
+		align-content: end;
+		min-width: 0;
+		padding: 0.85rem 0.7rem 0.55rem;
+		overflow: hidden;
+	}
+
+	.team-presence-side[data-team='sun'] {
+		--team-color: #e1aa57;
+		justify-items: start;
+	}
+
+	.team-presence-side[data-team='moon'] {
+		--team-color: #a997ff;
+		justify-items: end;
+	}
+
+	.team-presence-gap {
+		position: relative;
+		z-index: 1;
+	}
+
+	.team-mark {
+		position: absolute;
+		top: 0.2rem;
+		display: grid;
+		width: 5.4rem;
+		height: 5.4rem;
+		color: color-mix(in oklab, var(--team-color) 68%, transparent);
+		filter: drop-shadow(0 0 0.45rem color-mix(in oklab, var(--team-color) 30%, transparent))
+			drop-shadow(0 0 1.2rem color-mix(in oklab, var(--team-color) 14%, transparent));
+		opacity: 0.38;
+		pointer-events: none;
+		place-items: center;
+		transition:
+			color 180ms ease,
+			opacity 180ms ease,
+			filter 180ms ease;
+	}
+
+	.team-mark::before {
+		position: absolute;
+		inset: -0.4rem;
+		border-radius: 999px;
+		background: radial-gradient(
+			circle,
+			color-mix(in oklab, var(--team-color) 32%, transparent) 0%,
+			color-mix(in oklab, var(--team-color) 14%, transparent) 38%,
+			transparent 72%
+		);
+		content: '';
+		opacity: 0.32;
+		transform: scale(0.9);
+	}
+
+	.team-mark :global(svg) {
+		position: relative;
+		z-index: 1;
+	}
+
+	.team-presence-side[data-active='true'] .team-mark {
+		animation: team-icon-pulse 3.8s ease-in-out infinite;
+		color: var(--team-color);
+		opacity: 0.9;
+	}
+
+	.team-presence-side[data-active='true'] .team-mark::before {
+		animation: team-aura-pulse 3.8s ease-in-out infinite;
+		opacity: 0.72;
+	}
+
+	.team-presence-side[data-team='sun'] .team-mark {
+		left: 0.55rem;
+	}
+
+	.team-presence-side[data-team='moon'] .team-mark {
+		right: 0.55rem;
+	}
+
+	.team-player-list {
+		position: relative;
+		z-index: 1;
+		display: grid;
+		gap: 0.38rem;
+		min-width: 0;
+		width: 100%;
+		padding-top: 2.4rem;
+	}
+
+	.team-presence-side[data-team='moon'] .team-player-list {
+		justify-items: end;
+	}
+
+	.team-player {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.42rem;
+		max-width: 100%;
+		min-width: 0;
+		border: 0;
+		background: transparent;
+		color: var(--app-text);
+		font: inherit;
+		font-size: 0.92rem;
+		font-weight: 900;
+		line-height: 1;
+		padding: 0.08rem 0;
+		text-align: left;
+		transition:
+			color 180ms ease,
+			filter 180ms ease,
+			opacity 180ms ease,
+			transform 180ms ease;
+	}
+
+	button.team-player {
+		cursor: pointer;
+	}
+
+	button.team-player:hover,
+	button.team-player:focus-visible {
+		color: color-mix(in oklab, var(--team-color) 72%, var(--app-text) 28%);
+		transform: translateY(-0.05rem);
+	}
+
+	.team-presence-side[data-team='moon'] .team-player {
+		flex-direction: row-reverse;
+		text-align: right;
+	}
+
+	.team-player[data-active='false'] {
+		opacity: 0.38;
+		filter: saturate(0.52);
+	}
+
+	.team-player[data-viewer='true'] {
+		color: var(--team-color);
+		filter: drop-shadow(0 0 0.42rem color-mix(in oklab, var(--team-color) 30%, transparent));
+	}
+
+	.team-player[data-active='false'][data-viewer='true'] {
+		opacity: 0.58;
+	}
+
+	.team-player[data-spirit='true'] .team-player-name {
+		color: color-mix(in oklab, var(--logo-word) 86%, var(--team-color) 14%);
+		font-family: var(--font-fancy);
+		font-size: 1.04rem;
+		font-weight: 950;
+		text-shadow:
+			0 0 0.38rem color-mix(in oklab, var(--team-color) 28%, transparent),
+			0 0.08rem 0.16rem color-mix(in oklab, black 42%, transparent);
+	}
+
+	.team-player :global(.avatar) {
+		display: inline-grid;
+		place-items: center;
+		width: 1.55rem;
+		height: 1.55rem;
+		flex: 0 0 auto;
+		font-size: 1.55rem;
+	}
+
+	.team-player :global(.avatar svg) {
+		width: 1.2rem;
+		height: 1.2rem;
+	}
+
+	.team-player-name {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.board-row {
@@ -748,7 +1016,6 @@
 		min-width: 0;
 	}
 
-	.board-row-toggle-slot,
 	.row-question-toggle {
 		justify-content: center;
 		width: 2rem;
@@ -1651,6 +1918,32 @@
 		}
 	}
 
+	@keyframes team-icon-pulse {
+		0%,
+		100% {
+			filter: drop-shadow(0 0 0.55rem color-mix(in oklab, var(--team-color) 42%, transparent))
+				drop-shadow(0 0 1.35rem color-mix(in oklab, var(--team-color) 24%, transparent));
+		}
+
+		50% {
+			filter: drop-shadow(0 0 0.85rem color-mix(in oklab, var(--team-color) 66%, transparent))
+				drop-shadow(0 0 1.85rem color-mix(in oklab, var(--team-color) 36%, transparent));
+		}
+	}
+
+	@keyframes team-aura-pulse {
+		0%,
+		100% {
+			opacity: 0.52;
+			transform: scale(0.92);
+		}
+
+		50% {
+			opacity: 0.9;
+			transform: scale(1.06);
+		}
+	}
+
 	@media (min-width: 700px) {
 		:global(.content-card:has(.game-screen)) {
 			height: min(calc(100dvh - 6.4rem), 50rem);
@@ -1666,6 +1959,46 @@
 	}
 
 	@media (max-width: 460px) {
+		.team-presence {
+			min-height: 5.55rem;
+			margin-inline: -0.55rem;
+		}
+
+		.team-presence-side {
+			padding: 0.65rem 0.55rem 0.45rem;
+		}
+
+		.team-mark {
+			top: 0.05rem;
+			width: 4.8rem;
+			height: 4.8rem;
+		}
+
+		.team-player-list {
+			gap: 0.32rem;
+			padding-top: 2.05rem;
+		}
+
+		.team-player {
+			gap: 0.32rem;
+			font-size: 0.8rem;
+		}
+
+		.team-player[data-spirit='true'] .team-player-name {
+			font-size: 0.94rem;
+		}
+
+		.team-player :global(.avatar) {
+			width: 1.38rem;
+			height: 1.38rem;
+			font-size: 1.38rem;
+		}
+
+		.team-player :global(.avatar svg) {
+			width: 1.08rem;
+			height: 1.08rem;
+		}
+
 		.pick-word {
 			gap: 0.45rem;
 			width: min(100%, 22rem);
