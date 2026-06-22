@@ -195,6 +195,12 @@
 		return game.teams[team].players.some(playerIsActive);
 	}
 
+	function statusAvatarIds(context: GameContext, state: GameState): User['id'][] {
+		if (!['mediumsTurn', 'mediumsAsk', 'mediumsGetClues', 'eyeHint', 'guessing'].includes(state)) return [];
+		const team = context.teams[context.currentTeam];
+		return team.players.filter(userId => userId !== team.spirit);
+	}
+
 	let clueDrafts = $state<Record<string, string>>({});
 	let answerQuestionId = $state<QuestionCard['id'] | null>(null);
 	let expandedBoardRows = $state<number[]>([]);
@@ -240,6 +246,73 @@
 			<span class="vote-dot" style:--vote-color={playerColor(userId)} transition:fly={{ y: 8, duration: 220 }}></span>
 		{/each}
 	</span>
+{/snippet}
+
+{#snippet StatusTeamMark()}
+	<span
+		class="status-team-mark"
+		data-team={currentState === 'start' || currentState === 'setupWord' ? 'both' : game.currentTeam}
+	>
+		{#if currentState === 'start' || currentState === 'setupWord'}
+			<Sun size={14} strokeWidth={1.8} />
+			<Moon size={14} strokeWidth={1.8} />
+		{:else if game.currentTeam === 'sun'}
+			<Sun size={15} strokeWidth={1.9} />
+		{:else}
+			<Moon size={15} strokeWidth={1.9} />
+		{/if}
+	</span>
+{/snippet}
+
+{#snippet StatusAvatar(userId: User['id'], named = false)}
+	<span class="status-avatar" data-named={named ? 'true' : undefined}>
+		<Avatar user={player(userId)} name={named ? 'after' : false} />
+	</span>
+{/snippet}
+
+{#snippet StatusMessage()}
+	{#if currentState === 'start'}
+		<span>summon spirits</span>
+	{:else if currentState === 'setupWord'}
+		{@render StatusAvatar(game.teams.sun.spirit, true)}
+		<span>conspires with</span>
+		{@render StatusAvatar(game.teams.moon.spirit, true)}
+	{:else if currentState === 'mediumsTurn'}
+		<span>mediums deliberate next step</span>
+	{:else if currentState === 'mediumsAsk'}
+		<span>mediums interogate</span>
+	{:else if currentState === 'spiritAnswers'}
+		{@render StatusAvatar(currentTeam.spirit, true)}
+		<span>pontificates answer</span>
+	{:else if currentState === 'mediumsGetClues'}
+		<span>mediums get enlightened</span>
+	{:else if currentState === 'eyeHint'}
+		<span>mediums pick a hint</span>
+	{:else if currentState === 'guessing'}
+		<span>mediums divine the word</span>
+	{:else if currentState === 'win'}
+		<span>the word is known</span>
+	{:else if currentState === 'lose'}
+		<span>the word remains hidden</span>
+	{:else}
+		<span>the veil shifts</span>
+	{/if}
+{/snippet}
+
+{#snippet StatusBand()}
+	{@const statusAvatars = statusAvatarIds(game, currentState)}
+	<div class="status-band">
+		{@render StatusTeamMark()}
+		<span class="status-message">
+			{@render StatusMessage()}
+		</span>
+		<span class="status-spacer"></span>
+		<span class="status-avatar-tray">
+			{#each statusAvatars as userId (userId)}
+				{@render StatusAvatar(userId)}
+			{/each}
+		</span>
+	</div>
 {/snippet}
 
 {#snippet QuestionChoice(q: QuestionCard, questionIndex: number, canPickQuestions: boolean, compact: boolean)}
@@ -603,148 +676,156 @@
 		</div>
 	{/if}
 
-	{#if hasActionFooter}
-		<div class="action-footer-shell" transition:fly={{ y: 22, duration: 180 }}>
-			<footer
-				class="action-footer"
-				class:keyboard-dock={actionFooterKind === 'keyboard'}
-				data-can-answer={actionFooterKind === 'answer' && canAnswerSpirit(game, viewerId) ? 'true' : undefined}
-				data-footer-kind={actionFooterKind}
-			>
-				{#if canSeeVote(currentState, 'mediumAction')}
-					<div class="action-buttons">
-						{#each votingConfig.mediumAction.choices(game) as option}
-							{@const voteState = optionVoteState(currentState, game, 'mediumAction', option)}
-							<InkButton
-								size="lg"
-								primary
-								class="flex-1"
-								disabled={!canVote(currentState, game, 'mediumAction', viewerId)}
-								onclick={() => send({ type: 'vote', action: 'mediumAction', option, userId: viewerId })}
-								selfVoted={voteState.voted.includes(viewerId)}
-								voteLabel={voteLabel(option)}
-								voting={voteState}
-							>
-								{voteLabel(option)}
-							</InkButton>
-						{/each}
-					</div>
-				{:else if canSeeVote(currentState, 'pickQuestions')}
-					{@const canPickQuestions = canVote(currentState, game, 'pickQuestions', viewerId)}
-					<div class="question-footer-content" data-minimized={questionsMinimized ? 'true' : undefined}>
-						{#if questionsMinimized && canPickQuestions}
-							<div class="question-footer-tray" transition:fly={{ y: 18, duration: 180 }}>
-								<div class="question-selector question-selector-footer" data-can-vote={canPickQuestions}>
-									{#each currentTeam.questions as qId, questionIndex (qId)}
-										{@const q = questions.find(x => x.id === qId)!}
-										{@render QuestionChoice(q, questionIndex, canPickQuestions, true)}
+	<div class="action-footer-shell">
+		<footer
+			class="action-footer"
+			data-can-answer={actionFooterKind === 'answer' && canAnswerSpirit(game, viewerId) ? 'true' : undefined}
+			data-footer-kind={actionFooterKind}
+			data-has-actions={hasActionFooter ? 'true' : undefined}
+		>
+			{@render StatusBand()}
+
+			{#if hasActionFooter}
+				<div
+					class="action-footer-body"
+					class:keyboard-dock={actionFooterKind === 'keyboard'}
+					transition:fly={{ y: 22, duration: 180 }}
+				>
+					{#if canSeeVote(currentState, 'mediumAction')}
+						<div class="action-buttons">
+							{#each votingConfig.mediumAction.choices(game) as option}
+								{@const voteState = optionVoteState(currentState, game, 'mediumAction', option)}
+								<InkButton
+									size="lg"
+									primary
+									class="flex-1"
+									disabled={!canVote(currentState, game, 'mediumAction', viewerId)}
+									onclick={() => send({ type: 'vote', action: 'mediumAction', option, userId: viewerId })}
+									selfVoted={voteState.voted.includes(viewerId)}
+									voteLabel={voteLabel(option)}
+									voting={voteState}
+								>
+									{voteLabel(option)}
+								</InkButton>
+							{/each}
+						</div>
+					{:else if canSeeVote(currentState, 'pickQuestions')}
+						{@const canPickQuestions = canVote(currentState, game, 'pickQuestions', viewerId)}
+						<div class="question-footer-content" data-minimized={questionsMinimized ? 'true' : undefined}>
+							{#if questionsMinimized && canPickQuestions}
+								<div class="question-footer-tray" transition:fly={{ y: 18, duration: 180 }}>
+									<div class="question-selector question-selector-footer" data-can-vote={canPickQuestions}>
+										{#each currentTeam.questions as qId, questionIndex (qId)}
+											{@const q = questions.find(x => x.id === qId)!}
+											{@render QuestionChoice(q, questionIndex, canPickQuestions, true)}
+										{/each}
+									</div>
+									<button class="question-restore-button" onclick={() => (questionsMinimized = false)} type="button">
+										<Maximize2 size={18} />
+									</button>
+								</div>
+							{/if}
+							{@render QuestionVoteTally()}
+						</div>
+					{:else if currentState === 'spiritAnswers'}
+						{@const canAnswer = canAnswerSpirit(game, viewerId)}
+						{@const selectedQuestionId = selectedAnswerQuestionId(game)}
+						{@const selectedQuestion = selectedQuestionId
+							? questions.find(question => question.id === selectedQuestionId)!
+							: undefined}
+						<form
+							class="answer-action-row"
+							data-can-answer={canAnswer}
+							onsubmit={event => {
+								event.preventDefault();
+								if (selectedQuestionId) answerClue(selectedQuestionId);
+							}}
+						>
+							<div class="answer-input-row">
+								<button
+									class="answer-question-toggle"
+									onclick={() => (questionsMinimized = !questionsMinimized)}
+									type="button"
+								>
+									{#if questionsMinimized}
+										<Maximize2 size={18} />
+									{:else}
+										<Minimize2 size={18} />
+									{/if}
+								</button>
+								<span class="answer-input-frame">
+									<input
+										disabled={!canAnswer || !selectedQuestionId}
+										oninput={event => {
+											if (selectedQuestionId) {
+												const clue = event.currentTarget.value.toUpperCase();
+												event.currentTarget.value = clue;
+												clueDrafts[selectedQuestionId] = clue;
+											}
+										}}
+										placeholder={canAnswer ? (selectedQuestion?.question ?? '') : 'Clue'}
+										value={selectedQuestionId ? (clueDrafts[selectedQuestionId] ?? '') : ''}
+									/>
+								</span>
+								{#if canAnswer}
+									<span class="answer-word">{game.word.toUpperCase()}</span>
+								{/if}
+								<InkButton
+									size="md"
+									primary
+									type="submit"
+									disabled={!canAnswer || !selectedQuestionId || !clueDrafts[selectedQuestionId]?.trim()}
+								>
+									Seal
+								</InkButton>
+							</div>
+						</form>
+					{:else if canSeeVote(currentState, 'clue')}
+						<div class="action-buttons clue-buttons">
+							{#each votingConfig.clue.choices(game) as option}
+								{@const voteState = optionVoteState(currentState, game, 'clue', option)}
+								<InkButton
+									size="lg"
+									primary
+									class="flex-1"
+									disabled={!canVote(currentState, game, 'clue', viewerId)}
+									onclick={() => send({ type: 'vote', action: 'clue', option, userId: viewerId })}
+									selfVoted={voteState.voted.includes(viewerId)}
+									voteLabel={voteLabel(option)}
+									voting={voteState}
+								>
+									{option === 'getClue' ? 'Reveal' : 'Silencio'}
+								</InkButton>
+							{/each}
+						</div>
+					{:else if canSeeVote(currentState, 'guessLetter')}
+						{@const canGuess = canVote(currentState, game, 'guessLetter', viewerId)}
+						<div class="ansi-keyboard" data-can-vote={canGuess}>
+							{#each config.keyboardRows as row, rowIndex (rowIndex)}
+								<div class="keyboard-row" data-row={rowIndex}>
+									{#each row as option (option)}
+										{@const voteState = optionVoteState(currentState, game, 'guessLetter', option)}
+										<button
+											class="key-button"
+											class:space-key={option === ' '}
+											data-key={option === ' ' ? 'space' : option}
+											data-voted={voteState.voted.includes(viewerId)}
+											disabled={!canGuess}
+											onclick={() => send({ type: 'vote', action: 'guessLetter', option, userId: viewerId })}
+											type="button"
+										>
+											{@render VoteDots(voteState)}
+											<span class="key-face">{voteLabel(option)}</span>
+										</button>
 									{/each}
 								</div>
-								<button class="question-restore-button" onclick={() => (questionsMinimized = false)} type="button">
-									<Maximize2 size={18} />
-								</button>
-							</div>
-						{/if}
-						{@render QuestionVoteTally()}
-					</div>
-				{:else if currentState === 'spiritAnswers'}
-					{@const canAnswer = canAnswerSpirit(game, viewerId)}
-					{@const selectedQuestionId = selectedAnswerQuestionId(game)}
-					{@const selectedQuestion = selectedQuestionId
-						? questions.find(question => question.id === selectedQuestionId)!
-						: undefined}
-					<form
-						class="answer-action-row"
-						data-can-answer={canAnswer}
-						onsubmit={event => {
-							event.preventDefault();
-							if (selectedQuestionId) answerClue(selectedQuestionId);
-						}}
-					>
-						<div class="answer-input-row">
-							<button
-								class="answer-question-toggle"
-								onclick={() => (questionsMinimized = !questionsMinimized)}
-								type="button"
-							>
-								{#if questionsMinimized}
-									<Maximize2 size={18} />
-								{:else}
-									<Minimize2 size={18} />
-								{/if}
-							</button>
-							<span class="answer-input-frame">
-								<input
-									disabled={!canAnswer || !selectedQuestionId}
-									oninput={event => {
-										if (selectedQuestionId) {
-											const clue = event.currentTarget.value.toUpperCase();
-											event.currentTarget.value = clue;
-											clueDrafts[selectedQuestionId] = clue;
-										}
-									}}
-									placeholder={canAnswer ? (selectedQuestion?.question ?? '') : 'Clue'}
-									value={selectedQuestionId ? (clueDrafts[selectedQuestionId] ?? '') : ''}
-								/>
-							</span>
-							{#if canAnswer}
-								<span class="answer-word">{game.word.toUpperCase()}</span>
-							{/if}
-							<InkButton
-								size="md"
-								primary
-								type="submit"
-								disabled={!canAnswer || !selectedQuestionId || !clueDrafts[selectedQuestionId]?.trim()}
-							>
-								Seal
-							</InkButton>
+							{/each}
 						</div>
-					</form>
-				{:else if canSeeVote(currentState, 'clue')}
-					<div class="action-buttons clue-buttons">
-						{#each votingConfig.clue.choices(game) as option}
-							{@const voteState = optionVoteState(currentState, game, 'clue', option)}
-							<InkButton
-								size="lg"
-								primary
-								class="flex-1"
-								disabled={!canVote(currentState, game, 'clue', viewerId)}
-								onclick={() => send({ type: 'vote', action: 'clue', option, userId: viewerId })}
-								selfVoted={voteState.voted.includes(viewerId)}
-								voteLabel={voteLabel(option)}
-								voting={voteState}
-							>
-								{option === 'getClue' ? 'Reveal' : 'Silencio'}
-							</InkButton>
-						{/each}
-					</div>
-				{:else if canSeeVote(currentState, 'guessLetter')}
-					{@const canGuess = canVote(currentState, game, 'guessLetter', viewerId)}
-					<div class="ansi-keyboard" data-can-vote={canGuess}>
-						{#each config.keyboardRows as row, rowIndex (rowIndex)}
-							<div class="keyboard-row" data-row={rowIndex}>
-								{#each row as option (option)}
-									{@const voteState = optionVoteState(currentState, game, 'guessLetter', option)}
-									<button
-										class="key-button"
-										class:space-key={option === ' '}
-										data-key={option === ' ' ? 'space' : option}
-										data-voted={voteState.voted.includes(viewerId)}
-										disabled={!canGuess}
-										onclick={() => send({ type: 'vote', action: 'guessLetter', option, userId: viewerId })}
-										type="button"
-									>
-										{@render VoteDots(voteState)}
-										<span class="key-face">{voteLabel(option)}</span>
-									</button>
-								{/each}
-							</div>
-						{/each}
-					</div>
-				{/if}
-			</footer>
-		</div>
-	{/if}
+					{/if}
+				</div>
+			{/if}
+		</footer>
+	</div>
 </div>
 
 <style>
@@ -1325,15 +1406,124 @@
 		background: var(--app-panel);
 		box-shadow: 0 -0.22rem 0.7rem color-mix(in srgb, black 14%, transparent);
 		overflow: visible;
-		padding: 1rem 1rem 0.5rem;
 		transition:
 			background 180ms ease,
 			border-color 180ms ease,
 			box-shadow 180ms ease;
 	}
 
+	.action-footer-body {
+		overflow: visible;
+		padding: 0.8rem 1rem 0.5rem;
+	}
+
 	.action-footer[data-footer-kind='answer'][data-can-answer='true']:not(:focus-within) {
 		animation: answer-action-highlight 1800ms ease-in-out infinite;
+	}
+
+	.status-band {
+		display: flex;
+		align-items: center;
+		gap: 0.34rem;
+		min-width: 0;
+		min-height: 1.6rem;
+		border-bottom: 1px solid color-mix(in oklab, var(--app-border) 58%, transparent);
+		background:
+			linear-gradient(90deg, color-mix(in oklab, var(--app-sun) 5%, transparent), transparent 34%),
+			linear-gradient(270deg, color-mix(in oklab, var(--app-moon) 6%, transparent), transparent 38%);
+		color: color-mix(in oklab, var(--app-text) 86%, var(--app-muted) 14%);
+		font-size: 0.76rem;
+		font-weight: 850;
+		line-height: 1;
+		padding: 0.28rem 0.75rem;
+		white-space: nowrap;
+	}
+
+	.status-team-mark {
+		display: inline-flex;
+		flex: 0 0 auto;
+		align-items: center;
+		gap: 0.02rem;
+		color: var(--app-muted);
+		filter: drop-shadow(0 0 0.34rem color-mix(in oklab, currentColor 32%, transparent));
+	}
+
+	.status-team-mark[data-team='sun'] {
+		color: var(--app-sun);
+	}
+
+	.status-team-mark[data-team='moon'] {
+		color: var(--app-moon);
+	}
+
+	.status-team-mark[data-team='both'] {
+		color: color-mix(in oklab, var(--app-sun) 54%, var(--app-moon) 46%);
+	}
+
+	.status-message {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.26rem;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.status-spacer {
+		flex: 1 1 auto;
+		min-width: 0.4rem;
+	}
+
+	.status-avatar-tray {
+		display: block;
+		flex: 0 1 auto;
+		min-width: 0;
+		max-width: min(44%, 10rem);
+		overflow: hidden;
+		text-align: right;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.status-avatar {
+		display: inline-flex;
+		align-items: center;
+		vertical-align: middle;
+	}
+
+	.status-avatar + .status-avatar {
+		margin-left: -0.18rem;
+	}
+
+	.status-avatar[data-named='true'] + .status-avatar[data-named='true'] {
+		margin-left: 0;
+	}
+
+	.status-avatar :global(.avatar) {
+		font-size: 1rem;
+		gap: 0.18rem;
+		filter: drop-shadow(0 0.12rem 0.28rem color-mix(in oklab, black 42%, transparent));
+	}
+
+	.status-avatar :global(.avatar svg) {
+		width: 0.86rem;
+		height: 0.86rem;
+	}
+
+	.status-avatar[data-named='true'] :global(.avatar) {
+		max-width: min(8.5rem, 34vw);
+	}
+
+	.status-avatar[data-named='true'] :global(.name) {
+		min-width: 0;
+		overflow: hidden;
+		color: color-mix(in oklab, var(--logo-word) 84%, var(--app-text) 16%);
+		font-family: var(--font-fancy);
+		font-size: 0.9rem;
+		font-weight: 950;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.action-buttons {
