@@ -421,33 +421,6 @@
 			</div>
 		{/if}
 
-		{#if canSeeVote(currentState, 'pickWord')}
-			{@const canPickWord = canVote(currentState, game, 'pickWord', viewerId)}
-			<div class="pick-word-stage">
-				<div class="pick-word" data-can-vote={canPickWord}>
-					{#each wordCard(game).words as word, wordIndex}
-						{@const voteState = optionVoteState(currentState, game, 'pickWord', wordIndex)}
-						<button
-							class="word-option"
-							data-voted={voteState.voted.includes(viewerId)}
-							disabled={!canPickWord}
-							onclick={() => send({ type: 'vote', action: 'pickWord', option: wordIndex, userId: viewerId })}
-							type="button"
-						>
-							<span class="word-option-label">
-								{#if canPickWord}
-									<span class="word-text">{word}</span>
-								{:else}
-									<GameRunes hash={`${game.wordCardId}:${wordIndex}`} />
-								{/if}
-							</span>
-							{@render VoteStack(voteState)}
-						</button>
-					{/each}
-				</div>
-			</div>
-		{/if}
-
 		{#if canSeeVote(currentState, 'pickQuestions')}
 			{@const canPickQuestions = canVote(currentState, game, 'pickQuestions', viewerId)}
 			{#if !questionsMinimized}
@@ -536,6 +509,33 @@
 			</GameCard>
 		{/if}
 	</div>
+
+	{#if canSeeVote(currentState, 'pickWord')}
+		{@const canPickWord = canVote(currentState, game, 'pickWord', viewerId)}
+		<div class="pick-word-stage">
+			<div class="pick-word" data-can-vote={canPickWord}>
+				{#each wordCard(game).words as word, wordIndex}
+					{@const voteState = optionVoteState(currentState, game, 'pickWord', wordIndex)}
+					<button
+						class="word-option"
+						data-voted={voteState.voted.includes(viewerId)}
+						disabled={!canPickWord}
+						onclick={() => send({ type: 'vote', action: 'pickWord', option: wordIndex, userId: viewerId })}
+						type="button"
+					>
+						<span class="word-option-label">
+							{#if canPickWord}
+								<span class="word-text">{word}</span>
+							{:else}
+								<GameRunes hash={`${game.wordCardId}:${wordIndex}`} />
+							{/if}
+						</span>
+						{@render VoteStack(voteState)}
+					</button>
+				{/each}
+			</div>
+		</div>
+	{/if}
 
 	{#if hasActionFooter}
 		<div class="action-footer-shell" transition:fly={{ y: 22, duration: 180 }}>
@@ -1212,6 +1212,7 @@
 		position: relative;
 		display: grid;
 		gap: 0.55rem;
+		width: min(100%, 24rem);
 		border: 1px solid color-mix(in oklab, var(--app-border) 76%, var(--app-accent) 24%);
 		border-radius: 0.5rem;
 		background:
@@ -1226,6 +1227,7 @@
 			inset 0 -1px 0 color-mix(in oklab, black 34%, transparent);
 		padding: 0.8rem;
 		overflow: hidden;
+		pointer-events: auto;
 		transform: translateY(0) scale(1);
 		transform-style: preserve-3d;
 		transition:
@@ -1236,22 +1238,19 @@
 	}
 
 	.pick-word-stage {
-		position: relative;
-		z-index: 3;
-		width: min(100%, 24rem);
-		margin: 0 auto;
+		position: absolute;
+		inset: 0;
+		z-index: 30;
+		display: grid;
+		place-items: center;
+		min-width: 0;
+		min-height: 0;
+		padding: 1rem;
+		pointer-events: none;
 		perspective: 58rem;
 	}
 
-	.game-screen[data-state='setupWord'] .pick-word-stage {
-		position: absolute;
-		top: clamp(8.75rem, 25dvh, 10.75rem);
-		left: 50%;
-		width: min(calc(100% - 1rem), 24rem);
-		transform: translateX(-50%);
-	}
-
-	.pick-word-stage:hover .pick-word,
+	.pick-word:hover,
 	.pick-word-stage:focus-within .pick-word {
 		border-color: color-mix(in oklab, var(--app-focus) 54%, var(--app-border) 46%);
 		box-shadow:
@@ -1667,13 +1666,9 @@
 	}
 
 	@media (max-width: 460px) {
-		.game-screen[data-state='setupWord'] .pick-word-stage {
-			top: 8.5rem;
-			width: min(calc(100% - 0.25rem), 22rem);
-		}
-
 		.pick-word {
 			gap: 0.45rem;
+			width: min(100%, 22rem);
 			padding: 0.65rem;
 		}
 
