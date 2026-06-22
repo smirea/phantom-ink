@@ -1332,9 +1332,6 @@
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 0;
 		border-bottom: 1px solid color-mix(in oklab, var(--app-border) 72%, transparent);
-		background:
-			linear-gradient(180deg, color-mix(in oklab, var(--app-focus) 7%, transparent), transparent),
-			color-mix(in oklab, var(--app-panel) 72%, transparent);
 		padding: 0.45rem 0;
 	}
 
@@ -1343,7 +1340,6 @@
 		gap: 0.35rem;
 		min-width: 0;
 		border-block: 1px solid color-mix(in oklab, var(--app-border) 62%, transparent);
-		background: color-mix(in oklab, var(--app-input) 34%, transparent);
 		padding: 0.45rem;
 	}
 
