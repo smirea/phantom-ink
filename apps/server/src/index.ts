@@ -202,7 +202,9 @@ function requireUserId(value: unknown): User['id'] {
 
 function requireRoomCode(value: string): string {
 	const code = value.trim().toUpperCase();
-	if (!/^[A-Z]{4}$/.test(code)) throw new ORPCError('BAD_REQUEST', { message: 'Room codes must be 4 letters' });
+	if (code.length !== ROOM_CODE_LENGTH || /[^A-Z]/.test(code)) {
+		throw new ORPCError('BAD_REQUEST', { message: `Room codes must be ${ROOM_CODE_LENGTH} letters` });
+	}
 	return code;
 }
 
