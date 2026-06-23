@@ -7,13 +7,11 @@
 	import InkButton from '$lib/InkButton.svelte';
 	import { api } from '$lib/api';
 	import { getAppContext } from '$lib/appContext';
+	import { optimisticNewRoom } from '$lib/optimisticRoom.svelte';
 	import { consumeEventIterator } from '@orpc/client';
 	import { applyPhantomInkGameAction, type GameEvent, type PhantomInkGameState } from '@repo/shared/game';
 	import {
-		applyOnlineRoomAction,
-		createInitialOnlineRoomState,
 		playerIdForUser,
-		selectRoomViewState,
 		type PlayerId,
 		type RoomMemberView,
 		type RoomViewState,
@@ -137,17 +135,7 @@
 		if (page.state.optimisticRoom) return page.state.optimisticRoom;
 		if (!data.isCreatingRoom) return null;
 
-		const user = appContext.user;
-		const state = createInitialOnlineRoomState();
-		applyOnlineRoomAction(state, {
-			type: 'join',
-			actorId: playerIdForUser(user.id),
-			userId: user.id,
-			name: user.name,
-			color: user.color,
-			icon: user.icon,
-		});
-		return selectRoomViewState(state, user.id, 'connecting');
+		return optimisticNewRoom(appContext.user);
 	}
 
 	function roomHref(code: string): string {

@@ -4,15 +4,10 @@
 	import InkButton from '$lib/InkButton.svelte';
 	import { api } from '$lib/api';
 	import { getAppContext } from '$lib/appContext';
+	import { optimisticJoinedRoom } from '$lib/optimisticRoom.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import {
-		applyOnlineRoomAction,
-		playerIdForUser,
-		selectRoomViewState,
-		type RoomDirectoryListing,
-		type User,
-	} from '@repo/shared/onlineGame';
+	import type { RoomDirectoryListing, User } from '@repo/shared/onlineGame';
 	import { cubicOut, quintOut } from 'svelte/easing';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -108,17 +103,7 @@
 	}
 
 	function optimisticRoomFor(room: RoomDirectoryListing) {
-		const user = appContext.user;
-		const state = structuredClone($state.snapshot(room.state));
-		applyOnlineRoomAction(state, {
-			type: 'join',
-			actorId: playerIdForUser(user.id),
-			userId: user.id,
-			name: user.name,
-			color: user.color,
-			icon: user.icon,
-		});
-		return selectRoomViewState(state, user.id, 'connecting');
+		return optimisticJoinedRoom(room.state, appContext.user);
 	}
 
 	function roomHref(code: string): string {
