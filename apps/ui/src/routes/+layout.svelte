@@ -291,7 +291,7 @@
 	}
 
 	function roomCodeFromPath(path: string): string | null {
-		const match = /^\/room\/([A-Za-z]{4})$/.exec(path);
+		const match = /^\/room\/([^/]+)$/.exec(path);
 		return parseRoomCode(match?.[1]);
 	}
 
