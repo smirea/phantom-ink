@@ -62,10 +62,11 @@
 	const fallbackSelfPlayerId = $derived(appContext.user.id > 0 ? playerIdForUser(appContext.user.id) : null);
 	const selfIsReady = $derived(Boolean(self && readyVote?.voterIds.includes(self.id)));
 	const gamePlayers = $derived(members.map(memberToUser));
-	const activeGameState = $derived(optimisticGameState ?? room?.gameState ?? null);
-	const canUseLobbyControls = $derived(
-		Boolean(roomCode && room?.status === 'connected' && room.phase === 'lobby' && self && self.role !== 'spectator'),
+	const canUseTeamControls = $derived(
+		Boolean(roomCode && room?.status === 'connected' && room.phase === 'lobby' && self),
 	);
+	const activeGameState = $derived(optimisticGameState ?? room?.gameState ?? null);
+	const canUseLobbyControls = $derived(Boolean(canUseTeamControls && self?.role !== 'spectator'));
 	const readyButtonLabel = $derived(room?.startProblem ?? 'Ready?');
 
 	onMount(() => {
@@ -202,7 +203,7 @@
 	}
 
 	async function switchTeam(team: Team) {
-		if (!roomCode || !self || room?.phase !== 'lobby' || pendingAction) return;
+		if (!roomCode || !self || !canUseTeamControls || pendingAction) return;
 		if (self.role !== 'spectator' && self.team === team) return;
 		pendingAction = `team:${team}`;
 		try {
@@ -435,7 +436,7 @@
 		aria-label={team === 'sun' ? 'Join sun side' : 'Join moon side'}
 		aria-pressed={members.some(member => member.id === selfId)}
 		class={`team-column ${team}`}
-		disabled={pending || !canUseLobbyControls}
+		disabled={pending || !canUseTeamControls}
 		onclick={onSwitch}
 		type="button"
 	>
