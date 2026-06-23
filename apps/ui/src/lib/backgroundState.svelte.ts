@@ -86,7 +86,7 @@ type DebugMessage = {
 	open?: boolean;
 };
 
-export const defaultDirectionOptions = range(0, 360, 15).map(degreesToRadians);
+const defaultDirectionOptions = range(0, 360, 15).map(degreesToRadians);
 
 export class BackgroundState {
 	config = $state<BackgroundConfig>(createDefaultBackgroundConfig());
@@ -209,7 +209,7 @@ export class BackgroundState {
 	}
 }
 
-export function createDefaultBackgroundConfig(): BackgroundConfig {
+function createDefaultBackgroundConfig(): BackgroundConfig {
 	return {
 		glyphs: 'PHANTOMINKSILENCIOSEANCEGHOSTWRITERMOONSUNOBJECTCLUE'.split(''),
 		specialGlyphs: ['☺', '☻', '☹'],

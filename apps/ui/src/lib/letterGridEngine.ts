@@ -2,8 +2,8 @@ import type { BackgroundAction, BackgroundConfig, BackgroundState } from '$lib/b
 import { degreesToRadians } from '$lib/backgroundState.svelte';
 import { clamp } from 'es-toolkit';
 
-export type EngineCellStatus = 'alive' | 'spawning' | 'dying' | 'dead';
-export type DirectionPhase = 'cruise' | 'decelerating' | 'turning' | 'accelerating';
+type EngineCellStatus = 'alive' | 'spawning' | 'dying' | 'dead';
+type DirectionPhase = 'cruise' | 'decelerating' | 'turning' | 'accelerating';
 
 export type EngineCell = {
 	index: number;
@@ -1145,16 +1145,16 @@ export class LetterGridEngine {
 	}
 }
 
-export function smoothProgress(value: number): number {
+function smoothProgress(value: number): number {
 	const progress = clamp(value, 0, 1);
 	return progress * progress * (3 - 2 * progress);
 }
 
-export function randomBetween(min: number, max: number): number {
+function randomBetween(min: number, max: number): number {
 	return min + Math.random() * (max - min);
 }
 
-export function randomRange(range: readonly [number, number]): number {
+function randomRange(range: readonly [number, number]): number {
 	return randomBetween(range[0], range[1]);
 }
 
