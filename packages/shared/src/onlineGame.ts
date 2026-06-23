@@ -1,7 +1,9 @@
 import { countBy, difference, intersection, uniq, uniqBy } from 'es-toolkit';
 import {
 	applyPhantomInkGameAction,
+	canAnswerSpirit,
 	createInitialGameState,
+	type GameEvent,
 	type PhantomInkGameAction,
 	type PhantomInkGameState,
 } from './game';
@@ -324,6 +326,7 @@ export function applyOnlineRoomAction(state: OnlineRoomState, action: OnlineRoom
 		}
 		case 'game-action':
 			if (state.phase !== 'playing' || !state.gameState) return false;
+			if (!canApplyGameAction(state.gameState, actor, action.action)) return false;
 
 			return applyPhantomInkGameAction(state.gameState, action.action);
 		case 'reset-room':
@@ -333,6 +336,12 @@ export function applyOnlineRoomAction(state: OnlineRoomState, action: OnlineRoom
 			state.votes = [];
 			return true;
 	}
+}
+
+function canApplyGameAction(state: PhantomInkGameState, actor: RoomMember, event: GameEvent): boolean {
+	if (event.type === 'vote') return event.userId === actor.userId;
+	if (event.type === 'answer') return canAnswerSpirit(state.context, actor.userId);
+	return false;
 }
 
 export function reduceOnlineRoomActions(actions: readonly OnlineRoomAction[]): OnlineRoomState {
