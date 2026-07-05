@@ -463,9 +463,13 @@ export function revealClue(context: GameContext, clueId: string, hint?: string):
 
 	return produce(context, draft => {
 		const entry = draft.teams[clue.team].board[clue.index];
-		if (!entry || entry.type !== 'clue' || !entry.fullValue) return;
+		if (!entry || entry.type !== 'clue' || entry.fullValue === undefined) return;
 
-		entry.value = entry.fullValue.slice(0, Math.min(entry.value.length + 1, entry.fullValue.length));
+		if (entry.value.length < entry.fullValue.length) {
+			entry.value = entry.fullValue.slice(0, entry.value.length + 1);
+		} else if (entry.value === entry.fullValue) {
+			entry.value = clueDoneValue(entry);
+		}
 		entry.hint = hint ?? entry.hint;
 	});
 }
@@ -498,7 +502,11 @@ export function isBoardEntryDone(context: GameContext, entry: BoardEntry | undef
 	if (!entry) return false;
 	return entry.type === 'guess'
 		? entry.value === context.word
-		: Boolean(entry.fullValue && entry.value === entry.fullValue);
+		: entry.fullValue !== undefined && entry.value === clueDoneValue(entry);
+}
+
+function clueDoneValue(entry: BoardEntry): string {
+	return `${entry.fullValue ?? ''}.`;
 }
 
 export function revealableClueIds(context: GameContext): string[] {

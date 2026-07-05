@@ -1,6 +1,22 @@
 @import 'tailwindcss';
 @import './theme.css';
 
+@font-face {
+	font-family: 'Phantom Fancy';
+	font-style: normal;
+	font-weight: 700;
+	font-display: swap;
+	src: url('/fonts/cinzel-decorative-v19-700.ttf') format('truetype');
+}
+
+@font-face {
+	font-family: 'Phantom Fancy';
+	font-style: normal;
+	font-weight: 900;
+	font-display: swap;
+	src: url('/fonts/cinzel-decorative-v19-900.ttf') format('truetype');
+}
+
 * {
 	box-sizing: border-box;
 }
@@ -25,7 +41,7 @@ button {
 @theme inline {
 	--font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
 	--font-mono: 'SFMono-Regular', ui-monospace, monospace;
-	--font-fancy: Luminari, 'Palatino Linotype', var(--font-sans), Georgia, serif;
+	--font-fancy: Luminari, 'Phantom Fancy', 'Palatino Linotype', var(--font-sans), Georgia, serif;
 
 	--color-app: var(--app-bg);
 	--color-app-ink: var(--app-text);

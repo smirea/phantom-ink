@@ -155,6 +155,10 @@
 		return value.replaceAll(' ', '_');
 	}
 
+	function boardGlyph(value: string): string {
+		return value === ' ' ? '_' : value;
+	}
+
 	function isCurrentGuessCell(context: GameContext, team: Team, turn: number): boolean {
 		const teamState = context.teams[team];
 		const entry = teamState.board[turn];
@@ -164,6 +168,11 @@
 			turn === teamState.board.length - 1 &&
 			entry?.type === 'guess'
 		);
+	}
+
+	function isCurrentClueCell(context: GameContext, team: Team, turn: number): boolean {
+		const teamState = context.teams[team];
+		return currentState === 'mediumsGetClues' && context.currentTeam === team && turn === teamState.board.length - 1;
 	}
 
 	function player(userId: User['id']): User {
@@ -469,7 +478,13 @@
 			data-letter-hint={entry?.type === 'clue' && entry.value ? 'true' : undefined}
 			data-eye-hint={entry?.hint ? 'true' : undefined}
 		>
-			{entry?.value ? boardText(entry.value) : '\u00a0'}
+			{#if entry?.type === 'clue' && entry.value}
+				{#each entry.value.split('') as letter, index (index)}
+					<span class="board-letter" transition:fly={{ y: 12, duration: 220 }}>{boardGlyph(letter)}</span>
+				{/each}
+			{:else}
+				{entry?.value ? boardText(entry.value) : '\u00a0'}
+			{/if}
 		</span>
 	{/if}
 {/snippet}
@@ -516,6 +531,7 @@
 							{@const entry = game.teams[team].board[turn]}
 							{@const clueId = boardEntryId(team, turn)}
 							{@const isGuessingCell = isCurrentGuessCell(game, team, turn)}
+							{@const isClueCell = isCurrentClueCell(game, team, turn)}
 							{@const canPickHintCell =
 								canSeeVote(currentState, 'pickHint') && entry?.type === 'clue' && !isBoardEntryDone(game, entry)}
 							{#if canPickHintCell}
@@ -524,6 +540,7 @@
 								<button
 									class="board-cell"
 									class:flex-row-reverse={team === 'moon'}
+									data-current-clue={isClueCell ? 'true' : undefined}
 									data-hint-target={canUseHintCell && !hasUserVote(game, 'pickHint', viewerId) ? 'true' : undefined}
 									data-guess-target={isGuessingCell ? 'true' : undefined}
 									data-voted={voteState.voted.includes(viewerId)}
@@ -543,6 +560,7 @@
 								<div
 									class="board-cell"
 									class:flex-row-reverse={team === 'moon'}
+									data-current-clue={isClueCell ? 'true' : undefined}
 									data-guess-target={isGuessingCell ? 'true' : undefined}
 								>
 									{#if board[team].hints.includes(turn)}
@@ -640,6 +658,14 @@
 						{/each}
 					</div>
 				</div>
+			{:else}
+				<button
+					class="question-popup-toggle answer-question-restore-float"
+					onclick={() => (questionsMinimized = false)}
+					type="button"
+				>
+					<Maximize2 size={18} />
+				</button>
 			{/if}
 		{/if}
 
@@ -1228,6 +1254,11 @@
 		white-space: nowrap;
 	}
 
+	.board-letter {
+		display: inline-block;
+		will-change: opacity, transform;
+	}
+
 	.board-value[data-letter-hint='true'] {
 		color: color-mix(in oklab, var(--app-accent-strong) 74%, var(--logo-word) 26%);
 		font-weight: 950;
@@ -1283,6 +1314,15 @@
 		--cell-pulse-color: var(--app-focus);
 	}
 
+	.board-cell[data-current-clue='true'] {
+		--cell-pulse-color: var(--app-focus);
+		background: color-mix(in oklab, var(--app-focus) 11%, transparent);
+		box-shadow:
+			0 0 0 1px color-mix(in oklab, var(--app-focus) 30%, transparent),
+			inset 0 0 0.85rem color-mix(in oklab, var(--app-focus) 10%, transparent);
+		color: color-mix(in oklab, var(--logo-word) 86%, var(--app-text) 14%);
+	}
+
 	.board-cell[data-guess-target='true'] {
 		--cell-pulse-color: var(--app-muted);
 		background: color-mix(in oklab, var(--app-muted) 9%, transparent);
@@ -1292,6 +1332,7 @@
 	}
 
 	button.board-cell[data-hint-target='true']::after,
+	.board-cell[data-current-clue='true']::after,
 	.board-cell[data-guess-target='true']::after {
 		position: absolute;
 		inset: 0.08rem;
@@ -1990,6 +2031,10 @@
 		bottom: 0.65rem;
 		right: 0.65rem;
 		z-index: 3;
+	}
+
+	.answer-question-restore-float {
+		z-index: 31;
 	}
 
 	.answer-question-toggle {
