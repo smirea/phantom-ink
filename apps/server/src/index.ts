@@ -39,6 +39,7 @@ const db = drizzle({
 
 db.run('PRAGMA journal_mode = WAL');
 db.run('PRAGMA foreign_keys = ON');
+ensureDatabaseSchema();
 
 type RoomClient = {
 	enqueue: (state?: OnlineRoomState) => void;
@@ -153,6 +154,31 @@ const router = os.router({
 		}),
 	},
 });
+
+function ensureDatabaseSchema(): void {
+	db.run(`CREATE TABLE IF NOT EXISTS users (
+		id integer PRIMARY KEY AUTOINCREMENT,
+		name text NOT NULL,
+		color text NOT NULL,
+		icon text NOT NULL,
+		created_at text NOT NULL,
+		updated_at text NOT NULL
+	)`);
+	db.run(`CREATE TABLE IF NOT EXISTS rooms (
+		code text PRIMARY KEY,
+		created_at text NOT NULL,
+		updated_at text NOT NULL
+	)`);
+	db.run(`CREATE TABLE IF NOT EXISTS room_actions (
+		id integer PRIMARY KEY AUTOINCREMENT,
+		room_code text NOT NULL REFERENCES rooms(code),
+		user_id integer NOT NULL REFERENCES users(id),
+		type text NOT NULL,
+		payload text NOT NULL,
+		created_at text NOT NULL
+	)`);
+	db.run('CREATE INDEX IF NOT EXISTS room_actions_room_code_id_idx ON room_actions(room_code, id)');
+}
 
 const rpcHandler = new RPCHandler(router, {
 	clientInterceptors: [
