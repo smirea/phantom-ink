@@ -5,6 +5,7 @@
 	import { beforeNavigate, goto, onNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api } from '$lib/api';
+	import { debugIdFromUrl, hasDebugId } from '$lib/debugId';
 	import { parseRoomCode } from '$lib/roomCodes';
 	import { LS } from '$lib/storage';
 	import DoorOpen from '@lucide/svelte/icons/door-open';
@@ -74,7 +75,6 @@
 		void appContext.saveUser();
 	}, 500);
 	const activePath = $derived(page.url.pathname);
-	const activeRoute = $derived(`${page.url.pathname}${page.url.search}${page.url.hash}`);
 	const activeRoomCode = $derived(roomCodeFromPath(activePath));
 	const isCreatingRoom = $derived(isCreatingRoomPath(activePath));
 	const isBareScreen = $derived(activePath === '/' || activePath === '/setup');
@@ -82,7 +82,7 @@
 	const isRoomScreen = $derived(Boolean(activeRoomCode) || isCreatingRoom);
 	const requiresSavedUser = $derived(!isPublicPath(activePath));
 	const canRenderRoute = $derived(!requiresSavedUser || !appContext.user.unsaved);
-	const setupHref = $derived(`/setup?returnTo=${encodeURIComponent(activeRoute)}`);
+	const setupHref = $derived(setupHrefForReturn(page.url));
 	const theme = $derived(appContext.theme);
 
 	beforeNavigate(navigation => {
@@ -346,8 +346,11 @@
 	}
 
 	function setupUrlForReturn(returnUrl: URL): URL {
-		const setupUrl = new URL('/setup', window.location.origin);
-		const returnPath = `${returnUrl.pathname}${returnUrl.search}${returnUrl.hash}`;
+		const setupUrl = new URL('/setup', returnUrl.origin);
+		const debugId = debugIdFromUrl(returnUrl);
+		const resolvedReturnUrl = debugId && !hasDebugId(returnUrl) ? withDebugId(returnUrl, debugId) : returnUrl;
+		const returnPath = `${resolvedReturnUrl.pathname}${resolvedReturnUrl.search}${resolvedReturnUrl.hash}`;
+		if (debugId) setupUrl.searchParams.set('DEBUG_ID', debugId);
 		if (returnPath !== '/' && !returnUrl.pathname.startsWith('/setup')) {
 			setupUrl.searchParams.set('returnTo', returnPath);
 		}
@@ -357,16 +360,21 @@
 	function withPersistentDebugId(url: URL): URL {
 		if (!browser || url.origin !== window.location.origin || hasDebugId(url)) return url;
 
-		const debugId = page.url.searchParams.get('DEBUG_ID') ?? page.url.searchParams.get('debug_id');
+		const debugId = debugIdFromUrl(page.url);
 		if (!debugId) return url;
 
+		return withDebugId(url, debugId);
+	}
+
+	function setupHrefForReturn(returnUrl: URL): string {
+		const setupUrl = setupUrlForReturn(returnUrl);
+		return `${setupUrl.pathname}${setupUrl.search}${setupUrl.hash}`;
+	}
+
+	function withDebugId(url: URL, debugId: string): URL {
 		const next = new URL(url);
 		next.searchParams.set('DEBUG_ID', debugId);
 		return next;
-	}
-
-	function hasDebugId(url: URL): boolean {
-		return url.searchParams.has('DEBUG_ID') || url.searchParams.has('debug_id');
 	}
 
 	function sameUrl(a: URL, b: URL): boolean {

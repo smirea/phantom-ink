@@ -6,6 +6,7 @@
 
 	type CardVariant = 'question' | 'answer' | 'clue' | 'result';
 	type CardResult = 'win' | 'lose';
+	type CardTone = 'danger' | 'default';
 	type RuneSize = 'default' | 'panel' | 'card-title' | 'card-body' | 'answer-title' | 'answer-body' | 'clue-body';
 	type RuneConfig = { words?: number; min?: number; max?: number };
 	type TransitionReturn = ReturnType<typeof fade> | (() => ReturnType<typeof fade>);
@@ -40,6 +41,7 @@
 			titleRedacted?: boolean;
 			titleRune?: RuneConfig;
 			titleRuneSize?: RuneSize;
+			tone?: CardTone;
 			transitionKey?: string;
 			type?: 'button' | 'submit' | 'reset';
 			variant?: CardVariant;
@@ -76,6 +78,7 @@
 		titleRedacted,
 		titleRune,
 		titleRuneSize = 'card-title',
+		tone = 'default',
 		transitionKey,
 		type = 'button',
 		variant = 'question',
@@ -175,6 +178,7 @@
 			data-result={result}
 			data-selected={selected ? 'true' : undefined}
 			data-title-fancy={titleFancy ? 'true' : undefined}
+			data-tone={tone === 'default' ? undefined : tone}
 			data-variant={variant}
 			data-voted={voted ? 'true' : undefined}
 		>
@@ -190,6 +194,7 @@
 			data-result={result}
 			data-selected={selected ? 'true' : undefined}
 			data-title-fancy={titleFancy ? 'true' : undefined}
+			data-tone={tone === 'default' ? undefined : tone}
 			data-variant={variant}
 			data-voted={voted ? 'true' : undefined}
 		>
@@ -322,6 +327,33 @@
 
 	.game-card[data-variant='answer'][data-redacted='true'] {
 		filter: saturate(0.9);
+	}
+
+	.game-card[data-tone='danger'] {
+		border-color: color-mix(in oklab, #ff4f6d 68%, var(--app-border) 32%);
+		background:
+			radial-gradient(115% 90% at 14% -8%, color-mix(in oklab, #ff4f6d 16%, transparent), transparent 52%),
+			radial-gradient(120% 100% at 96% 112%, color-mix(in oklab, var(--app-error) 22%, transparent), transparent 58%),
+			linear-gradient(160deg, color-mix(in oklab, var(--app-panel) 88%, var(--app-error-bg) 12%), var(--app-panel) 60%),
+			var(--app-panel);
+		box-shadow:
+			0 1.25rem 3rem color-mix(in oklab, black 46%, transparent),
+			0 0.28rem 0 color-mix(in oklab, black 28%, transparent),
+			0 0 1.15rem color-mix(in oklab, #ff4f6d 16%, transparent),
+			inset 0 1px 0 color-mix(in oklab, white 10%, transparent),
+			inset 0 -1px 0 color-mix(in oklab, black 34%, transparent);
+	}
+
+	.game-card[data-tone='danger'] .game-card-title {
+		background: color-mix(in oklab, var(--app-error-bg) 58%, transparent);
+		color: color-mix(in oklab, #ff4f6d 86%, var(--app-error) 14%);
+		text-shadow:
+			0 0 0.65rem color-mix(in oklab, #ff4f6d 26%, transparent),
+			0 0.18rem 0.38rem color-mix(in oklab, black 38%, transparent);
+	}
+
+	.game-card[data-tone='danger'] .game-card-body {
+		color: color-mix(in oklab, #ffccd5 72%, var(--app-text) 28%);
 	}
 
 	.game-card[data-variant='clue'] {

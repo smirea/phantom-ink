@@ -132,6 +132,10 @@
 		return clue?.discardedQuestionId ? questions.find(question => question.id === clue.discardedQuestionId)! : null;
 	}
 
+	function questionLine(question: QuestionCard): string {
+		return `${question.title}: ${question.question}`;
+	}
+
 	function guessParts(context: GameContext, entry: BoardEntry): { valid: string; invalid: string } {
 		let validLength = entry.value.length;
 		for (let index = 1; index <= entry.value.length; index += 1) {
@@ -335,7 +339,7 @@
 				</span>
 				<span class="known-question-copy">
 					<strong>{q.title}:</strong>
-					{activeTeam ? q.question : '....'}
+					{activeTeam ? q.question : `${q.question} is discarded`}
 				</span>
 			</div>
 		{/if}
@@ -641,19 +645,35 @@
 
 		{#if canSeeVote(currentState, 'clue')}
 			{@const clue = getCurrentClue(game)}
-			{@const q = currentClueQuestion(game)}
+			{@const activeTeam = playerTeam(game, viewerId) === game.currentTeam}
+			{@const q = activeTeam ? currentClueQuestion(game) : currentDiscardedClueQuestion(game)}
 			<div class="clue-stage">
 				{#if clue && q}
-					<GameCard
-						variant="clue"
-						title={q.title}
-						bodyText={clue.value}
-						bodyFancy={Boolean(clue.value)}
-						bodyRedacted={!clue.value}
-						redactionKey={`${q.id}:clue`}
-						bodyRune={{ words: 3, min: 3, max: 8 }}
-						bodyRuneSize="clue-body"
-					/>
+					{#if activeTeam}
+						<GameCard
+							variant="clue"
+							title={q.title}
+							bodyText={clue.value}
+							bodyFancy={Boolean(clue.value)}
+							bodyRedacted={!clue.value}
+							redactionKey={`${q.id}:clue`}
+							bodyRune={{ words: 3, min: 3, max: 8 }}
+							bodyRuneSize="clue-body"
+							footerVisible
+						>
+							{#snippet footer()}
+								<span class="clue-card-question">{q.question}</span>
+							{/snippet}
+						</GameCard>
+					{:else}
+						<GameCard
+							variant="clue"
+							title="NOT ANSWERING"
+							titleFancy={false}
+							tone="danger"
+							bodyText={questionLine(q)}
+						/>
+					{/if}
 				{/if}
 			</div>
 		{/if}
@@ -693,7 +713,7 @@
 							{#if canPickWord}
 								<span class="word-text">{word}</span>
 							{:else}
-								<GameRunes hash={`${game.wordCardId}:${wordIndex}`} />
+								<GameRunes hash={`${game.wordCardId}:${wordIndex}`} size="word-option" />
 							{/if}
 						</span>
 						{@render VoteStack(voteState)}
@@ -1419,9 +1439,10 @@
 	}
 
 	.clue-question-band .known-question-copy {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		overflow: visible;
+		line-height: 1.18;
+		text-overflow: clip;
+		white-space: normal;
 	}
 
 	.known-question-empty {
@@ -1866,8 +1887,19 @@
 	.word-option-label {
 		display: flex;
 		align-items: center;
+		justify-content: center;
 		min-width: 0;
 		flex: 1 1 auto;
+		overflow: visible;
+	}
+
+	.clue-card-question {
+		color: color-mix(in oklab, var(--app-text) 86%, var(--app-muted) 14%);
+		font-size: 0.82rem;
+		font-weight: 720;
+		line-height: 1.22;
+		text-align: center;
+		text-wrap: balance;
 	}
 
 	.word-text {

@@ -2,7 +2,15 @@
 	import { gameConfig as config, seededNumber } from '@repo/shared/game';
 	import { range } from 'es-toolkit';
 
-	type RuneSize = 'default' | 'panel' | 'card-title' | 'card-body' | 'answer-title' | 'answer-body' | 'clue-body';
+	type RuneSize =
+		| 'default'
+		| 'panel'
+		| 'word-option'
+		| 'card-title'
+		| 'card-body'
+		| 'answer-title'
+		| 'answer-body'
+		| 'clue-body';
 
 	type Props = {
 		hash: string;
@@ -61,6 +69,7 @@
 		font-size: 1.22rem;
 		font-weight: 800;
 		line-height: 1;
+		overflow: visible;
 		text-shadow:
 			0 0 0.45rem color-mix(in oklab, var(--app-accent) 42%, transparent),
 			0 0.12rem 0.3rem color-mix(in oklab, black 42%, transparent);
@@ -73,6 +82,12 @@
 	.rune-word[data-size='card-body'] {
 		font-size: 1.06rem;
 		line-height: 1.28;
+	}
+
+	.rune-word[data-size='word-option'] {
+		width: 100%;
+		font-size: 1.08rem;
+		line-height: 1.18;
 	}
 
 	.rune-word[data-size='answer-title'] {
@@ -91,9 +106,12 @@
 
 	.rune-group {
 		display: inline-flex;
+		flex-wrap: wrap;
+		justify-content: center;
 		gap: 0.08em;
 		max-width: 100%;
 		min-width: 0;
+		overflow: visible;
 	}
 
 	.rune {
@@ -172,6 +190,10 @@
 	@media (max-width: 460px) {
 		.rune-word[data-size='default'] {
 			font-size: 1.03rem;
+		}
+
+		.rune-word[data-size='word-option'] {
+			font-size: 0.98rem;
 		}
 	}
 </style>
