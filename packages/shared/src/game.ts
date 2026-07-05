@@ -26,6 +26,7 @@ export type BoardEntry = {
 	value: string;
 	fullValue?: string;
 	hint?: string;
+	hintIndexes?: number[];
 	questionId?: QuestionCard['id'];
 	discardedQuestionId?: QuestionCard['id'];
 };
@@ -465,12 +466,19 @@ export function revealClue(context: GameContext, clueId: string, hint?: string):
 		const entry = draft.teams[clue.team].board[clue.index];
 		if (!entry || entry.type !== 'clue' || entry.fullValue === undefined) return;
 
+		const previousLength = entry.value.length;
 		if (entry.value.length < entry.fullValue.length) {
 			entry.value = entry.fullValue.slice(0, entry.value.length + 1);
 		} else if (entry.value === entry.fullValue) {
 			entry.value = clueDoneValue(entry);
 		}
-		entry.hint = hint ?? entry.hint;
+
+		if (hint) {
+			entry.hint = hint;
+			if (entry.value.length > previousLength) {
+				entry.hintIndexes = uniq([...(entry.hintIndexes ?? []), entry.value.length - 1]);
+			}
+		}
 	});
 }
 

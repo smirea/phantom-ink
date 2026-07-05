@@ -480,7 +480,14 @@
 		>
 			{#if entry?.type === 'clue' && entry.value}
 				{#each entry.value.split('') as letter, index (index)}
-					<span class="board-letter" transition:fly={{ y: 12, duration: 220 }}>{boardGlyph(letter)}</span>
+					{@const hinted = entry.hintIndexes?.includes(index)}
+					<span
+						class="board-letter"
+						data-hinted={hinted ? 'true' : undefined}
+						transition:fly={{ y: hinted ? 18 : 12, duration: hinted ? 280 : 220 }}
+					>
+						{boardGlyph(letter)}
+					</span>
 				{/each}
 			{:else}
 				{entry?.value ? boardText(entry.value) : '\u00a0'}
@@ -1259,6 +1266,15 @@
 		will-change: opacity, transform;
 	}
 
+	.board-letter[data-hinted='true'] {
+		color: color-mix(in oklab, #ffe878 82%, var(--app-sun) 18%);
+		filter: drop-shadow(0 0 0.38rem color-mix(in oklab, #ffe878 54%, transparent));
+		text-shadow:
+			0 0 0.55rem color-mix(in oklab, #ffe878 48%, transparent),
+			0 0.12rem 0.26rem color-mix(in oklab, black 42%, transparent);
+		animation: hinted-letter-glow 760ms ease-out both;
+	}
+
 	.board-value[data-letter-hint='true'] {
 		color: color-mix(in oklab, var(--app-accent-strong) 74%, var(--logo-word) 26%);
 		font-weight: 950;
@@ -1363,6 +1379,21 @@
 		78% {
 			opacity: 1;
 			transform: translate3d(0.02rem, 0.04rem, 0) rotate(0.35deg) scale(1.01);
+		}
+	}
+
+	@keyframes hinted-letter-glow {
+		0% {
+			filter: brightness(1.45) drop-shadow(0 0 0.75rem color-mix(in oklab, #ffe878 72%, transparent));
+			opacity: 0.45;
+		}
+		55% {
+			filter: brightness(1.18) drop-shadow(0 0 0.5rem color-mix(in oklab, #ffe878 62%, transparent));
+			opacity: 1;
+		}
+		100% {
+			filter: brightness(1) drop-shadow(0 0 0.38rem color-mix(in oklab, #ffe878 54%, transparent));
+			opacity: 1;
 		}
 	}
 
