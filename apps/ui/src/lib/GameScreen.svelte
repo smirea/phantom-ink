@@ -675,35 +675,6 @@
 			{/if}
 		{/if}
 
-		{#if canSeeVote(currentState, 'clue')}
-			{@const clue = getCurrentClue(game)}
-			{@const activeTeam = playerTeam(game, viewerId) === game.currentTeam}
-			{@const q = currentClueQuestion(game)}
-			<div class="clue-stage">
-				{#if clue && q}
-					{#if activeTeam}
-						<GameCard
-							variant="clue"
-							title={q.title}
-							bodyText={clue.value}
-							bodyFancy={Boolean(clue.value)}
-							bodyRedacted={!clue.value}
-							redactionKey={`${q.id}:clue`}
-							bodyRune={{ words: 3, min: 3, max: 8 }}
-							bodyRuneSize="clue-body"
-							footerVisible
-						>
-							{#snippet footer()}
-								<span class="clue-card-question">{q.question}</span>
-							{/snippet}
-						</GameCard>
-					{:else}
-						<GameCard variant="clue" title="NOT ANSWERING" titleFancy={false} tone="danger" bodyText="...." />
-					{/if}
-				{/if}
-			</div>
-		{/if}
-
 		{#if currentState === 'win' || currentState === 'lose'}
 			<GameCard
 				variant="result"
@@ -756,6 +727,35 @@
 			data-footer-kind={actionFooterKind}
 			data-has-actions={hasActionFooter ? 'true' : undefined}
 		>
+			{#if canSeeVote(currentState, 'clue')}
+				{@const clue = getCurrentClue(game)}
+				{@const activeTeam = playerTeam(game, viewerId) === game.currentTeam}
+				{@const q = currentClueQuestion(game)}
+				<div class="clue-stage">
+					{#if clue && q}
+						{#if activeTeam}
+							<GameCard
+								variant="clue"
+								title={q.title}
+								bodyText={clue.value}
+								bodyFancy={Boolean(clue.value)}
+								bodyRedacted={!clue.value}
+								redactionKey={`${q.id}:clue`}
+								bodyRune={{ words: 3, min: 3, max: 8 }}
+								bodyRuneSize="clue-body"
+								footerVisible
+							>
+								{#snippet footer()}
+									<span class="clue-card-question">{q.question}</span>
+								{/snippet}
+							</GameCard>
+						{:else}
+							<GameCard variant="clue" title="NOT ANSWERING" titleFancy={false} tone="danger" bodyText="...." />
+						{/if}
+					{/if}
+				</div>
+			{/if}
+
 			{@render StatusBand()}
 			{@render ClueQuestionBand()}
 
@@ -2149,6 +2149,7 @@
 	.clue-stage {
 		width: min(100%, 30rem);
 		margin: 0 auto;
+		padding: 0 1rem 0.75rem;
 	}
 
 	.clue-buttons {
