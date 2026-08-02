@@ -70,9 +70,11 @@
 		font-weight: 800;
 		line-height: 1;
 		overflow: visible;
+		pointer-events: none;
 		text-shadow:
 			0 0 0.45rem color-mix(in oklab, var(--app-accent) 42%, transparent),
 			0 0.12rem 0.3rem color-mix(in oklab, black 42%, transparent);
+		user-select: none;
 	}
 
 	.rune-word[data-size='panel'] {
