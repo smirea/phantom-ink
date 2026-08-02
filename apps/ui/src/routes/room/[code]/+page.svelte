@@ -31,6 +31,7 @@
 	type VotingState = { voted: User['id'][]; eligible: User[]; required?: number };
 	type PendingGameAction = { id: number; event: GameEvent };
 	type RoomRequestPayload = { code?: string; room: RoomViewState };
+	type DebugPayload = PhantomInkGameState | { state: PhantomInkGameState } | string;
 
 	let { data } = $props();
 	const appContext = getAppContext();
@@ -68,6 +69,40 @@
 	const activeGameState = $derived(optimisticGameState ?? room?.gameState ?? null);
 	const canUseLobbyControls = $derived(Boolean(canUseTeamControls && self?.role !== 'spectator'));
 	const readyButtonLabel = $derived(room?.startProblem ?? 'Ready?');
+
+	$effect(() => {
+		type DebugWindow = Window & {
+			DEBUG?: Record<string, unknown> & {
+				getState?: () => PhantomInkGameState | null;
+				setState?: (payload: DebugPayload) => Promise<PhantomInkGameState>;
+				loadState?: (payload: DebugPayload) => Promise<PhantomInkGameState>;
+				getRoom?: () => RoomViewState | null;
+			};
+		};
+
+		const root = window as DebugWindow;
+		root.DEBUG ??= {};
+		const getState = () => {
+			const state = $state.snapshot(activeGameState);
+			return state ? structuredClone(state) : null;
+		};
+		const getRoom = () => {
+			const currentRoom = $state.snapshot(room);
+			return currentRoom ? structuredClone(currentRoom) : null;
+		};
+		const setState = (payload: DebugPayload) => loadDebugState(payload);
+		root.DEBUG.getState = getState;
+		root.DEBUG.setState = setState;
+		root.DEBUG.loadState = setState;
+		root.DEBUG.getRoom = getRoom;
+
+		return () => {
+			if (root.DEBUG?.getState === getState) delete root.DEBUG.getState;
+			if (root.DEBUG?.setState === setState) delete root.DEBUG.setState;
+			if (root.DEBUG?.loadState === setState) delete root.DEBUG.loadState;
+			if (root.DEBUG?.getRoom === getRoom) delete root.DEBUG.getRoom;
+		};
+	});
 
 	onMount(() => {
 		const initialRoomCode = roomCode;
@@ -300,6 +335,31 @@
 			pendingGameActions = pendingGameActions.filter(action => action.id !== pending.id);
 			rebuildOptimisticGame();
 		}
+	}
+
+	async function loadDebugState(payload: DebugPayload): Promise<PhantomInkGameState> {
+		if (!roomCode || !self) throw new Error('Room is not connected');
+
+		pendingGameActions = [];
+		optimisticGameState = null;
+		const state = parseDebugPayload(payload);
+		const response = await api.rooms.action({
+			code: roomCode,
+			userId: appContext.user.id,
+			action: {
+				type: 'load-state',
+				actorId: self.id,
+				state,
+			},
+		});
+		room = response.room;
+		error = null;
+		return structuredClone(response.room.gameState!);
+	}
+
+	function parseDebugPayload(payload: DebugPayload): PhantomInkGameState {
+		const parsed = typeof payload === 'string' ? (JSON.parse(payload) as Exclude<DebugPayload, string>) : payload;
+		return structuredClone(typeof parsed.state === 'object' ? parsed.state : parsed);
 	}
 
 	function rebuildOptimisticGame() {

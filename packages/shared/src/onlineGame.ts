@@ -106,6 +106,7 @@ export type OnlineRoomAction =
 	| { type: 'set-ready'; actorId: PlayerId; ready: boolean }
 	| { type: 'vote'; actorId: PlayerId; vote: RoomVoteAction }
 	| { type: 'game-action'; actorId: PlayerId; action: PhantomInkGameAction }
+	| { type: 'load-state'; actorId: PlayerId; state: PhantomInkGameState }
 	| { type: 'reset-room'; actorId: PlayerId };
 
 export interface RoomViewState {
@@ -329,6 +330,12 @@ export function applyOnlineRoomAction(state: OnlineRoomState, action: OnlineRoom
 			if (!canApplyGameAction(state.gameState, actor, action.action)) return false;
 
 			return applyPhantomInkGameAction(state.gameState, action.action);
+		case 'load-state':
+			state.phase = 'playing';
+			state.gameState = structuredClone(action.state);
+			state.readyPlayerIds = [];
+			state.votes = [];
+			return true;
 		case 'reset-room':
 			state.phase = 'lobby';
 			state.gameState = null;

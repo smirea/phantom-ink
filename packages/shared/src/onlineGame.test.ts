@@ -5,6 +5,7 @@ import {
 	playerIdForUser,
 	type OnlineRoomState,
 } from './onlineGame';
+import { applyPhantomInkGameAction, createInitialGameState } from './game';
 
 describe('online game actions', () => {
 	test('accepts votes from the matching room actor', () => {
@@ -51,6 +52,29 @@ describe('online game actions', () => {
 
 		expect(changed).toBe(false);
 		expect(state.gameState?.state).toBe('setupWord');
+	});
+
+	test('loads a supplied debug state through the room action log', () => {
+		const state = createInitialOnlineRoomState();
+		applyOnlineRoomAction(state, {
+			type: 'join',
+			actorId: playerIdForUser(1),
+			userId: 1,
+			name: 'Soul 1',
+		});
+		const loaded = createInitialGameState();
+		applyPhantomInkGameAction(loaded, { type: 'pickWord', word: 'POTATO' });
+
+		const changed = applyOnlineRoomAction(state, {
+			type: 'load-state',
+			actorId: playerIdForUser(1),
+			state: loaded,
+		});
+
+		expect(changed).toBe(true);
+		expect(state.phase).toBe('playing');
+		expect(state.gameState).toEqual(loaded);
+		expect(state.gameState).not.toBe(loaded);
 	});
 });
 
