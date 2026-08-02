@@ -31,7 +31,7 @@ export type BoardEntry = {
 	discardedQuestionId?: QuestionCard['id'];
 };
 
-export type KnownQuestion = { kind: 'used' | 'discarded'; question: QuestionCard };
+export type KnownQuestion = { kind: 'used' | 'discarded'; question: QuestionCard } | { kind: 'hidden' };
 export type VoteState = { voted: User['id'][]; eligible: User[]; required: number };
 export type VoteOption = number | string;
 
