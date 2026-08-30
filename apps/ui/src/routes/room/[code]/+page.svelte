@@ -32,6 +32,7 @@
 	type PendingGameAction = { id: number; event: GameEvent };
 	type RoomRequestPayload = { code?: string; room: RoomViewState };
 	type DebugPayload = PhantomInkGameState | { state: PhantomInkGameState } | string;
+	const reconnectDelayMs = 2500;
 
 	let { data } = $props();
 	const appContext = getAppContext();
@@ -112,9 +113,38 @@
 		}
 
 		let closeEvents: (() => void) | null = null;
+		let reconnectTimer: number | undefined;
+		let connectionVersion = 0;
+		let connecting = false;
 		let cancelled = false;
 
+		function clearReconnectTimer() {
+			if (reconnectTimer === undefined) return;
+			window.clearTimeout(reconnectTimer);
+			reconnectTimer = undefined;
+		}
+
+		function scheduleReconnect() {
+			if (cancelled || reconnectTimer !== undefined) return;
+			reconnectTimer = window.setTimeout(() => {
+				reconnectTimer = undefined;
+				void connect();
+			}, reconnectDelayMs);
+		}
+
+		function retryNow() {
+			if (!error || document.visibilityState === 'hidden') return;
+			clearReconnectTimer();
+			void connect();
+		}
+
 		async function connect() {
+			if (cancelled || connecting) return;
+			connecting = true;
+			const version = ++connectionVersion;
+			const stopEvents = closeEvents;
+			closeEvents = null;
+			stopEvents?.();
 			try {
 				const userId = appContext.user.id;
 				const payload: RoomRequestPayload = data.isCreatingRoom
@@ -143,27 +173,41 @@
 
 				const cancel = consumeEventIterator(api.rooms.events({ code: connectedCode, userId }), {
 					onEvent: payload => {
+						if (cancelled || version !== connectionVersion) return;
 						const nextRoom = payload.room;
 						room = nextRoom;
 						rebuildOptimisticGame();
 						error = null;
 					},
 					onError: caught => {
+						if (cancelled || version !== connectionVersion) return;
 						error = caught;
+						scheduleReconnect();
 					},
 				});
 				closeEvents = () => {
 					void cancel();
 				};
 			} catch (caught) {
-				if (!cancelled) error = caught;
+				if (!cancelled && version === connectionVersion) {
+					error = caught;
+					scheduleReconnect();
+				}
+			} finally {
+				connecting = false;
 			}
 		}
 
 		void connect();
+		window.addEventListener('online', retryNow);
+		document.addEventListener('visibilitychange', retryNow);
 		return () => {
 			cancelled = true;
+			connectionVersion += 1;
+			clearReconnectTimer();
 			closeEvents?.();
+			window.removeEventListener('online', retryNow);
+			document.removeEventListener('visibilitychange', retryNow);
 		};
 	});
 

@@ -7,6 +7,12 @@
 	let { error, class: cls }: { error: unknown; class?: string } = $props();
 
 	const details = $derived(errorDetails(error));
+	const summary = $derived(
+		details.message
+			.split('\n')
+			.find(line => line.trim())
+			?.trim() ?? 'Something went wrong',
+	);
 	const className = $derived(['error-box', cls].filter(Boolean).join(' '));
 
 	function errorDetails(value: unknown): ErrorDetails {
@@ -53,12 +59,13 @@
 </script>
 
 <details class={className}>
-	<summary>{details.message}</summary>
+	<summary><span>{summary}</span></summary>
 	<pre>{details.stack}</pre>
 </details>
 
 <style>
 	.error-box {
+		align-self: start;
 		min-width: 0;
 		border: 1px solid color-mix(in oklab, var(--app-error) 42%, var(--app-border));
 		border-radius: 0.5rem;
@@ -75,8 +82,16 @@
 		cursor: pointer;
 		font-weight: 850;
 		padding: 0.75rem 0.85rem;
-		overflow-wrap: anywhere;
-		white-space: pre-wrap;
+	}
+
+	.error-box summary span {
+		display: inline-block;
+		max-width: calc(100% - 1.5rem);
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		vertical-align: middle;
+		white-space: nowrap;
 	}
 
 	.error-box pre {
