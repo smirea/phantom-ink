@@ -1,0 +1,47 @@
+name: Mac update
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: mac-update
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Send update request
+        env:
+          MAC_UPDATE_BEARER_KEY: ${{ secrets.MAC_UPDATE_BEARER_KEY }}
+        run: |
+          : "${MAC_UPDATE_BEARER_KEY:?MAC_UPDATE_BEARER_KEY secret is not set}"
+          set +e
+          curl --fail-with-body --show-error --silent --no-buffer --request POST \
+            --header "Authorization: Bearer ${MAC_UPDATE_BEARER_KEY}" \
+            https://mac.stf.lol/update/phantom-ink | tee update.log
+          curl_status=${PIPESTATUS[0]}
+          set -e
+
+          if grep -q '^DEPLOY_OK repo=phantom-ink$' update.log; then
+            exit 0
+          fi
+
+          if [ "$curl_status" -ne 0 ]; then
+            sleep 10
+            curl --fail-with-body --show-error --silent --request POST \
+              --header 'content-type: application/json' \
+              --data '{}' \
+              https://phantom-ink.stf.lol/api/rpc/status \
+              | grep -q '"ok":true'
+            exit 0
+          fi
+
+          exit 1
