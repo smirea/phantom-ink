@@ -308,12 +308,16 @@ export function applyOnlineRoomAction(state: OnlineRoomState, action: OnlineRoom
 		}
 		case 'set-seat':
 			if (state.phase !== 'lobby') return false;
-			if (!isTeam(action.team) || !isPlayerRole(action.role) || action.role === 'spectator') return false;
+			if (!isTeam(action.team) || !isPlayerRole(action.role)) return false;
 			if (actor.team === action.team && actor.role === action.role) return false;
 
 			actor.team = action.team;
 			actor.role = action.role;
+			if (actor.role === 'spectator') {
+				state.votes = state.votes.filter(vote => vote.playerId !== actor.id);
+			}
 			clearReady(state);
+			finalizeVotes(state);
 			return true;
 		case 'set-ready': {
 			const hasReadyVote = state.votes.some(vote => vote.playerId === action.actorId && vote.action === 'ready');
@@ -346,6 +350,7 @@ export function applyOnlineRoomAction(state: OnlineRoomState, action: OnlineRoom
 }
 
 function canApplyGameAction(state: PhantomInkGameState, actor: RoomMember, event: GameEvent): boolean {
+	if (actor.role === 'spectator') return false;
 	if (event.type === 'vote') return event.userId === actor.userId;
 	if (event.type === 'answer') return canAnswerSpirit(state.context, actor.userId);
 	return false;
