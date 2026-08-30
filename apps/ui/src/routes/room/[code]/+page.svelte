@@ -450,7 +450,7 @@
 </svelte:head>
 
 <section class:tv-mode={tvMode} class="room-screen" aria-label={roomCode ? `Room ${roomCode}` : 'Room'}>
-	{#if self}
+	{#if self && room?.phase === 'lobby'}
 		<button
 			class="tv-mode-toggle"
 			data-active={tvMode ? 'true' : undefined}
