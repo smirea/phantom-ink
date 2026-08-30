@@ -30,18 +30,5 @@ jobs:
           curl_status=${PIPESTATUS[0]}
           set -e
 
-          if grep -q '^DEPLOY_OK repo=phantom-ink$' update.log; then
-            exit 0
-          fi
-
-          if [ "$curl_status" -ne 0 ]; then
-            sleep 10
-            curl --fail-with-body --show-error --silent --request POST \
-              --header 'content-type: application/json' \
-              --data '{}' \
-              https://phantom-ink.stf.lol/api/rpc/status \
-              | grep -q '"ok":true'
-            exit 0
-          fi
-
-          exit 1
+          [ "$curl_status" -eq 0 ]
+          grep -q '^DEPLOY_OK repo=phantom-ink$' update.log
