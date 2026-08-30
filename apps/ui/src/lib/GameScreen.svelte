@@ -86,7 +86,7 @@
 		const answered = questionById(entry.questionId);
 		const discarded = questionById(entry.discardedQuestionId);
 		if (!tvMode && team !== playerTeam(context, viewerId)) {
-			return [{ kind: 'hidden' }];
+			return discarded ? [{ kind: 'discarded', question: discarded }] : [];
 		}
 		if (answered) {
 			known.push({ kind: 'used', question: answered });
@@ -130,6 +130,15 @@
 	function currentClueQuestion(context: GameContext): QuestionCard | null {
 		const clue = getCurrentClue(context);
 		return clue?.questionId ? questions.find(question => question.id === clue.questionId)! : null;
+	}
+
+	function currentDiscardedClueQuestion(context: GameContext): QuestionCard | null {
+		const clue = getCurrentClue(context);
+		return clue?.discardedQuestionId ? questions.find(question => question.id === clue.discardedQuestionId)! : null;
+	}
+
+	function questionLine(question: QuestionCard): string {
+		return `${question.title}: ${question.question}`;
 	}
 
 	function guessParts(context: GameContext, entry: BoardEntry): { valid: string; invalid: string } {
@@ -334,21 +343,20 @@
 {#snippet ClueQuestionBand()}
 	{#if !tvMode && currentState === 'mediumsGetClues'}
 		{@const activeTeam = playerTeam(game, viewerId) === game.currentTeam}
-		{@const q = currentClueQuestion(game)}
-		{#if activeTeam && q}
-			<div class="clue-question-band known-question" data-kind="used">
+		{@const q = activeTeam ? currentClueQuestion(game) : currentDiscardedClueQuestion(game)}
+		{#if q}
+			<div class="clue-question-band known-question" data-kind={activeTeam ? 'used' : 'discarded'}>
 				<span class="known-question-icon">
-					<Check size={14} />
+					{#if activeTeam}
+						<Check size={14} />
+					{:else}
+						<X size={14} />
+					{/if}
 				</span>
 				<span class="known-question-copy">
 					<strong>{q.title}:</strong>
 					{q.question}
 				</span>
-			</div>
-		{:else if !activeTeam}
-			<div class="clue-question-band known-question" data-kind="hidden">
-				<span class="known-question-icon"><X size={14} /></span>
-				<span class="known-question-copy"><strong>NOT ANSWERING:</strong> ....</span>
 			</div>
 		{/if}
 	{/if}
@@ -588,7 +596,7 @@
 						<div class="row-question-popover" transition:slide={{ duration: 180 }}>
 							{#each teams as questionTeam}
 								<div class="row-question-column" data-team={questionTeam}>
-									{#each knownQuestionsForCell(game, viewerId, questionTeam, turn) as known (`${questionTeam}:${known.kind}:${known.kind === 'hidden' ? turn : known.question.id}`)}
+									{#each knownQuestionsForCell(game, viewerId, questionTeam, turn) as known (`${questionTeam}:${known.kind}:${known.question.id}`)}
 										<div class="known-question" data-kind={known.kind}>
 											<span class="known-question-icon">
 												{#if known.kind === 'used'}
@@ -598,12 +606,8 @@
 												{/if}
 											</span>
 											<span class="known-question-copy">
-												{#if known.kind === 'hidden'}
-													<strong>NOT ANSWERING:</strong> ....
-												{:else}
-													<strong>{known.question.title}:</strong>
-													{known.question.question}
-												{/if}
+												<strong>{known.question.title}:</strong>
+												{known.question.question}
 											</span>
 										</div>
 									{:else}
@@ -739,13 +743,19 @@
 			{#if !tvMode && canSeeVote(currentState, 'clue')}
 				{@const clue = getCurrentClue(game)}
 				{@const activeTeam = playerTeam(game, viewerId) === game.currentTeam}
-				{@const q = currentClueQuestion(game)}
+				{@const q = activeTeam ? currentClueQuestion(game) : currentDiscardedClueQuestion(game)}
 				<div class="clue-stage">
 					{#if clue && q}
 						{#if activeTeam}
 							<GameCard variant="clue" title={q.title} bodyText={q.question} />
 						{:else}
-							<GameCard variant="clue" title="NOT ANSWERING" titleFancy={false} tone="danger" bodyText="...." />
+							<GameCard
+								variant="clue"
+								title="NOT ANSWERING"
+								titleFancy={false}
+								tone="danger"
+								bodyText={questionLine(q)}
+							/>
 						{/if}
 					{/if}
 				</div>
@@ -1471,8 +1481,7 @@
 		--known-question-color: color-mix(in oklab, #34f077 84%, var(--logo-word) 16%);
 	}
 
-	.known-question[data-kind='discarded'],
-	.known-question[data-kind='hidden'] {
+	.known-question[data-kind='discarded'] {
 		--known-question-color: color-mix(in oklab, #ff4f6d 88%, var(--app-error) 12%);
 	}
 
