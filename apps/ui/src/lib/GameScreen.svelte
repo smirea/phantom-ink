@@ -734,21 +734,7 @@
 				<div class="clue-stage">
 					{#if clue && q}
 						{#if activeTeam}
-							<GameCard
-								variant="clue"
-								title={q.title}
-								bodyText={clue.value}
-								bodyFancy={Boolean(clue.value)}
-								bodyRedacted={!clue.value}
-								redactionKey={`${q.id}:clue`}
-								bodyRune={{ words: 3, min: 3, max: 8 }}
-								bodyRuneSize="clue-body"
-								footerVisible
-							>
-								{#snippet footer()}
-									<span class="clue-card-question">{q.question}</span>
-								{/snippet}
-							</GameCard>
+							<GameCard variant="clue" title={q.title} bodyText={q.question} />
 						{:else}
 							<GameCard variant="clue" title="NOT ANSWERING" titleFancy={false} tone="danger" bodyText="...." />
 						{/if}
@@ -1957,15 +1943,6 @@
 		min-width: 0;
 		flex: 1 1 auto;
 		overflow: visible;
-	}
-
-	.clue-card-question {
-		color: color-mix(in oklab, var(--app-text) 86%, var(--app-muted) 14%);
-		font-size: 0.82rem;
-		font-weight: 720;
-		line-height: 1.22;
-		text-align: center;
-		text-wrap: balance;
 	}
 
 	.word-text {
