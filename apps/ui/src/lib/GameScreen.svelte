@@ -43,6 +43,7 @@
 		onSelectViewer?: (userId: User['id']) => void;
 		showDebugPlayerPicker?: boolean;
 		showStartPanel?: boolean;
+		tvMode?: boolean;
 	};
 
 	let {
@@ -54,6 +55,7 @@
 		onSelectViewer,
 		showDebugPlayerPicker = false,
 		showStartPanel = false,
+		tvMode = false,
 	}: Props = $props();
 
 	const [sendQuestionCard, receiveQuestionCard] = crossfade({
@@ -83,7 +85,7 @@
 		const known: KnownQuestion[] = [];
 		const answered = questionById(entry.questionId);
 		const discarded = questionById(entry.discardedQuestionId);
-		if (team !== playerTeam(context, viewerId)) {
+		if (!tvMode && team !== playerTeam(context, viewerId)) {
 			return [{ kind: 'hidden' }];
 		}
 		if (answered) {
@@ -225,15 +227,17 @@
 			),
 	);
 	const actionFooterKind = $derived(
-		canSeeVote(currentState, 'guessLetter')
-			? 'keyboard'
-			: currentState === 'spiritAnswers'
-				? 'answer'
-				: canSeeVote(currentState, 'pickQuestions') && questionsMinimized && hasQuestionFooterContent
-					? 'questions'
-					: canSeeVote(currentState, 'mediumAction') || canSeeVote(currentState, 'clue')
-						? 'buttons'
-						: undefined,
+		tvMode
+			? undefined
+			: canSeeVote(currentState, 'guessLetter')
+				? 'keyboard'
+				: currentState === 'spiritAnswers'
+					? 'answer'
+					: canSeeVote(currentState, 'pickQuestions') && questionsMinimized && hasQuestionFooterContent
+						? 'questions'
+						: canSeeVote(currentState, 'mediumAction') || canSeeVote(currentState, 'clue')
+							? 'buttons'
+							: undefined,
 	);
 	const hasActionFooter = $derived(Boolean(actionFooterKind));
 
@@ -328,7 +332,7 @@
 {/snippet}
 
 {#snippet ClueQuestionBand()}
-	{#if currentState === 'mediumsGetClues'}
+	{#if !tvMode && currentState === 'mediumsGetClues'}
 		{@const activeTeam = playerTeam(game, viewerId) === game.currentTeam}
 		{@const q = currentClueQuestion(game)}
 		{#if activeTeam && q}
@@ -499,6 +503,7 @@
 		: undefined}
 	data-state={currentState}
 	data-has-actions={hasActionFooter}
+	data-tv-mode={tvMode ? 'true' : undefined}
 >
 	<div class="game-content">
 		<div class="board">
@@ -506,7 +511,7 @@
 
 			{#each range(board.turns) as turn}
 				{@const hasKnownQuestions = rowHasKnownQuestions(game, viewerId, turn)}
-				{@const rowExpanded = expandedBoardRows.includes(turn)}
+				{@const rowExpanded = tvMode ? hasKnownQuestions : expandedBoardRows.includes(turn)}
 				<div
 					class="board-row-group"
 					data-expanded={rowExpanded ? 'true' : undefined}
@@ -515,20 +520,24 @@
 					<div class="board-row">
 						{#each teams as team}
 							{#if team === 'moon'}
-								<button
-									class="row-question-toggle"
-									disabled={!hasKnownQuestions}
-									onclick={() => toggleBoardRowQuestions(game, turn)}
-									type="button"
-								>
-									<span class="row-toggle-icon">
-										{#if rowExpanded}
-											<X size={18} />
-										{:else}
-											<Info size={18} />
-										{/if}
-									</span>
-								</button>
+								{#if tvMode}
+									<span class="row-question-gutter"></span>
+								{:else}
+									<button
+										class="row-question-toggle"
+										disabled={!hasKnownQuestions}
+										onclick={() => toggleBoardRowQuestions(game, turn)}
+										type="button"
+									>
+										<span class="row-toggle-icon">
+											{#if rowExpanded}
+												<X size={18} />
+											{:else}
+												<Info size={18} />
+											{/if}
+										</span>
+									</button>
+								{/if}
 							{/if}
 							{@const entry = game.teams[team].board[turn]}
 							{@const clueId = boardEntryId(team, turn)}
@@ -615,7 +624,7 @@
 			</div>
 		{/if}
 
-		{#if canSeeVote(currentState, 'pickQuestions')}
+		{#if !tvMode && canSeeVote(currentState, 'pickQuestions')}
 			{@const canPickQuestions = canVote(currentState, game, 'pickQuestions', viewerId)}
 			{#if !questionsMinimized}
 				<div class="question-popup" transition:fly={{ y: 20, duration: 180 }}>
@@ -632,7 +641,7 @@
 			{/if}
 		{/if}
 
-		{#if currentState === 'spiritAnswers'}
+		{#if !tvMode && currentState === 'spiritAnswers'}
 			{@const canAnswer = canAnswerSpirit(game, viewerId)}
 			{@const selectedQuestionId = selectedAnswerQuestionId(game)}
 			{#if !questionsMinimized}
@@ -693,7 +702,7 @@
 		{/if}
 	</div>
 
-	{#if canSeeVote(currentState, 'pickWord')}
+	{#if !tvMode && canSeeVote(currentState, 'pickWord')}
 		{@const canPickWord = canVote(currentState, game, 'pickWord', viewerId)}
 		<div class="pick-word-stage">
 			<div class="pick-word" data-can-vote={canPickWord}>
@@ -727,7 +736,7 @@
 			data-footer-kind={actionFooterKind}
 			data-has-actions={hasActionFooter ? 'true' : undefined}
 		>
-			{#if canSeeVote(currentState, 'clue')}
+			{#if !tvMode && canSeeVote(currentState, 'clue')}
 				{@const clue = getCurrentClue(game)}
 				{@const activeTeam = playerTeam(game, viewerId) === game.currentTeam}
 				{@const q = currentClueQuestion(game)}
@@ -1174,6 +1183,11 @@
 		padding: 0;
 	}
 
+	.row-question-gutter {
+		width: 2rem;
+		min-width: 2rem;
+	}
+
 	.row-question-toggle {
 		position: relative;
 		border: 0;
@@ -1499,6 +1513,24 @@
 
 	.known-question-empty {
 		min-height: 0.35rem;
+	}
+
+	.game-screen[data-tv-mode='true'] .game-content {
+		padding: clamp(1rem, 2.2vw, 2rem);
+	}
+
+	.game-screen[data-tv-mode='true'] .known-question {
+		font-size: clamp(0.78rem, 1.15vw, 1rem);
+		line-height: 1.32;
+	}
+
+	.game-screen[data-tv-mode='true'] .row-question-popover {
+		padding-block: 0.65rem;
+	}
+
+	.game-screen[data-tv-mode='true'] .row-question-column {
+		gap: 0.55rem;
+		padding: clamp(0.5rem, 1vw, 0.85rem);
 	}
 
 	button {

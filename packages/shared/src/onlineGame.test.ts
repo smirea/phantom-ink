@@ -8,6 +8,92 @@ import {
 import { applyPhantomInkGameAction, createInitialGameState } from './game';
 
 describe('online game actions', () => {
+	test('excludes spectators from room votes and the started game', () => {
+		const state = createInitialOnlineRoomState();
+
+		for (const userId of [1, 2, 3, 4, 5]) {
+			applyOnlineRoomAction(state, {
+				type: 'join',
+				actorId: playerIdForUser(userId),
+				userId,
+				name: `Soul ${userId}`,
+			});
+		}
+
+		const spectator = memberForUser(state, 5);
+		expect(
+			applyOnlineRoomAction(state, {
+				type: 'set-seat',
+				actorId: spectator.id,
+				team: spectator.team,
+				role: 'spectator',
+			}),
+		).toBe(true);
+		expect(
+			applyOnlineRoomAction(state, {
+				type: 'vote',
+				actorId: spectator.id,
+				vote: { type: 'ready' },
+			}),
+		).toBe(false);
+
+		for (const member of state.members.filter(member => member.role !== 'spectator')) {
+			applyOnlineRoomAction(state, {
+				type: 'vote',
+				actorId: member.id,
+				vote: { type: 'ready' },
+			});
+		}
+
+		expect(state.phase).toBe('playing');
+		expect(state.gameState?.context.teams.sun.players).not.toContain(spectator.userId);
+		expect(state.gameState?.context.teams.moon.players).not.toContain(spectator.userId);
+	});
+
+	test('rejects game actions from spectators', () => {
+		const state = createPlayingRoom();
+		const spiritUserId = currentSpiritUserId(state);
+		const spirit = memberForUser(state, spiritUserId);
+		spirit.role = 'spectator';
+
+		const changed = applyOnlineRoomAction(state, {
+			type: 'game-action',
+			actorId: spirit.id,
+			action: { type: 'vote', action: 'pickWord', option: 0, userId: spirit.userId },
+		});
+
+		expect(changed).toBe(false);
+		expect(state.gameState?.context.voting.pickWord).toBeUndefined();
+	});
+
+	test('returns spectators to their previous team', () => {
+		const state = createInitialOnlineRoomState();
+		applyOnlineRoomAction(state, {
+			type: 'join',
+			actorId: playerIdForUser(1),
+			userId: 1,
+			name: 'Soul 1',
+		});
+		const member = memberForUser(state, 1);
+		const originalTeam = member.team;
+
+		applyOnlineRoomAction(state, {
+			type: 'set-seat',
+			actorId: member.id,
+			team: originalTeam,
+			role: 'spectator',
+		});
+		expect(member.role).toBe('spectator');
+
+		applyOnlineRoomAction(state, {
+			type: 'set-seat',
+			actorId: member.id,
+			team: member.team,
+			role: 'medium',
+		});
+		expect(member).toMatchObject({ role: 'medium', team: originalTeam });
+	});
+
 	test('accepts votes from the matching room actor', () => {
 		const state = createPlayingRoom();
 		const spiritUserId = currentSpiritUserId(state);

@@ -25,6 +25,7 @@
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import Moon from '@lucide/svelte/icons/moon';
 	import Sun from '@lucide/svelte/icons/sun';
+	import Tv from '@lucide/svelte/icons/tv';
 	import UsersRound from '@lucide/svelte/icons/users-round';
 	import { onMount } from 'svelte';
 
@@ -67,6 +68,7 @@
 		Boolean(roomCode && room?.status === 'connected' && room.phase === 'lobby' && self),
 	);
 	const activeGameState = $derived(optimisticGameState ?? room?.gameState ?? null);
+	const tvMode = $derived(self?.role === 'spectator');
 	const canUseLobbyControls = $derived(Boolean(canUseTeamControls && self?.role !== 'spectator'));
 	const readyButtonLabel = $derived(room?.startProblem ?? 'Ready?');
 
@@ -263,6 +265,29 @@
 		}
 	}
 
+	async function toggleTvMode() {
+		if (!roomCode || !self || !canUseTeamControls || pendingAction) return;
+		pendingAction = 'tv-mode';
+		try {
+			const payload = await api.rooms.action({
+				code: roomCode,
+				userId: appContext.user.id,
+				action: {
+					type: 'set-seat',
+					actorId: self.id,
+					team: self.team,
+					role: tvMode ? 'medium' : 'spectator',
+				},
+			});
+			room = payload.room;
+			rebuildOptimisticGame();
+		} catch (caught) {
+			error = caught;
+		} finally {
+			pendingAction = null;
+		}
+	}
+
 	async function voteReady() {
 		if (!roomCode || !self || !canUseLobbyControls || pendingAction) return;
 		pendingAction = 'ready';
@@ -380,12 +405,29 @@
 	<title>{roomCode ?? 'Room'} | Phantom Ink</title>
 </svelte:head>
 
-<section class="room-screen" aria-label={roomCode ? `Room ${roomCode}` : 'Room'}>
+<section class:tv-mode={tvMode} class="room-screen" aria-label={roomCode ? `Room ${roomCode}` : 'Room'}>
+	{#if self}
+		<button
+			class="tv-mode-toggle"
+			data-active={tvMode ? 'true' : undefined}
+			disabled={!canUseTeamControls || pendingAction === 'tv-mode'}
+			onclick={toggleTvMode}
+			type="button"
+		>
+			{#if pendingAction === 'tv-mode'}
+				<LoaderCircle class="spin" size={18} strokeWidth={2.4} />
+			{:else}
+				<Tv size={18} strokeWidth={2.2} />
+			{/if}
+			<span>TV mode</span>
+		</button>
+	{/if}
 	{#if room?.phase === 'playing' && activeGameState}
 		<GameScreen
 			game={activeGameState.context}
 			state={activeGameState.state}
 			players={gamePlayers}
+			{tvMode}
 			viewerId={appContext.user.id}
 			send={event => void sendGameEvent(event)}
 		/>
@@ -535,10 +577,47 @@
 		padding-bottom: 0.2rem;
 	}
 
+	.tv-mode-toggle {
+		position: absolute;
+		top: 0;
+		right: 0;
+		z-index: 50;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.42rem;
+		min-height: 2.45rem;
+		border: 1px solid color-mix(in oklab, var(--app-border) 76%, transparent);
+		border-radius: 0.45rem;
+		background: color-mix(in oklab, var(--app-panel) 88%, transparent);
+		box-shadow: 0 0.55rem 1.5rem color-mix(in oklab, black 28%, transparent);
+		color: var(--app-muted);
+		cursor: pointer;
+		font-size: 0.86rem;
+		font-weight: 900;
+		padding: 0.45rem 0.68rem;
+	}
+
+	.tv-mode-toggle[data-active='true'] {
+		border-color: color-mix(in oklab, var(--app-accent) 68%, var(--app-border));
+		background: color-mix(in oklab, var(--app-accent) 16%, var(--app-panel));
+		color: var(--app-accent);
+		filter: drop-shadow(0 0 0.55rem color-mix(in oklab, var(--app-accent) 26%, transparent));
+	}
+
+	.tv-mode-toggle:disabled {
+		cursor: default;
+	}
+
+	:global(.screen-shell.room-shell:has(.room-screen.tv-mode)) {
+		width: calc(100vw - 1.7rem);
+		max-width: none;
+	}
+
 	.room-settings {
 		display: flex;
 		align-items: flex-start;
 		min-width: 0;
+		padding-right: 7.5rem;
 	}
 
 	.word-toggle-wrap {
