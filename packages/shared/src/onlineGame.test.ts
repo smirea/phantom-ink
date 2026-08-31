@@ -162,6 +162,39 @@ describe('online game actions', () => {
 		expect(state.gameState).toEqual(loaded);
 		expect(state.gameState).not.toBe(loaded);
 	});
+
+	test('returns completed games to the lobby by consensus and rotates spirits', () => {
+		const state = createPlayingRoom();
+		const firstSpirits = {
+			sun: state.gameState!.context.teams.sun.spirit,
+			moon: state.gameState!.context.teams.moon.spirit,
+		};
+		expect(state.spiritHistory).toEqual([firstSpirits.sun, firstSpirits.moon]);
+		state.gameState!.state = 'win';
+
+		for (const member of state.members) {
+			applyOnlineRoomAction(state, {
+				type: 'vote',
+				actorId: member.id,
+				vote: { type: 'new-game' },
+			});
+		}
+
+		expect(state.phase).toBe('lobby');
+		expect(state.gameState).toBeNull();
+
+		for (const member of state.members) {
+			applyOnlineRoomAction(state, {
+				type: 'vote',
+				actorId: member.id,
+				vote: { type: 'ready' },
+			});
+		}
+
+		expect(state.gameState!.context.teams.sun.spirit).not.toBe(firstSpirits.sun);
+		expect(state.gameState!.context.teams.moon.spirit).not.toBe(firstSpirits.moon);
+		expect(new Set(state.spiritHistory)).toHaveLength(4);
+	});
 });
 
 function createPlayingRoom(): OnlineRoomState {

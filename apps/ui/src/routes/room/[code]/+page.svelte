@@ -29,7 +29,7 @@
 	import UsersRound from '@lucide/svelte/icons/users-round';
 	import { onMount } from 'svelte';
 
-	type VotingState = { voted: User['id'][]; eligible: User[]; required?: number };
+	type VotingState = { voted: User['id'][]; eligible: User[]; required: number };
 	type PendingGameAction = { id: number; event: GameEvent };
 	type RoomRequestPayload = { code?: string; room: RoomViewState };
 	type DebugPayload = PhantomInkGameState | { state: PhantomInkGameState } | string;
@@ -51,6 +51,7 @@
 	const moonMembers = $derived(members.filter(member => member.role !== 'spectator' && member.team === 'moon'));
 	const waitingMembers = $derived(members.filter(member => member.role === 'spectator'));
 	const readyVote = $derived(voteSummary('ready'));
+	const newGameVote = $derived(voteSummary('new-game'));
 	const standardVote = $derived(voteSummary('word-mode:standard'));
 	const customVote = $derived(voteSummary('word-mode:custom'));
 	const targetWordMode = $derived<WordMode>(room?.wordMode === 'custom' ? 'standard' : 'custom');
@@ -61,6 +62,7 @@
 		(selfWordVoteMode ?? targetWordMode) === 'custom' ? 'Custom words' : 'Standard words',
 	);
 	const readyVoting = $derived(votingFor(readyVote));
+	const newGameVoting = $derived(votingFor(newGameVote));
 	const displayedWordVoting = $derived(votingFor(displayedWordVote));
 	const fallbackSelfPlayerId = $derived(appContext.user.id > 0 ? playerIdForUser(appContext.user.id) : null);
 	const selfIsReady = $derived(Boolean(self && readyVote?.voterIds.includes(self.id)));
@@ -380,6 +382,28 @@
 		}
 	}
 
+	async function voteNewGame() {
+		if (!roomCode || !self || self.role === 'spectator' || pendingAction) return;
+		pendingAction = 'new-game';
+		try {
+			const payload = await api.rooms.action({
+				code: roomCode,
+				userId: appContext.user.id,
+				action: {
+					type: 'vote',
+					actorId: self.id,
+					vote: { type: 'new-game' },
+				},
+			});
+			room = payload.room;
+			rebuildOptimisticGame();
+		} catch (caught) {
+			error = caught;
+		} finally {
+			pendingAction = null;
+		}
+	}
+
 	async function sendGameEvent(event: GameEvent) {
 		if (!roomCode || !self || !room?.gameState) return;
 
@@ -469,6 +493,9 @@
 	{#if room?.phase === 'playing' && activeGameState}
 		<GameScreen
 			game={activeGameState.context}
+			newGamePending={pendingAction === 'new-game'}
+			{newGameVoting}
+			onVoteNewGame={() => void voteNewGame()}
 			state={activeGameState.state}
 			players={gamePlayers}
 			{tvMode}

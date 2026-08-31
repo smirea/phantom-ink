@@ -44,6 +44,9 @@
 		showDebugPlayerPicker?: boolean;
 		showStartPanel?: boolean;
 		tvMode?: boolean;
+		newGameVoting?: VoteState;
+		onVoteNewGame?: () => void;
+		newGamePending?: boolean;
 	};
 
 	let {
@@ -56,6 +59,9 @@
 		showDebugPlayerPicker = false,
 		showStartPanel = false,
 		tvMode = false,
+		newGameVoting,
+		onVoteNewGame,
+		newGamePending = false,
 	}: Props = $props();
 
 	const [sendQuestionCard, receiveQuestionCard] = crossfade({
@@ -695,11 +701,23 @@
 				title={currentState === 'win' ? 'Won' : 'Lost'}
 				bodyText={game.word}
 				bodyFancy
-				footerVisible={showStartPanel}
+				footerVisible={showStartPanel || Boolean(onVoteNewGame)}
 			>
 				{#snippet footer()}
 					{#if showStartPanel}
 						<InkButton size="md" primary onclick={() => send({ type: 'start' })}>Reset</InkButton>
+					{:else if onVoteNewGame}
+						<InkButton
+							size="md"
+							primary
+							disabled={!newGameVoting?.eligible.some(user => user.id === viewerId)}
+							loading={newGamePending}
+							onclick={onVoteNewGame}
+							voteLabel="New game"
+							voting={newGameVoting}
+						>
+							New game
+						</InkButton>
 					{/if}
 				{/snippet}
 			</GameCard>
@@ -820,6 +838,9 @@
 								if (selectedQuestionId) answerClue(selectedQuestionId);
 							}}
 						>
+							{#if canAnswer}
+								<div class="answer-word-bar">{game.word.toUpperCase()}</div>
+							{/if}
 							<div class="answer-input-row">
 								<button
 									class="answer-question-toggle"
@@ -846,9 +867,6 @@
 										value={selectedQuestionId ? (clueDrafts[selectedQuestionId] ?? '') : ''}
 									/>
 								</span>
-								{#if canAnswer}
-									<span class="answer-word">{game.word.toUpperCase()}</span>
-								{/if}
 								<InkButton
 									size="md"
 									primary
@@ -2141,13 +2159,16 @@
 		text-transform: uppercase;
 	}
 
-	.answer-word {
+	.answer-word-bar {
+		border-bottom: 1px solid color-mix(in oklab, var(--app-border) 58%, transparent);
 		color: var(--logo-word);
-		font: inherit;
-		font-size: 1.05rem;
-		font-weight: 800;
+		font-family: var(--font-fancy);
+		font-size: 0.9rem;
+		font-weight: 950;
 		line-height: 1;
-		text-transform: uppercase;
+		padding: 0 0.15rem 0.38rem;
+		text-align: center;
+		text-shadow: 0 0 0.45rem color-mix(in oklab, var(--app-focus) 24%, transparent);
 		white-space: nowrap;
 	}
 

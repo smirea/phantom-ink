@@ -3,6 +3,7 @@ import {
 	applyPhantomInkGameAction,
 	canAnswerSpirit,
 	createInitialGameState,
+	seededNumber,
 	type GameEvent,
 	type PhantomInkGameAction,
 	type PhantomInkGameState,
@@ -44,7 +45,7 @@ export interface RoomVote {
 	action: RoomVoteActionName;
 }
 
-export type RoomVoteActionName = 'ready' | `word-mode:${WordMode}`;
+export type RoomVoteActionName = 'ready' | 'new-game' | `word-mode:${WordMode}`;
 
 export interface RoomVoteSummary {
 	ns: RoomVoteNamespace;
@@ -58,10 +59,11 @@ export interface RoomVoteSummary {
 	consensus: boolean;
 }
 
-export type RoomVoteNamespace = 'ready' | 'word-mode';
+export type RoomVoteNamespace = 'ready' | 'new-game' | 'word-mode';
 
 export type RoomVoteAction =
 	| { type: 'ready' }
+	| { type: 'new-game' }
 	| {
 			type: 'word-mode';
 			mode: WordMode;
@@ -86,6 +88,7 @@ export interface OnlineRoomState {
 	phase: RoomPhase;
 	wordMode: WordMode;
 	gameState: PhantomInkGameState | null;
+	spiritHistory: Array<User['id']>;
 	members: RoomMember[];
 	readyPlayerIds: PlayerId[];
 	votes: RoomVote[];
@@ -106,8 +109,7 @@ export type OnlineRoomAction =
 	| { type: 'set-ready'; actorId: PlayerId; ready: boolean }
 	| { type: 'vote'; actorId: PlayerId; vote: RoomVoteAction }
 	| { type: 'game-action'; actorId: PlayerId; action: PhantomInkGameAction }
-	| { type: 'load-state'; actorId: PlayerId; state: PhantomInkGameState }
-	| { type: 'reset-room'; actorId: PlayerId };
+	| { type: 'load-state'; actorId: PlayerId; state: PhantomInkGameState };
 
 export interface RoomViewState {
 	status: 'idle' | 'connecting' | 'connected';
@@ -148,6 +150,7 @@ export function createInitialOnlineRoomState(): OnlineRoomState {
 		phase: 'lobby',
 		wordMode: 'standard',
 		gameState: null,
+		spiritHistory: [],
 		members: [],
 		readyPlayerIds: [],
 		votes: [],
@@ -340,12 +343,6 @@ export function applyOnlineRoomAction(state: OnlineRoomState, action: OnlineRoom
 			state.readyPlayerIds = [];
 			state.votes = [];
 			return true;
-		case 'reset-room':
-			state.phase = 'lobby';
-			state.gameState = null;
-			state.readyPlayerIds = [];
-			state.votes = [];
-			return true;
 	}
 }
 
@@ -380,6 +377,7 @@ export function selectRoomVoteSummaries(state: OnlineRoomState): RoomVoteSummary
 	const normalizedState = normalizeOnlineRoomState(structuredClone(state));
 	return [
 		buildVoteSummary(normalizedState, 'ready', 'Ready'),
+		buildVoteSummary(normalizedState, 'new-game', 'New game'),
 		buildVoteSummary(normalizedState, 'word-mode:standard', 'Standard words'),
 		buildVoteSummary(normalizedState, 'word-mode:custom', 'Custom words'),
 	];
@@ -415,6 +413,14 @@ function applyVote(state: OnlineRoomState, actor: RoomMember, action: RoomVoteAc
 
 function finalizeVotes(state: OnlineRoomState): void {
 	state.votes = pruneVotes(state);
+	const newGame = buildVoteSummary(state, 'new-game', 'New game');
+	if (newGame.consensus) {
+		state.phase = 'lobby';
+		state.gameState = null;
+		state.readyPlayerIds = [];
+		state.votes = [];
+		return;
+	}
 
 	const wordMode = winningChoice(state, 'word-mode');
 	if (wordMode) {
@@ -429,6 +435,7 @@ function finalizeVotes(state: OnlineRoomState): void {
 	if (ready.consensus && getStartProblem(state) === null) {
 		state.phase = 'playing';
 		state.gameState = createRoomGameState(state);
+		state.spiritHistory.push(state.gameState.context.teams.sun.spirit, state.gameState.context.teams.moon.spirit);
 		state.readyPlayerIds = [];
 		state.votes = [];
 	}
@@ -441,10 +448,22 @@ function createRoomGameState(state: OnlineRoomState): PhantomInkGameState {
 		moon: seated.filter(member => member.team === 'moon').map(member => member.userId),
 	};
 
+	const seed = [state.v, state.wordMode, playersByTeam.sun.join(','), playersByTeam.moon.join(',')].join(':');
 	return createInitialGameState({
 		playersByTeam,
-		seed: [state.v, state.wordMode, playersByTeam.sun.join(','), playersByTeam.moon.join(',')].join(':'),
+		spiritByTeam: {
+			sun: nextSpirit(playersByTeam.sun, state.spiritHistory, `${seed}:sun`),
+			moon: nextSpirit(playersByTeam.moon, state.spiritHistory, `${seed}:moon`),
+		},
+		seed,
 	});
+}
+
+function nextSpirit(players: Array<User['id']>, history: Array<User['id']>, seed: string): User['id'] {
+	const gamesByPlayer = countBy(history, userId => userId);
+	const fewestGames = Math.min(...players.map(userId => gamesByPlayer[userId] ?? 0));
+	const candidates = players.filter(userId => (gamesByPlayer[userId] ?? 0) === fewestGames);
+	return candidates[seededNumber(seed) % candidates.length]!;
 }
 
 function clearReady(state: OnlineRoomState): void {
@@ -466,11 +485,16 @@ function leastPopulatedTeam(members: readonly RoomMember[]): Team {
 
 type VoteBehavior =
 	| { ns: 'ready'; type: 'single'; voterIds: PlayerId[]; requiredVotes: number }
+	| { ns: 'new-game'; type: 'single'; voterIds: PlayerId[]; requiredVotes: number }
 	| { ns: 'word-mode'; type: 'choice'; voterIds: PlayerId[]; requiredVotes: number };
 
 function getVoteBehavior(state: OnlineRoomState, action: RoomVoteActionName): VoteBehavior | null {
 	const voterIds = state.members.filter(member => member.role !== 'spectator').map(member => member.id);
-	if (state.phase !== 'lobby' || voterIds.length === 0) return null;
+	if (voterIds.length === 0) return null;
+	if (action === 'new-game') {
+		return isGameOver(state) ? { ns: 'new-game', type: 'single', voterIds, requiredVotes: voterIds.length } : null;
+	}
+	if (state.phase !== 'lobby') return null;
 	if (action === 'ready') return { ns: 'ready', type: 'single', voterIds, requiredVotes: voterIds.length };
 	if (action.startsWith('word-mode:')) {
 		return { ns: 'word-mode', type: 'choice', voterIds, requiredVotes: simpleMajority(voterIds.length) };
@@ -531,17 +555,22 @@ function clearVoteNamespace(votes: readonly RoomVote[], ns: RoomVoteNamespace): 
 }
 
 function voteNamespace(action: RoomVoteActionName): RoomVoteNamespace {
-	return action === 'ready' ? 'ready' : 'word-mode';
+	return action === 'ready' || action === 'new-game' ? action : 'word-mode';
 }
 
 function roomVoteActionName(vote: RoomVoteAction): RoomVoteActionName | null {
 	if (vote.type === 'ready') return 'ready';
+	if (vote.type === 'new-game') return 'new-game';
 	if (vote.type === 'word-mode') return `word-mode:${sanitizeWordMode(vote.mode)}`;
 	return null;
 }
 
 function isRoomVoteActionName(value: unknown): value is RoomVoteActionName {
-	return value === 'ready' || value === 'word-mode:standard' || value === 'word-mode:custom';
+	return value === 'ready' || value === 'new-game' || value === 'word-mode:standard' || value === 'word-mode:custom';
+}
+
+function isGameOver(state: OnlineRoomState): boolean {
+	return state.phase === 'playing' && (state.gameState?.state === 'win' || state.gameState?.state === 'lose');
 }
 
 function isTeam(value: unknown): value is Team {

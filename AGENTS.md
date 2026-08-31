@@ -41,3 +41,4 @@
 # Game QA
 
 - `/debug/game` runs the shared game machine locally in sync mode. Use it for quick single-browser runs, switching the active player from the debug header and driving votes through every phase.
+- Before changing game UI, trace every affected state for the active spirit, active mediums, opposing team, and spectators/TV. Preserve the intended information boundaries for each viewer instead of assuming one role's visible data applies to the others.
