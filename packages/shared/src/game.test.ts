@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { boardEntryId, createInitialContext, isBoardEntryDone, revealClue, type BoardEntry } from './game';
 
 describe('clues', () => {
-	test('requires one final period clue after the full clue is visible', () => {
+	test('a clue is done only after a final period is revealed after its last letter', () => {
 		let context = createInitialContext();
 		const clue: BoardEntry = {
 			type: 'clue',
@@ -22,7 +22,7 @@ describe('clues', () => {
 		expect(isBoardEntryDone(context, context.teams.sun.board[0])).toBe(true);
 	});
 
-	test('records the character revealed by an eye hint', () => {
+	test('an eye hint reveals the next letter and records which eye was spent and which letter it revealed', () => {
 		let context = createInitialContext();
 		const clue: BoardEntry = {
 			type: 'clue',

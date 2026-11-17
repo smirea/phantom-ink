@@ -6,8 +6,8 @@ import {
 	type OnlineRoomState,
 } from './onlineGame';
 
-describe('online game actions', () => {
-	test('excludes spectators from room votes and the started game', () => {
+describe('online room', () => {
+	test('spectators cannot vote in the lobby and are left out of the game it starts', () => {
 		const state = createInitialOnlineRoomState();
 
 		for (const userId of [1, 2, 3, 4, 5]) {
@@ -49,7 +49,7 @@ describe('online game actions', () => {
 		expect(state.gameState?.context.teams.moon.players).not.toContain(spectator.userId);
 	});
 
-	test('rejects game actions from spectators', () => {
+	test('spectators cannot vote on game moves', () => {
 		const state = createPlayingRoom();
 		const spiritUserId = currentSpiritUserId(state);
 		const spirit = memberForUser(state, spiritUserId);
@@ -65,38 +65,32 @@ describe('online game actions', () => {
 		expect(state.gameState?.context.voting.pickWord).toBeUndefined();
 	});
 
-	test('accepts votes from the matching room actor', () => {
+	test('a player can cast a game vote only as themselves', () => {
 		const state = createPlayingRoom();
-		const spiritUserId = currentSpiritUserId(state);
-		const spirit = memberForUser(state, spiritUserId);
+		const spirit = memberForUser(state, currentSpiritUserId(state));
+		const { currentTeam, teams } = state.gameState!.context;
+		const otherSpirit = teams[currentTeam === 'sun' ? 'moon' : 'sun'].spirit;
 
-		const changed = applyOnlineRoomAction(state, {
-			type: 'game-action',
-			actorId: spirit.id,
-			action: { type: 'vote', action: 'pickWord', option: 0, userId: spirit.userId },
-		});
+		expect(
+			applyOnlineRoomAction(state, {
+				type: 'game-action',
+				actorId: spirit.id,
+				action: { type: 'vote', action: 'pickWord', option: 0, userId: otherSpirit },
+			}),
+		).toBe(false);
+		expect(state.gameState?.context.voting.pickWord).toBeUndefined();
 
-		expect(changed).toBe(true);
+		expect(
+			applyOnlineRoomAction(state, {
+				type: 'game-action',
+				actorId: spirit.id,
+				action: { type: 'vote', action: 'pickWord', option: 0, userId: spirit.userId },
+			}),
+		).toBe(true);
 		expect(state.gameState?.context.voting.pickWord?.[spirit.userId]).toEqual([0]);
 	});
 
-	test('rejects game votes for a different user', () => {
-		const state = createPlayingRoom();
-		const spiritUserId = currentSpiritUserId(state);
-		const spirit = memberForUser(state, spiritUserId);
-		const other = state.members.find(member => member.userId !== spirit.userId)!;
-
-		const changed = applyOnlineRoomAction(state, {
-			type: 'game-action',
-			actorId: spirit.id,
-			action: { type: 'vote', action: 'pickWord', option: 0, userId: other.userId },
-		});
-
-		expect(changed).toBe(false);
-		expect(state.gameState?.context.voting.pickWord).toBeUndefined();
-	});
-
-	test('rejects direct game events that should come from consensus', () => {
+	test('a player cannot make a game move directly, only through a consensus vote', () => {
 		const state = createPlayingRoom();
 		const spiritUserId = currentSpiritUserId(state);
 		const spirit = memberForUser(state, spiritUserId);
@@ -111,7 +105,7 @@ describe('online game actions', () => {
 		expect(state.gameState?.state).toBe('setupWord');
 	});
 
-	test('returns completed games to the lobby by consensus and rotates spirits', () => {
+	test('a finished game returns to the lobby by consensus and the next game picks spirits who have not been one yet', () => {
 		const state = createPlayingRoom();
 		const firstSpirits = {
 			sun: state.gameState!.context.teams.sun.spirit,
