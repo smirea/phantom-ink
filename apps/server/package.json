@@ -9,7 +9,7 @@
 	"scripts": {
 		"dev": "bun --env-file=../../.env --env-file=../../.env.local --watch src/index.ts",
 		"start": "bun --env-file=../../.env --env-file=../../.env.local src/index.ts",
-		"typecheck": "tsc --noEmit -p tsconfig.json"
+		"typecheck": "bun check"
 	},
 	"dependencies": {
 		"@orpc/server": "^1.14.6",
