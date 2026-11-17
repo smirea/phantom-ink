@@ -20,6 +20,12 @@
 - Environment files are managed by `env-manager`.
 - Keep `.env` tracked with harmless/default values and `.env.local` ignored for local values.
 
+# Checks and tests
+
+- `bun run lint`, `bun run typecheck`, and `bun run test` each finish in about a second. The pre-commit hook (`lefthook.yml`) runs them in parallel: lint and format fixes on the staged files, then the type check and the whole test suite. CI runs `lint:ci`, `typecheck`, `test`, and `build` again, one parallel job each. `.github/CI.md` has the details.
+- Read the `tests` skill before adding, changing, or fixing a test. Tests are `*.test.ts` files beside the code they cover and run in-process under `bun test`, with no browser, server, or network. Game rules live in `packages/shared`, which imports no framework, so a test can call them directly.
+- A new check is a package script first. Add it to the hook only if it finishes in seconds, and to CI as its own entry in the `task` matrix.
+
 # Code Style
 
 - Treat required data as required. Do not add fallback branches, placeholder states, or defensive existence checks for fields that are guaranteed by types, route invariants, or the surrounding flow. Fix the broken invariant at its source instead of adding UI or code paths for impossible states.

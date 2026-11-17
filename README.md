@@ -30,12 +30,16 @@ Drizzle owns the SQLite schema. This project does not keep migrations; when the 
 
 Local UI host: http://phantom-ink.localhost (via localias)
 
-Useful checks:
+Checks:
 
 ```sh
+bun run lint
 bun run typecheck
+bun run test
 bun run build
 ```
+
+The pre-commit hook runs lint and format fixes on the staged files, the type check, and the tests. CI runs each check as its own parallel job; `.github/CI.md` describes them.
 
 ## Debugging
 
