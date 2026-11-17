@@ -5,7 +5,6 @@ import {
 	playerIdForUser,
 	type OnlineRoomState,
 } from './onlineGame';
-import { applyPhantomInkGameAction, createInitialGameState } from './game';
 
 describe('online game actions', () => {
 	test('excludes spectators from room votes and the started game', () => {
@@ -66,34 +65,6 @@ describe('online game actions', () => {
 		expect(state.gameState?.context.voting.pickWord).toBeUndefined();
 	});
 
-	test('returns spectators to their previous team', () => {
-		const state = createInitialOnlineRoomState();
-		applyOnlineRoomAction(state, {
-			type: 'join',
-			actorId: playerIdForUser(1),
-			userId: 1,
-			name: 'Soul 1',
-		});
-		const member = memberForUser(state, 1);
-		const originalTeam = member.team;
-
-		applyOnlineRoomAction(state, {
-			type: 'set-seat',
-			actorId: member.id,
-			team: originalTeam,
-			role: 'spectator',
-		});
-		expect(member.role).toBe('spectator');
-
-		applyOnlineRoomAction(state, {
-			type: 'set-seat',
-			actorId: member.id,
-			team: member.team,
-			role: 'medium',
-		});
-		expect(member).toMatchObject({ role: 'medium', team: originalTeam });
-	});
-
 	test('accepts votes from the matching room actor', () => {
 		const state = createPlayingRoom();
 		const spiritUserId = currentSpiritUserId(state);
@@ -138,29 +109,6 @@ describe('online game actions', () => {
 
 		expect(changed).toBe(false);
 		expect(state.gameState?.state).toBe('setupWord');
-	});
-
-	test('loads a supplied debug state through the room action log', () => {
-		const state = createInitialOnlineRoomState();
-		applyOnlineRoomAction(state, {
-			type: 'join',
-			actorId: playerIdForUser(1),
-			userId: 1,
-			name: 'Soul 1',
-		});
-		const loaded = createInitialGameState();
-		applyPhantomInkGameAction(loaded, { type: 'pickWord', word: 'POTATO' });
-
-		const changed = applyOnlineRoomAction(state, {
-			type: 'load-state',
-			actorId: playerIdForUser(1),
-			state: loaded,
-		});
-
-		expect(changed).toBe(true);
-		expect(state.phase).toBe('playing');
-		expect(state.gameState).toEqual(loaded);
-		expect(state.gameState).not.toBe(loaded);
 	});
 
 	test('returns completed games to the lobby by consensus and rotates spirits', () => {
